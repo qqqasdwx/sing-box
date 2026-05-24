@@ -217,6 +217,10 @@ docker_prepare_argo() {
   [ "$IS_ARGO" = 'is_argo' ] || return
   [ -n "$ARGO_RUNS" ] || input_argo_auth is_install
 
+  if [ -z "$ARGO_RUNS" ]; then
+    error " Invalid ARGO_AUTH. Use Argo Json, Argo Tunnel Token, or a Cloudflare API Token with Tunnel and DNS permissions. "
+  fi
+
   if [[ "$ARGO_RUNS" == *"--url "* ]]; then
     ARGO_TYPE=is_quicktunnel_argo
     if [[ "$ARGO_RUNS" != *"--metrics"* ]]; then
