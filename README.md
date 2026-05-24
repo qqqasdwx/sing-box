@@ -462,7 +462,9 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
 
 ### 说明:
 * 支持三种 Argo 类型隧道: 临时 (不需要域名) / Json / Token
-* 需要20个连续可用的端口，以 `START_PORT` 开始第一个
+* Docker 与 VPS 脚本使用同一套协议生成逻辑，`START_PORT` 是第一个协议端口
+* 如启用订阅或 Argo，`PORT_NGINX` 是 nginx 回源端口；未指定时默认使用 `START_PORT + 已选协议数量`
+* Hysteria2 端口跳跃仍需要宿主机自行发布或转发 UDP 端口范围到 Hysteria2 端口
 
 <details>
     <summary> Docker 部署（点击即可展开或收起）</summary>
@@ -474,6 +476,7 @@ docker run -dit \
     --name sing-box \
     --network host \
     -e START_PORT=8800 \
+    -e PORT_NGINX=8812 \
     -e SERVER_IP=123.123.123.123 \
     -e XTLS_REALITY=true \
     -e HYSTERIA2=true \
@@ -486,6 +489,7 @@ docker run -dit \
     -e H2_REALITY=true \
     -e GRPC_REALITY=true \
     -e ANYTLS=true \
+    -e NAIVE=true \
     -e UUID=20f7fca4-86e5-4ddf-9eed-24142073d197 \
     -e CDN=www.csgo.com \
     -e NODE_NAME=sing-box \
@@ -513,6 +517,7 @@ services:
         network_mode: host
         environment:
             - START_PORT=8800
+            - PORT_NGINX=8812
             - SERVER_IP=123.123.123.123
             - XTLS_REALITY=true
             - HYSTERIA2=true
@@ -525,6 +530,7 @@ services:
             - H2_REALITY=true
             - GRPC_REALITY=true
             - ANYTLS=true
+            - NAIVE=true
             - UUID=20f7fca4-86e5-4ddf-9eed-24142073d197
             - CDN=www.csgo.com
             - NODE_NAME=sing-box
@@ -549,26 +555,35 @@ services:
 ### 参数说明
 | 参数 | 是否必须 | 说明 |
 | --- | ------- | --- |
-| -p /tcp | 是 | 宿主机端口范围:容器 sing-box 及 nginx 等 tcp 监听端口 |
-| -p /udp | 是 | 宿主机端口范围:容器 sing-box 及 nginx 等 udp 监听端口 |
-| -e START_PORT | 是 | 起始端口 ，一定要与端口映射的起始端口一致 |
+| --network host | 推荐 | 使用宿主机网络，避免逐个维护协议端口映射 |
+| -p /tcp | 可选 | 不使用 host 网络时，映射 sing-box、nginx 等 tcp 监听端口 |
+| -p /udp | 可选 | 不使用 host 网络时，映射 sing-box、Hysteria2、TUIC 等 udp 监听端口 |
+| -e START_PORT | 是 | 第一个协议端口，与 VPS 脚本 `--START_PORT` 含义一致 |
+| -e PORT_NGINX | 否 | 订阅 / Argo 的 nginx 端口，默认 `START_PORT + 已选协议数量` |
 | -e SERVER_IP | 是 | 服务器公网 IP |
-| -e XTLS_REALITY | 是 |    true 为启用 XTLS + reality，不需要的话删除本参数或填 false |
-| -e HYSTERIA2 | 是 |       true 为启用 Hysteria v2 协议，不需要的话删除本参数或填 false |
-| -e TUIC | 是 |            true 为启用 TUIC 协议，不需要的话删除本参数或填 false |
-| -e SHADOWTLS | 是 |       true 为启用 ShadowTLS 协议，不需要的话删除本参数或填 false |
-| -e SHADOWSOCKS | 是 |     true 为启用 ShadowSocks 协议，不需要的话删除本参数或填 false |
-| -e TROJAN | 是 |          true 为启用 Trojan 协议，不需要的话删除本参数或填 false |
-| -e VMESS_WS | 是 |        true 为启用 VMess over WebSocket 协议，不需要的话删除本参数或填 false |
-| -e VLESS_WS | 是 |        true 为启用 VLess over WebSocket 协议，不需要的话删除本参数或填 false |
-| -e H2_REALITY | 是 |      true 为启用 H2 over reality 协议，不需要的话删除本参数或填 false |
-| -e GRPC_REALITY | 是 |    true 为启用 gRPC over reality 协议，不需要的话删除本参数或填 false |
-| -e ANYTLS | 是 |          true 为启用 AnyTLS 协议，不需要的话删除本参数或填 false |
+| -e CHOOSE_PROTOCOLS | 否 | 直接使用 VPS 脚本协议选择字母，如 `bcim`；未指定时读取下方布尔变量，仍为空则默认全选 |
+| -e XTLS_REALITY | 否 | true 为启用 XTLS + reality |
+| -e HYSTERIA2 | 否 | true 为启用 Hysteria2 |
+| -e TUIC | 否 | true 为启用 TUIC |
+| -e SHADOWTLS | 否 | true 为启用 ShadowTLS |
+| -e SHADOWSOCKS | 否 | true 为启用 ShadowSocks |
+| -e TROJAN | 否 | true 为启用 Trojan |
+| -e VMESS_WS | 否 | true 为启用 VMess over WebSocket |
+| -e VLESS_WS | 否 | true 为启用 VLess over WebSocket |
+| -e H2_REALITY | 否 | true 为启用 H2 over reality |
+| -e GRPC_REALITY | 否 | true 为启用 gRPC over reality |
+| -e ANYTLS | 否 | true 为启用 AnyTLS |
+| -e NAIVE | 否 | true 为启用 NaiveProxy |
 | -e UUID | 否 | 不指定的话 UUID 将默认随机生成 |
 | -e CDN | 否 | 优选域名，不指定的话将使用 skk.moe |
 | -e NODE_NAME | 否 | 节点名称，不指定的话将使用 sing-box |
-| -e ARGO_DOMAIN | 否 | Argo 固定隧道域名 , 与 ARGO_DOMAIN 一并使用才能生效 |
-| -e ARGO_AUTH | 否 | Argo 认证信息，可以是 Json， Token 或者 Cloudflare API，与 ARGO_DOMAIN 一并使用才能生效，不指定的话将使用临时隧道 |
+| -e SUBSCRIBE | 否 | 默认 true；false 为不生成订阅 nginx 服务 |
+| -e ARGO | 否 | 默认 true；false 为不启用 Argo |
+| -e ARGO_DOMAIN | 否 | Argo 固定隧道域名，与 `ARGO_AUTH` 一并使用 |
+| -e ARGO_AUTH | 否 | Argo 认证信息，可以是 Json、Token 或 Cloudflare API；不指定 `ARGO_DOMAIN` 时使用临时隧道 |
+| -e HY2_REALM / HY2_WARP | 否 | true 时启用 Hysteria2 Realm / WARP 辅助打洞 |
+| -e HY2_PORT_HOPPING_RANGE | 否 | 如 `20000:30000`；Docker 不自动改宿主机 NAT，需要自行转发 UDP |
+| -e REALITY_PRIVATE | 否 | 自定义 Reality 私钥 |
 
 
 ## 10.Nekobox 设置 shadowTLS 方法

@@ -14,8 +14,9 @@ generated files match the source modules.
 ## Layout
 
 - `src/vps/` contains the VPS installer source chunks used to generate `sing-box.sh`.
-- `src/docker/` contains the container entrypoint source chunks used to generate `docker_init.sh`.
+- `src/docker/` contains the container-only wrapper used to generate `docker_init.sh`.
 
-This first split is intentionally behavior-preserving. Future refactors should
-move duplicated VPS and Docker behavior into shared source modules before
-changing generated runtime behavior.
+The Docker bundle intentionally includes the shared VPS modules and then applies
+Docker-specific overrides for downloads, environment variables, s6 services, and
+container lifecycle. Keep protocol generation and subscription output in the
+shared VPS modules so the raw installer and Docker image stay aligned.

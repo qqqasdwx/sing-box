@@ -1,40 +1,37 @@
 #!/usr/bin/env bash
-# 脚本更新日期 2026.04.23
-set -e
 
-WORK_DIR=/sing-box
-PORT=$START_PORT
+# Docker keeps only container-specific defaults here. Protocol generation,
+# subscriptions, Argo parsing, and node export are shared with the VPS script.
+VERSION='v1.3.13 (2026.05.18)'
+
+GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
+
+TEMP_DIR='/tmp/sing-box'
+WORK_DIR='/sing-box'
+FIREWALL_STATE_DIR="${WORK_DIR}/firewall"
+SERVICE_FIREWALL_STATE_FILE="${FIREWALL_STATE_DIR}/service_ports.list"
+START_PORT_DEFAULT='8881'
+MIN_PORT=100
+MAX_PORT=65520
+MIN_HOPPING_PORT=10000
+MAX_HOPPING_PORT=65535
+TLS_SERVER_DEFAULT=addons.mozilla.org
+PROTOCOL_LIST=("XTLS + reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess + ws" "vless + ws + tls" "H2 + reality" "gRPC + reality" "AnyTLS" "naive")
+NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess-ws" "vless-ws-tls" "h2-reality" "grpc-reality" "anytls" "naive")
+CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
+CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org" "cf.090227.xyz")
 SUBSCRIBE_TEMPLATE="https://raw.githubusercontent.com/fscarmen/client_template/main"
+DEFAULT_NEWEST_VERSION='1.13.0-rc.4'
+STEP_NUM=0
+TOTAL_STEPS=''
 
-# 自定义字体彩色，read 函数
-warning() { echo -e "\033[31m\033[01m$*\033[0m"; }  # 红色
-info() { echo -e "\033[32m\033[01m$*\033[0m"; }   # 绿色
-hint() { echo -e "\033[33m\033[01m$*\033[0m"; }   # 黄色
+export DEBIAN_FRONTEND=noninteractive
 
-# 判断系统架构，以下载相应的应用
-case "$ARCH" in
-  arm64 )
-    SING_BOX_ARCH=arm64-musl; JQ_ARCH=arm64; QRENCODE_ARCH=arm64; ARGO_ARCH=arm64
-    ;;
-  amd64 )
-    SING_BOX_ARCH=amd64-musl; JQ_ARCH=amd64; QRENCODE_ARCH=amd64; ARGO_ARCH=amd64
-    ;;
-  armv7 )
-    SING_BOX_ARCH=armv7-musl; JQ_ARCH=armhf; QRENCODE_ARCH=arm; ARGO_ARCH=arm
-    ;;
-esac
-
-# 检查 sing-box 最新版本
-check_latest_sing-box() {
-  # 检查是否强制指定版本
-  local FORCE_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/refs/heads/release/force_version | sed 's/^[vV]//g')
-
-  # 没有强制指定版本时，获取最新版本
-  grep -q '.' <<< "$FORCE_VERSION" || local FORCE_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- https://api.github.com/repos/SagerNet/sing-box/releases | awk -F '["v-]' '/tag_name/{print $5}' | sort -Vr | sed -n '1p')
-
-  # 获取最终版本号
-  local VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- https://api.github.com/repos/SagerNet/sing-box/releases | awk -F '["v]' -v var="tag_name.*$FORCE_VERSION" '$0 ~ var {print $5; exit}')
-  VERSION=${VERSION:-'1.13.0-rc.4'}
-
-  echo "$VERSION"
+cleanup_temp() {
+  rm -rf "$TEMP_DIR"
 }
+
+trap cleanup_temp EXIT
+trap 'cleanup_temp; printf "\n"; exit 1' INT QUIT TERM
+
+mkdir -p "$TEMP_DIR"

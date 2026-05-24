@@ -34,7 +34,7 @@ COPY docker_init.sh /sing-box/init.sh
 
 # 安装运行时依赖并生成证书
 RUN set -ex &&\
-  apk add --no-cache wget nginx bash openssl &&\
+  apk add --no-cache wget nginx bash openssl ca-certificates tar iproute2 iputils procps coreutils xxd &&\
   mkdir -p /sing-box/cert /sing-box/conf /sing-box/subscribe /sing-box/logs &&\
   chmod +x /sing-box/init.sh &&\
   rm -rf /var/cache/apk/*

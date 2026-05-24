@@ -78,9 +78,12 @@ bundle_vps() {
 bundle_docker() {
   bundle_file "$ROOT_DIR/docker_init.sh" \
     "$ROOT_DIR/src/docker/00_prelude.sh" \
-    "$ROOT_DIR/src/docker/10_install.sh" \
-    "$ROOT_DIR/src/docker/20_services_subscribe.sh" \
-    "$ROOT_DIR/src/docker/30_update.sh" \
+    "$ROOT_DIR/src/vps/10_i18n.sh" \
+    "$ROOT_DIR/src/vps/20_helpers.sh" \
+    "$ROOT_DIR/src/vps/30_system.sh" \
+    "$ROOT_DIR/src/vps/40_config.sh" \
+    "$ROOT_DIR/src/vps/50_runtime.sh" \
+    "$ROOT_DIR/src/docker/80_overrides.sh" \
     "$ROOT_DIR/src/docker/90_main.sh"
 }
 

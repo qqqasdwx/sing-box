@@ -1,18 +1,16 @@
-
-# 传参
+# Docker entrypoint.
 while getopts ":Vv" OPTNAME; do
   case "${OPTNAME,,}" in
-    v ) ACTION=update
+    v ) ACTION=update ;;
   esac
 done
 
-# 主流程
 case "$ACTION" in
   update )
-    update_sing-box
+    docker_update_sing_box
     ;;
   * )
-    install
-    # 用 s6-overlay 作为 PID 1 承载守护
+    docker_install
     exec /init
+    ;;
 esac
