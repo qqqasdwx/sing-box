@@ -4,7 +4,7 @@
 
 本仓库的目标不是重新发明安装逻辑，而是把原脚本整理成可维护、可自动发布、Docker 与 VPS 行为一致的版本。上游变化通过 `upstream-main` 分支跟踪；我们只在审阅后把有价值的改动移植到 `main`。
 
-变更记录见 [CHANGELOG.md](CHANGELOG.md)。当前跟踪的上游基线见 [`main` 分支的 UPSTREAM.md](https://github.com/qqqasdwx/sing-box/blob/main/UPSTREAM.md)。
+变更记录见 [CHANGELOG.md](CHANGELOG.md)。与上游的行为差异见 [BEHAVIOR_DIFFS.md](BEHAVIOR_DIFFS.md)。当前跟踪的上游基线见 [`main` 分支的 UPSTREAM.md](https://github.com/qqqasdwx/sing-box/blob/main/UPSTREAM.md)。
 
 ## 和上游的主要区别
 
@@ -19,7 +19,7 @@
 ## 分支与发布模型
 
 - `main`：实际开发分支，包含模块化源码、工具脚本和 Actions。
-- `release`：自动生成，只保留运行产物和发布说明，例如 `sing-box.sh`、`docker_init.sh`、`Dockerfile`、`README.md`、`CHANGELOG.md`。
+- `release`：自动生成，只保留运行产物和发布说明，例如 `sing-box.sh`、`docker_init.sh`、`Dockerfile`、`README.md`、`CHANGELOG.md`、`BEHAVIOR_DIFFS.md`。
 - `upstream-main`：镜像 `fscarmen/main`，只作为对比和移植参考。
 
 不要直接改 `release`。所有变更都应提交到 `main`，由 Action 生成发布分支和镜像。
@@ -101,6 +101,10 @@ docker run -d --name sing-box --network host --restart unless-stopped \
 ```
 
 `START_PORT` 是第一个协议端口。启用订阅或 Argo 时，`PORT_NGINX` 是 nginx 回源端口；未指定时默认使用 `START_PORT + 已选协议数量`，并会检查是否与协议端口冲突。
+
+## Nekobox 设置 ShadowTLS 方法
+
+脚本会输出两条 Neko 链接。把两条链接导入 Nekobox 后，手动创建链式代理，并按 `ShadowTLS -> Shadowsocks` 的顺序选择这两个节点；顺序反了会导致连接失败。
 
 ## 开发维护
 
