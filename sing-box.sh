@@ -378,6 +378,39 @@ calc_install_steps() {
   TOTAL_STEPS=$_total
 }
 
+parameter_value_from() {
+  local _idx=$1 _pos
+  local _values=()
+  for ((_pos=_idx; _pos<${#ALL_PARAMETER[@]}; _pos++)); do
+    [[ "${ALL_PARAMETER[_pos]}" =~ ^- ]] && break
+    _values+=("${ALL_PARAMETER[_pos]}")
+  done
+  printf '%s' "${_values[*]}"
+}
+
+apply_custom_node_names() {
+  local _entry _idx _var _value
+  for _entry in \
+    11:NODE_NAME_XTLS_REALITY \
+    12:NODE_NAME_HYSTERIA2 \
+    13:NODE_NAME_TUIC \
+    14:NODE_NAME_SHADOWTLS \
+    15:NODE_NAME_SHADOWSOCKS \
+    16:NODE_NAME_TROJAN \
+    17:NODE_NAME_VMESS_WS \
+    18:NODE_NAME_VLESS_WS \
+    19:NODE_NAME_H2_REALITY \
+    20:NODE_NAME_GRPC_REALITY \
+    21:NODE_NAME_ANYTLS \
+    22:NODE_NAME_NAIVE
+  do
+    _idx=${_entry%%:*}
+    _var=${_entry#*:}
+    _value="${!_var:-}"
+    [ -n "$_value" ] && NODE_NAME[$_idx]="$_value"
+  done
+}
+
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
 check_cdn() {
   local PROXY CODE PID CMD
@@ -1283,7 +1316,6 @@ change_argo() {
   export_nginx_conf_file
   export_list
 }
-
 check_root() {
   [ "$(id -u)" != 0 ] && error "\n $(text 43) \n"
 }
@@ -5390,11 +5422,43 @@ for z in ${!ALL_PARAMETER[@]}; do
       ((z++)); UUID_CONFIRM=${ALL_PARAMETER[z]}
       ;;
     --NODE_NAME_CONFIRM )
-      ((z++))
-      for ((z=$z; z<${#ALL_PARAMETER[@]}; z++)); do
-        [[ ! "${ALL_PARAMETER[z]}" =~ ^- ]] && NODE_NAME_ARRAY+=(${ALL_PARAMETER[z]}) || break
-      done
-      NODE_NAME_CONFIRM=${NODE_NAME_ARRAY[@]}
+      NODE_NAME_CONFIRM=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_XTLS_REALITY )
+      NODE_NAME_XTLS_REALITY=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_HYSTERIA2 )
+      NODE_NAME_HYSTERIA2=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_TUIC )
+      NODE_NAME_TUIC=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_SHADOWTLS )
+      NODE_NAME_SHADOWTLS=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_SHADOWSOCKS )
+      NODE_NAME_SHADOWSOCKS=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_TROJAN )
+      NODE_NAME_TROJAN=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_VMESS_WS )
+      NODE_NAME_VMESS_WS=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_VLESS_WS )
+      NODE_NAME_VLESS_WS=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_H2_REALITY )
+      NODE_NAME_H2_REALITY=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_GRPC_REALITY )
+      NODE_NAME_GRPC_REALITY=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_ANYTLS )
+      NODE_NAME_ANYTLS=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_NAIVE )
+      NODE_NAME_NAIVE=$(parameter_value_from $((z+1)))
       ;;
     --SUBSCRIBE )
       ((z++)); [ "${ALL_PARAMETER[z]}" = 'true' ] && IS_SUB=is_sub
@@ -5423,6 +5487,8 @@ for z in ${!ALL_PARAMETER[@]}; do
       ;;
   esac
 done
+
+apply_custom_node_names
 
 check_arch
 check_dependencies

@@ -376,6 +376,39 @@ calc_install_steps() {
   TOTAL_STEPS=$_total
 }
 
+parameter_value_from() {
+  local _idx=$1 _pos
+  local _values=()
+  for ((_pos=_idx; _pos<${#ALL_PARAMETER[@]}; _pos++)); do
+    [[ "${ALL_PARAMETER[_pos]}" =~ ^- ]] && break
+    _values+=("${ALL_PARAMETER[_pos]}")
+  done
+  printf '%s' "${_values[*]}"
+}
+
+apply_custom_node_names() {
+  local _entry _idx _var _value
+  for _entry in \
+    11:NODE_NAME_XTLS_REALITY \
+    12:NODE_NAME_HYSTERIA2 \
+    13:NODE_NAME_TUIC \
+    14:NODE_NAME_SHADOWTLS \
+    15:NODE_NAME_SHADOWSOCKS \
+    16:NODE_NAME_TROJAN \
+    17:NODE_NAME_VMESS_WS \
+    18:NODE_NAME_VLESS_WS \
+    19:NODE_NAME_H2_REALITY \
+    20:NODE_NAME_GRPC_REALITY \
+    21:NODE_NAME_ANYTLS \
+    22:NODE_NAME_NAIVE
+  do
+    _idx=${_entry%%:*}
+    _var=${_entry#*:}
+    _value="${!_var:-}"
+    [ -n "$_value" ] && NODE_NAME[$_idx]="$_value"
+  done
+}
+
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
 check_cdn() {
   local PROXY CODE PID CMD
@@ -1281,7 +1314,6 @@ change_argo() {
   export_nginx_conf_file
   export_list
 }
-
 check_root() {
   [ "$(id -u)" != 0 ] && error "\n $(text 43) \n"
 }
@@ -5342,6 +5374,7 @@ docker_prepare_env() {
   CDN=${CDN:-"${CDN_DOMAIN[0]}"}
   UUID_CONFIRM=${UUID_CONFIRM:-"$UUID"}
   NODE_NAME_CONFIRM=${NODE_NAME_CONFIRM:-"$NODE_NAME"}
+  apply_custom_node_names
   TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
 
   docker_false "$SUBSCRIBE" && IS_SUB=no_sub || IS_SUB=is_sub
