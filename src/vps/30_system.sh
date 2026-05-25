@@ -272,7 +272,7 @@ check_system_info() {
   [[ -z "$SYS" ]] && command -v lsb_release >/dev/null 2>&1 && SYS="$(lsb_release -sd)"
   [[ -z "$SYS" && -s /etc/lsb-release ]] && SYS="$(awk -F '"' 'tolower($0) ~ /distrib_description/{print $2}' /etc/lsb-release)"
   [[ -z "$SYS" && -s /etc/redhat-release ]] && SYS="$(cat /etc/redhat-release)"
-  [[ -z "$SYS" && -s /etc/issue ]] && SYS="$(sed -E '/^$|^\\/d' /etc/issue | awk -F '\\' '{print $1}' | sed 's/[ ]*$//g')"
+  [[ -z "$SYS" && -s /etc/issue ]] && SYS="$(sed -E '/^$|^\\/d; s/\\.*//; s/[ ]*$//g; q' /etc/issue)"
 
   REGEX=("debian" "ubuntu" "centos|red hat|kernel|alma|rocky" "arch linux" "alpine" "fedora")
   RELEASE=("Debian" "Ubuntu" "CentOS" "Arch" "Alpine" "Fedora")
@@ -1535,13 +1535,13 @@ http {
   [[ -n "$PORT_VMESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vmess websocket
     location /${UUID_CONFIRM}-vmess {
-      if (\$http_upgrade != "websocket") {
+      if (\$http_upgrade != \"websocket\") {
          return 404;
       }
       proxy_pass                          http://127.0.0.1:${PORT_VMESS_WS};
       proxy_http_version                  1.1;
       proxy_set_header Upgrade            \$http_upgrade;
-      proxy_set_header Connection         "upgrade";
+      proxy_set_header Connection         \"upgrade\";
       proxy_set_header X-Real-IP          \$remote_addr;
       proxy_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
       proxy_set_header Host               \$host;
@@ -1552,14 +1552,14 @@ http {
   [[ -n "$PORT_VLESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vless websocket
     location /${UUID_CONFIRM}-vless {
-      if (\$http_upgrade != "websocket") {
+      if (\$http_upgrade != \"websocket\") {
          return 404;
       }
       proxy_http_version                  1.1;
       proxy_pass                          https://127.0.0.1:${PORT_VLESS_WS};
       proxy_ssl_protocols                 TLSv1.3;
       proxy_set_header Upgrade            \$http_upgrade;
-      proxy_set_header Connection         "upgrade";
+      proxy_set_header Connection         \"upgrade\";
       proxy_set_header X-Real-IP          \$remote_addr;
       proxy_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
       proxy_set_header Host               \$host;
@@ -1593,4 +1593,3 @@ http {
 
   echo "$NGINX_CONF" > ${WORK_DIR}/nginx.conf
 }
-

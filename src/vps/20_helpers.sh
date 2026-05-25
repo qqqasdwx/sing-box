@@ -52,26 +52,18 @@ parameter_value_from() {
 }
 
 apply_custom_node_names() {
-  local _entry _idx _var _value
-  for _entry in \
-    11:NODE_NAME_XTLS_REALITY \
-    12:NODE_NAME_HYSTERIA2 \
-    13:NODE_NAME_TUIC \
-    14:NODE_NAME_SHADOWTLS \
-    15:NODE_NAME_SHADOWSOCKS \
-    16:NODE_NAME_TROJAN \
-    17:NODE_NAME_VMESS_WS \
-    18:NODE_NAME_VLESS_WS \
-    19:NODE_NAME_H2_REALITY \
-    20:NODE_NAME_GRPC_REALITY \
-    21:NODE_NAME_ANYTLS \
-    22:NODE_NAME_NAIVE
-  do
-    _idx=${_entry%%:*}
-    _var=${_entry#*:}
-    _value="${!_var:-}"
-    [ -n "$_value" ] && NODE_NAME[$_idx]="$_value"
-  done
+  [ -n "${NODE_NAME_XTLS_REALITY:-}" ] && NODE_NAME[11]=$NODE_NAME_XTLS_REALITY
+  [ -n "${NODE_NAME_HYSTERIA2:-}" ] && NODE_NAME[12]=$NODE_NAME_HYSTERIA2
+  [ -n "${NODE_NAME_TUIC:-}" ] && NODE_NAME[13]=$NODE_NAME_TUIC
+  [ -n "${NODE_NAME_SHADOWTLS:-}" ] && NODE_NAME[14]=$NODE_NAME_SHADOWTLS
+  [ -n "${NODE_NAME_SHADOWSOCKS:-}" ] && NODE_NAME[15]=$NODE_NAME_SHADOWSOCKS
+  [ -n "${NODE_NAME_TROJAN:-}" ] && NODE_NAME[16]=$NODE_NAME_TROJAN
+  [ -n "${NODE_NAME_VMESS_WS:-}" ] && NODE_NAME[17]=$NODE_NAME_VMESS_WS
+  [ -n "${NODE_NAME_VLESS_WS:-}" ] && NODE_NAME[18]=$NODE_NAME_VLESS_WS
+  [ -n "${NODE_NAME_H2_REALITY:-}" ] && NODE_NAME[19]=$NODE_NAME_H2_REALITY
+  [ -n "${NODE_NAME_GRPC_REALITY:-}" ] && NODE_NAME[20]=$NODE_NAME_GRPC_REALITY
+  [ -n "${NODE_NAME_ANYTLS:-}" ] && NODE_NAME[21]=$NODE_NAME_ANYTLS
+  [ -n "${NODE_NAME_NAIVE:-}" ] && NODE_NAME[22]=$NODE_NAME_NAIVE
 }
 
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用

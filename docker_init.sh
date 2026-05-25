@@ -387,26 +387,18 @@ parameter_value_from() {
 }
 
 apply_custom_node_names() {
-  local _entry _idx _var _value
-  for _entry in \
-    11:NODE_NAME_XTLS_REALITY \
-    12:NODE_NAME_HYSTERIA2 \
-    13:NODE_NAME_TUIC \
-    14:NODE_NAME_SHADOWTLS \
-    15:NODE_NAME_SHADOWSOCKS \
-    16:NODE_NAME_TROJAN \
-    17:NODE_NAME_VMESS_WS \
-    18:NODE_NAME_VLESS_WS \
-    19:NODE_NAME_H2_REALITY \
-    20:NODE_NAME_GRPC_REALITY \
-    21:NODE_NAME_ANYTLS \
-    22:NODE_NAME_NAIVE
-  do
-    _idx=${_entry%%:*}
-    _var=${_entry#*:}
-    _value="${!_var:-}"
-    [ -n "$_value" ] && NODE_NAME[$_idx]="$_value"
-  done
+  [ -n "${NODE_NAME_XTLS_REALITY:-}" ] && NODE_NAME[11]=$NODE_NAME_XTLS_REALITY
+  [ -n "${NODE_NAME_HYSTERIA2:-}" ] && NODE_NAME[12]=$NODE_NAME_HYSTERIA2
+  [ -n "${NODE_NAME_TUIC:-}" ] && NODE_NAME[13]=$NODE_NAME_TUIC
+  [ -n "${NODE_NAME_SHADOWTLS:-}" ] && NODE_NAME[14]=$NODE_NAME_SHADOWTLS
+  [ -n "${NODE_NAME_SHADOWSOCKS:-}" ] && NODE_NAME[15]=$NODE_NAME_SHADOWSOCKS
+  [ -n "${NODE_NAME_TROJAN:-}" ] && NODE_NAME[16]=$NODE_NAME_TROJAN
+  [ -n "${NODE_NAME_VMESS_WS:-}" ] && NODE_NAME[17]=$NODE_NAME_VMESS_WS
+  [ -n "${NODE_NAME_VLESS_WS:-}" ] && NODE_NAME[18]=$NODE_NAME_VLESS_WS
+  [ -n "${NODE_NAME_H2_REALITY:-}" ] && NODE_NAME[19]=$NODE_NAME_H2_REALITY
+  [ -n "${NODE_NAME_GRPC_REALITY:-}" ] && NODE_NAME[20]=$NODE_NAME_GRPC_REALITY
+  [ -n "${NODE_NAME_ANYTLS:-}" ] && NODE_NAME[21]=$NODE_NAME_ANYTLS
+  [ -n "${NODE_NAME_NAIVE:-}" ] && NODE_NAME[22]=$NODE_NAME_NAIVE
 }
 
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
@@ -1588,7 +1580,7 @@ check_system_info() {
   [[ -z "$SYS" ]] && command -v lsb_release >/dev/null 2>&1 && SYS="$(lsb_release -sd)"
   [[ -z "$SYS" && -s /etc/lsb-release ]] && SYS="$(awk -F '"' 'tolower($0) ~ /distrib_description/{print $2}' /etc/lsb-release)"
   [[ -z "$SYS" && -s /etc/redhat-release ]] && SYS="$(cat /etc/redhat-release)"
-  [[ -z "$SYS" && -s /etc/issue ]] && SYS="$(sed -E '/^$|^\\/d' /etc/issue | awk -F '\\' '{print $1}' | sed 's/[ ]*$//g')"
+  [[ -z "$SYS" && -s /etc/issue ]] && SYS="$(sed -E '/^$|^\\/d; s/\\.*//; s/[ ]*$//g; q' /etc/issue)"
 
   REGEX=("debian" "ubuntu" "centos|red hat|kernel|alma|rocky" "arch linux" "alpine" "fedora")
   RELEASE=("Debian" "Ubuntu" "CentOS" "Arch" "Alpine" "Fedora")
@@ -2851,13 +2843,13 @@ http {
   [[ -n "$PORT_VMESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vmess websocket
     location /${UUID_CONFIRM}-vmess {
-      if (\$http_upgrade != "websocket") {
+      if (\$http_upgrade != \"websocket\") {
          return 404;
       }
       proxy_pass                          http://127.0.0.1:${PORT_VMESS_WS};
       proxy_http_version                  1.1;
       proxy_set_header Upgrade            \$http_upgrade;
-      proxy_set_header Connection         "upgrade";
+      proxy_set_header Connection         \"upgrade\";
       proxy_set_header X-Real-IP          \$remote_addr;
       proxy_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
       proxy_set_header Host               \$host;
@@ -2868,14 +2860,14 @@ http {
   [[ -n "$PORT_VLESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vless websocket
     location /${UUID_CONFIRM}-vless {
-      if (\$http_upgrade != "websocket") {
+      if (\$http_upgrade != \"websocket\") {
          return 404;
       }
       proxy_http_version                  1.1;
       proxy_pass                          https://127.0.0.1:${PORT_VLESS_WS};
       proxy_ssl_protocols                 TLSv1.3;
       proxy_set_header Upgrade            \$http_upgrade;
-      proxy_set_header Connection         "upgrade";
+      proxy_set_header Connection         \"upgrade\";
       proxy_set_header X-Real-IP          \$remote_addr;
       proxy_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
       proxy_set_header Host               \$host;
@@ -2909,7 +2901,6 @@ http {
 
   echo "$NGINX_CONF" > ${WORK_DIR}/nginx.conf
 }
-
 # 生成 sing-box 配置文件
 sing-box_json() {
   local IS_CHANGE=$1
@@ -5184,6 +5175,9 @@ version() {
 
 # 判断当前 Sing-box 的运行状态，并对应的给菜单和动作赋值
 menu_setting() {
+  OPTION=()
+  ACTION=()
+
   if [[ "${STATUS[0]}" =~ $(text 27)|$(text 28) ]]; then
     OPTION[1]="1 .  $(text 29)"
     [ "${STATUS[0]}" = "$(text 28)" ] && OPTION[2]="2 .  $(text 27) Sing-box (sb -s)" || OPTION[2]="2 .  $(text 28) Sing-box (sb -s)"
@@ -5198,40 +5192,57 @@ menu_setting() {
     OPTION[11]="11.  $(text 69)"
     OPTION[12]="12.  $(text 76)"
 
-    ACTION[1]() { export_list; exit 0; }
+    menu_action_export_list() { export_list; exit 0; }
 
-    [ "${STATUS[0]}" = "$(text 28)" ] &&
-    ACTION[2]() {
-      cmd_systemctl disable sing-box
-      cmd_systemctl status sing-box &>/dev/null && error " Sing-box $(text 27) $(text 38) " || info " Sing-box $(text 27) $(text 37)"
-    } ||
-    ACTION[2]() {
-      cmd_systemctl enable sing-box
-      sleep 2
-      cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 28) $(text 37)" || error " Sing-box $(text 28) $(text 38) "
-    }
+    if [ "${STATUS[0]}" = "$(text 28)" ]; then
+      menu_action_toggle_sing_box() {
+        cmd_systemctl disable sing-box
+        cmd_systemctl status sing-box &>/dev/null && error " Sing-box $(text 27) $(text 38) " || info " Sing-box $(text 27) $(text 37)"
+      }
+    else
+      menu_action_toggle_sing_box() {
+        cmd_systemctl enable sing-box
+        sleep 2
+        cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 28) $(text 37)" || error " Sing-box $(text 28) $(text 38) "
+      }
+    fi
 
-    [ "${STATUS[1]}" = "$(text 28)" ] &&
-    ACTION[3]() {
-      cmd_systemctl disable argo
-      cmd_systemctl status argo &>/dev/null && error " Argo $(text 27) $(text 38) " || info " Argo $(text 27) $(text 37)"
-    } ||
-    ACTION[3]() {
-      cmd_systemctl enable argo
-      sleep 2
-      cmd_systemctl status argo &>/dev/null &&  info " Argo $(text 28) $(text 37)" || error " Argo $(text 28) $(text 38) "
-      grep -qs '\--url' ${ARGO_DAEMON_FILE} && fetch_quicktunnel_domain && export_list
-    }
+    if [ "${STATUS[1]}" = "$(text 28)" ]; then
+      menu_action_toggle_argo() {
+        cmd_systemctl disable argo
+        cmd_systemctl status argo &>/dev/null && error " Argo $(text 27) $(text 38) " || info " Argo $(text 27) $(text 37)"
+      }
+    else
+      menu_action_toggle_argo() {
+        cmd_systemctl enable argo
+        sleep 2
+        cmd_systemctl status argo &>/dev/null &&  info " Argo $(text 28) $(text 37)" || error " Argo $(text 28) $(text 38) "
+        grep -qs '\--url' ${ARGO_DAEMON_FILE} && fetch_quicktunnel_domain && export_list
+      }
+    fi
 
-    ACTION[4]() { change_argo; exit; }
-    ACTION[5]() { change_config; exit; }
-    ACTION[6]() { version; exit; }
-    ACTION[7]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
-    ACTION[8]() { change_protocols; exit; }
-    ACTION[9]() { uninstall; exit; }
-    ACTION[10]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    ACTION[11]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    ACTION[12]() { bash <(wget --no-check-certificate -qO- https://tcp.hy2.sh/); exit; }
+    menu_action_change_argo() { change_argo; exit; }
+    menu_action_change_config() { change_config; exit; }
+    menu_action_version() { version; exit; }
+    menu_action_bbr() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
+    menu_action_change_protocols() { change_protocols; exit; }
+    menu_action_uninstall() { uninstall; exit; }
+    menu_action_argox() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
+    menu_action_sba() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
+    menu_action_hy2_tcp() { bash <(wget --no-check-certificate -qO- https://tcp.hy2.sh/); exit; }
+
+    ACTION[1]=menu_action_export_list
+    ACTION[2]=menu_action_toggle_sing_box
+    ACTION[3]=menu_action_toggle_argo
+    ACTION[4]=menu_action_change_argo
+    ACTION[5]=menu_action_change_config
+    ACTION[6]=menu_action_version
+    ACTION[7]=menu_action_bbr
+    ACTION[8]=menu_action_change_protocols
+    ACTION[9]=menu_action_uninstall
+    ACTION[10]=menu_action_argox
+    ACTION[11]=menu_action_sba
+    ACTION[12]=menu_action_hy2_tcp
   else
     OPTION[1]="1.  $(text 115)"
     OPTION[2]="2.  $(text 34) + Argo + $(text 80) $(text 89)"
@@ -5243,19 +5254,42 @@ menu_setting() {
     OPTION[8]="8.  $(text 69)"
     OPTION[9]="9.  $(text 76)"
 
-    ACTION[1]() { IS_FAST_INSTALL='is_fast_install'; CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}; START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}; CDN=${CDN:-"${CDN_DOMAIN[0]}"}; IS_SUB='is_sub'; IS_ARGO='is_argo'; HY2_PORT_HOPPING_RANGE=${HY2_PORT_HOPPING_RANGE:-'50000:51000'}; install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[2]() { IS_SUB=is_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[3]() { IS_SUB=no_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[4]() { IS_SUB=is_sub; IS_ARGO=no_argo; install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[5]() { install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[6]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
-    ACTION[7]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    ACTION[8]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    ACTION[9]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://tcp.hy2.sh/); exit; }
+    menu_action_fast_install() {
+      IS_FAST_INSTALL='is_fast_install'
+      CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
+      START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
+      CDN=${CDN:-"${CDN_DOMAIN[0]}"}
+      IS_SUB='is_sub'
+      IS_ARGO='is_argo'
+      HY2_PORT_HOPPING_RANGE=${HY2_PORT_HOPPING_RANGE:-'50000:51000'}
+      install_sing-box
+      export_list install
+      create_shortcut
+      exit
+    }
+    menu_action_install_with_argo_sub() { IS_SUB=is_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
+    menu_action_install_with_argo() { IS_SUB=no_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
+    menu_action_install_with_sub() { IS_SUB=is_sub; IS_ARGO=no_argo; install_sing-box; export_list install; create_shortcut; exit; }
+    menu_action_install() { install_sing-box; export_list install; create_shortcut; exit; }
+    menu_action_bbr() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
+    menu_action_argox() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
+    menu_action_sba() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
+    menu_action_hy2_tcp() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://tcp.hy2.sh/); exit; }
+
+    ACTION[1]=menu_action_fast_install
+    ACTION[2]=menu_action_install_with_argo_sub
+    ACTION[3]=menu_action_install_with_argo
+    ACTION[4]=menu_action_install_with_sub
+    ACTION[5]=menu_action_install
+    ACTION[6]=menu_action_bbr
+    ACTION[7]=menu_action_argox
+    ACTION[8]=menu_action_sba
+    ACTION[9]=menu_action_hy2_tcp
   fi
 
   [ "${#OPTION[@]}" -ge '10' ] && OPTION[0]="0 .  $(text 35)" || OPTION[0]="0.  $(text 35)"
-  ACTION[0]() { exit; }
+  menu_action_exit() { exit; }
+  ACTION[0]=menu_action_exit
 }
 
 menu() {
@@ -5283,7 +5317,7 @@ menu() {
 
   # 输入必须是数字且少于等于最大可选项
   if grep -qE "^[0-9]{1,2}$" <<< "$CHOOSE" && [ "$CHOOSE" -lt "${#OPTION[*]}" ]; then
-    ACTION[$CHOOSE]
+    "${ACTION[$CHOOSE]}"
   else
     warning " $(text 36) [0-$((${#OPTION[*]}-1))] " && sleep 1 && menu
   fi
