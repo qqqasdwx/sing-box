@@ -1,38 +1,38 @@
-# Behavior Differences from Upstream
+# 与上游的行为差异
 
-Baseline reviewed on 2026-05-25:
+本次 review 基线，日期：2026-05-25。
 
-- Upstream: `fscarmen/sing-box@a683f289eabee672c6fb512292e4b255e1ab1be6`
-- Downstream: `qqqasdwx/sing-box@main`
+- 上游：`fscarmen/sing-box@a683f289eabee672c6fb512292e4b255e1ab1be6`
+- 下游：`qqqasdwx/sing-box@main`
 
-No newer upstream commit was found during this review. This document records behavior that intentionally differs from upstream, plus migration issues found during review.
+本次 review 时未发现新的上游提交。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
 
-## Review Result
+## Review 结果
 
-- VPS installer behavior is intentionally kept close to upstream. The observed differences are repository ownership links, `force_version` source, and the generated `sb` shortcut URL.
-- Docker behavior is intentionally different because it now reuses the VPS protocol-generation path instead of maintaining a separate hand-written implementation.
-- Migration issues found and fixed in this review:
-  - The rewritten README no longer had the ShadowTLS help anchor used by script output. The link now points to the restored `Nekobox 设置 ShadowTLS 方法` section.
-  - Docker `init.sh -v` had lost upstream-style rollback safety. It now backs up the old binary, restarts through s6, and restores the old binary if the new process does not come back.
+- VPS 安装脚本刻意尽量保持与上游一致。目前观察到的差异主要是仓库归属链接、`force_version` 来源，以及生成的 `sb` 快捷命令地址。
+- Docker 行为刻意与上游不同：本仓库的 Docker 入口复用 VPS 的协议生成逻辑，而不是继续维护一份独立手写实现。
+- 本次 review 发现并修复了两个迁移问题：
+  - README 重写后，脚本输出中的 ShadowTLS 帮助链接指向了不存在的锚点。现在已恢复 `Nekobox 设置 ShadowTLS 方法` 小节，并修正脚本链接。
+  - Docker `init.sh -v` 更新 sing-box 时丢失了上游的失败回滚保护。现在会备份旧二进制，通过 s6 重启检查新进程；如果新进程没有恢复，会还原旧二进制。
 
-## Intentional Differences
+## 刻意保留的差异
 
-| Area | Upstream behavior | This repository | Why |
+| 范围 | 上游行为 | 本仓库行为 | 为什么这么改 |
 | --- | --- | --- | --- |
-| Source layout | `sing-box.sh` and `docker_init.sh` are maintained directly as root scripts. | Source lives in `src/vps/` and `src/docker/`; `tools/bundle.sh` generates root scripts. | Keep single-file release compatibility while making changes reviewable by module. |
-| Release branch | `main` is both source and raw install target. | `main` is source; `release` is generated and contains runtime artifacts only. | Raw install stays stable while source and automation stay on the default branch. |
-| Raw install URL | Uses `raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh`. | Uses `raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh`. | Published script must come from our generated release branch. |
-| `force_version` | Read from upstream `fscarmen/sing-box/main/force_version`. | Read from our `qqqasdwx/sing-box/release/force_version`. | Our released installer should obey the version pin published with the same release artifacts. |
-| Docker registry | Action pushes to Docker Hub using Docker Hub secrets. | Action pushes to `ghcr.io/qqqasdwx/sing-box:latest` with `GITHUB_TOKEN`. | Avoid Docker Hub credentials and keep image publishing inside GitHub Packages. |
-| Docker build context | Builds directly from the repository branch. | Builds from the generated release tree. | Ensures the image uses the exact same `docker_init.sh` and files that are published on `release`. |
-| Docker protocol generation | Docker has separate hand-written config generation logic. | Docker reuses VPS modules for protocol JSON, subscriptions, Argo parsing, Reality keys, Hysteria2 Realm, and exports. | Prevent Docker and VPS behavior from drifting. |
-| Docker protocol selection | Uses individual booleans such as `XTLS_REALITY=true`; if no boolean is enabled, no protocol is selected. | Supports `CHOOSE_PROTOCOLS` letters like VPS. Legacy booleans still work; if neither is supplied, defaults to all protocols. | Align Docker with VPS quick-install behavior while keeping old env flags usable. |
-| Docker port semantics | `START_PORT` is the nginx/Argo origin port; protocol ports start after it. | `START_PORT` is the first protocol port. `PORT_NGINX` is the nginx/Argo origin port and defaults to `START_PORT + selected_protocol_count`. | Remove the hidden one-port offset and match VPS semantics. |
-| Docker subscription/nginx | Nginx and subscription output are always part of the generated flow. | Nginx is created only when subscription or Argo needs it; `SUBSCRIBE=false` and `ARGO=false` can disable it. | Make non-HTTP deployments possible and avoid unnecessary services. |
-| Docker Argo API | Docker has its own Cloudflare API parsing and sets tunnel origin to `START_PORT`. | Docker uses the shared VPS `input_argo_auth` / `create_argo_tunnel` path and sets tunnel origin to `PORT_NGINX`. Invalid fixed Argo input fails early. | Fix the Docker Cloudflare API Token path and keep Argo behavior consistent with VPS. |
-| Docker Quick Tunnel metrics | Metrics listener is exposed on `0.0.0.0:$METRICS_PORT`. | Metrics listener is bound to `127.0.0.1:$METRICS_PORT`. | The metrics endpoint is only used inside the container to read the temporary tunnel domain. |
-| Docker update | Upstream backs up the old sing-box binary and rolls back when the new process does not start. | Same safety behavior is preserved, but restart is done by killing the s6-managed process and letting s6 bring it back. | Keep rollback safety while respecting the container supervisor. |
-| Docker port hopping | Upstream Docker does not manage host NAT for Hysteria2 port hopping. | Docker accepts the shared `HY2_PORT_HOPPING_RANGE` setting but only warns; host UDP forwarding must be configured outside the container. | A container should not mutate host firewall/NAT state. |
-| Runtime dependencies | Alpine image installs only `wget nginx bash openssl`. | Adds `ca-certificates tar iproute2 iputils procps coreutils xxd`. | Shared VPS modules need these tools for downloads, IP detection, process checks, and Reality key handling. |
-| Upstream tracking | Fork-style sync/mirror workflows are upstream-oriented. | `upstream-main` mirrors upstream only for review; `Upstream watch` opens an issue when upstream changes. | The repository is an independent downstream, not a direct fork workflow. |
+| 源码结构 | `sing-box.sh` 和 `docker_init.sh` 作为根目录脚本直接维护。 | 源码放在 `src/vps/` 和 `src/docker/`，由 `tools/bundle.sh` 生成根目录脚本。 | 保留单文件发布兼容性，同时让日常修改可以按模块 review。 |
+| 发布分支 | `main` 同时是源码分支和 raw 安装入口。 | `main` 是源码分支；`release` 自动生成，只包含运行产物。 | raw 安装地址保持稳定，源码和自动化留在默认分支维护。 |
+| raw 安装地址 | 使用 `raw.githubusercontent.com/fscarmen/sing-box/main/sing-box.sh`。 | 使用 `raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh`。 | 发布脚本必须来自我们生成后的 `release` 分支。 |
+| `force_version` | 从上游 `fscarmen/sing-box/main/force_version` 读取。 | 从本仓库 `qqqasdwx/sing-box/release/force_version` 读取。 | 已发布的安装脚本应该使用同一发布分支中的版本钉住文件。 |
+| Docker 镜像仓库 | Action 使用 Docker Hub secrets 推送到 Docker Hub。 | Action 使用 `GITHUB_TOKEN` 推送到 `ghcr.io/qqqasdwx/sing-box:latest`。 | 不再依赖 Docker Hub 凭据，镜像发布留在 GitHub Packages。 |
+| Docker 构建上下文 | 直接从仓库分支构建。 | 从生成后的 release tree 构建。 | 确保 Docker 镜像使用的 `docker_init.sh` 和发布分支里的文件完全一致。 |
+| Docker 协议生成 | Docker 有一份独立手写的配置生成逻辑。 | Docker 复用 VPS 模块来生成协议 JSON、订阅、Argo、Reality 密钥、Hysteria2 Realm 和节点导出。 | 避免 Docker 和 VPS 两套行为继续漂移。 |
+| Docker 协议选择 | 使用 `XTLS_REALITY=true` 等独立布尔变量；如果没有启用任何布尔变量，就不会选择协议。 | 支持 VPS 一样的 `CHOOSE_PROTOCOLS` 字母选择。旧布尔变量仍可用；如果两者都没传，默认启用全部协议。 | 与 VPS 快速安装行为对齐，同时保留旧 Docker 环境变量用法。 |
+| Docker 端口语义 | `START_PORT` 是 nginx/Argo 回源端口；协议端口从它后面开始递增。 | `START_PORT` 是第一个协议端口；`PORT_NGINX` 是 nginx/Argo 回源端口，默认值是 `START_PORT + 已选协议数量`。 | 移除隐藏的一位端口偏移，让 Docker 与 VPS 的端口语义一致。 |
+| Docker 订阅和 nginx | nginx 与订阅输出始终参与生成流程。 | 只有订阅或 Argo 需要时才生成 nginx；`SUBSCRIBE=false` 且 `ARGO=false` 时可以不启用 nginx。 | 支持非 HTTP 场景，避免无用服务。 |
+| Docker Argo API | Docker 使用自己的 Cloudflare API 解析逻辑，并把隧道回源指向 `START_PORT`。 | Docker 复用 VPS 的 `input_argo_auth` / `create_argo_tunnel` 逻辑，并把隧道回源指向 `PORT_NGINX`；固定 Argo 输入无效时会提前失败。 | 修复 Docker Cloudflare API Token 路径，并保持 Argo 行为与 VPS 一致。 |
+| Docker Quick Tunnel metrics | metrics 监听在 `0.0.0.0:$METRICS_PORT`。 | metrics 监听在 `127.0.0.1:$METRICS_PORT`。 | metrics 端口只用于容器内部读取临时隧道域名，不需要对外暴露。 |
+| Docker 更新 | 上游会备份旧 sing-box 二进制；如果新进程启动失败，则回滚旧二进制。 | 保留同样的安全行为，但通过杀掉 s6 管理的进程，让 s6 拉起新进程并检查是否恢复。 | 保留更新失败回滚能力，同时符合容器内 supervisor 的运行方式。 |
+| Docker 端口跳跃 | 上游 Docker 不管理宿主机 Hysteria2 端口跳跃 NAT。 | Docker 接受共享的 `HY2_PORT_HOPPING_RANGE` 设置，但只提示；宿主机 UDP 转发需要在容器外配置。 | 容器不应该直接修改宿主机防火墙或 NAT 状态。 |
+| 运行时依赖 | Alpine 镜像只安装 `wget nginx bash openssl`。 | 额外安装 `ca-certificates tar iproute2 iputils procps coreutils xxd`。 | 共享 VPS 模块需要这些工具完成下载、IP 检测、进程检查和 Reality 密钥处理。 |
+| 上游跟踪 | 上游采用 fork/mirror 风格的同步 workflow。 | 本仓库用 `upstream-main` 只镜像上游供 review；`Upstream watch` 在上游有新提交时创建 issue。 | 本仓库已作为独立下游维护，不再按直接 fork 同步流程工作。 |
 
