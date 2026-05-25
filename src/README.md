@@ -1,15 +1,15 @@
 # Source Layout
 
-The root `sing-box.sh` and `docker_init.sh` files are generated release artifacts.
-Edit the files under `src/` first, then run:
+The root `sing-box.sh` and `docker_init.sh` files are generated from these
+modules. Edit the files under `src/` first, then run:
 
 ```sh
 tools/bundle.sh
 ```
 
-The bundled files stay in the repository root so existing raw GitHub install
-commands continue to work. CI runs `tools/bundle.sh --check` to make sure the
-generated files match the source modules.
+The bundled files stay in the repository root for local Docker builds and
+release packaging. CI runs `tools/bundle.sh --check` to make sure the generated
+files match the source modules, then publishes a trimmed `release` branch.
 
 ## Layout
 

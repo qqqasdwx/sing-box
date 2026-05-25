@@ -74,7 +74,7 @@ jobs:
             echo "Suggested handling:"
             echo
             echo "1. Review upstream changes."
-            echo "2. Port useful changes into \`modular\`."
+            echo "2. Port useful changes into \`main\`."
             echo "3. After review, update \`${TRACKING_BRANCH}\` to the upstream commit."
           } > "$body"
 

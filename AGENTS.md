@@ -2,14 +2,15 @@
 
 ## Project Structure & Module Organization
 
-This repository is a shell-script installer and Docker packaging project for sing-box deployments.
+This repository is a shell-script installer and Docker packaging project for sing-box deployments. `main` is the source branch; `release` is generated for published artifacts.
 
-- `sing-box.sh` is the primary VPS installer, updater, menu, and service-management script.
-- `docker_init.sh` is the container entrypoint used by the Docker image.
+- `src/vps/` contains modules that generate `sing-box.sh`, the VPS installer, updater, menu, and service manager.
+- `src/docker/` contains Docker-specific modules that generate `docker_init.sh`, the container entrypoint.
+- `tools/bundle.sh` rebuilds root scripts; `tools/prepare-release.sh` creates the trimmed release tree.
 - `Dockerfile` builds the Alpine image and installs `s6-overlay` plus runtime dependencies.
 - `config.conf` is the key-value example for non-interactive installs.
 - `force_version` pins or overrides the sing-box version used by install flows.
-- `.github/workflows/` contains manual image build/push and repository mirror workflows.
+- `.github/workflows/` contains CI, release publishing, GHCR image build, and upstream watch workflows.
 - `README.md` is the user-facing install and operations reference.
 
 Generated runtime files are not stored here. The VPS installer writes under `/etc/sing-box/`; the container writes under `/sing-box/`.
@@ -17,6 +18,8 @@ Generated runtime files are not stored here. The VPS installer writes under `/et
 ## Build, Test, and Development Commands
 
 - `bash -n sing-box.sh docker_init.sh` checks shell syntax without executing installer logic.
+- `tools/bundle.sh --check` verifies generated root scripts match `src/`.
+- `tools/prepare-release.sh /tmp/sing-box-release` creates a local release tree.
 - `shellcheck sing-box.sh docker_init.sh` runs static analysis; use it before larger script changes when available.
 - `docker build -t sing-box:local .` builds a local test image from `Dockerfile`.
 - `docker run --rm --network host -e START_PORT=8800 -e SERVER_IP=127.0.0.1 sing-box:local` smoke-tests container startup. Add variables such as `-e XTLS_REALITY=true` when testing configs.
@@ -25,7 +28,7 @@ Avoid running installer paths on a workstation unless you intend to modify syste
 
 ## Coding Style & Naming Conventions
 
-Use Bash for scripts. Follow the existing style: two-space indentation inside blocks, uppercase global configuration variables, lowercase function names, and `local` for function-scoped variables. Keep bilingual text aligned through the `E[...]` and `C[...]` arrays in `sing-box.sh`.
+Use Bash for scripts. Follow the existing style: two-space indentation inside blocks, uppercase global configuration variables, lowercase function names, and `local` for function-scoped variables. Keep bilingual text aligned through the `E[...]` and `C[...]` arrays in `src/vps/10_i18n.sh`.
 
 Prefer quoted expansions (`"$VAR"`) and explicit error handling for filesystem, network, and service operations.
 
