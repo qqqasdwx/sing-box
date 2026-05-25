@@ -4,6 +4,9 @@
 
 ## 2026-05-25
 
+- 新增 `BEHAVIOR_DIFFS.md`，记录本仓库与上游的刻意行为差异和迁移 review 结果。
+- 修复 README 重写后 ShadowTLS 教程链接失效的问题。
+- Docker 更新 sing-box 时恢复失败回滚检查，避免新二进制启动失败后直接留下不可用状态。
 - 将默认开发分支切换为 `main`，`release` 改为自动生成的纯发布分支。
 - 删除旧的 `modular` 分支，保留 `upstream-main` 作为上游跟踪分支。
 - 新增 `tools/prepare-release.sh`，用于生成只包含运行产物的发布目录。

@@ -22,6 +22,7 @@ release_files=(
   Dockerfile
   README.md
   CHANGELOG.md
+  BEHAVIOR_DIFFS.md
   LICENSE
   config.conf
   force_version

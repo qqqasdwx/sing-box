@@ -301,6 +301,13 @@ docker_update_sing_box() {
   local ONLINE LOCAL SB_DIR SB_BIN
   ONLINE=$(get_sing_box_version)
   LOCAL=$("${WORK_DIR}/sing-box" version 2>/dev/null | awk '/version/{print $NF}')
+  local WAS_RUNNING=no
+
+  if [ ! -x "${WORK_DIR}/sing-box" ]; then
+    error " Sing-box is not installed. "
+  fi
+
+  pgrep -f "${WORK_DIR}/sing-box run" >/dev/null 2>&1 && WAS_RUNNING=yes
 
   if [ -z "$ONLINE" ]; then
     warning " Unable to fetch latest sing-box version. "
@@ -324,6 +331,29 @@ docker_update_sing_box() {
   chmod +x "${WORK_DIR}/sing-box"
   rm -rf "$SB_DIR"
 
+  if [ "$WAS_RUNNING" != yes ]; then
+    rm -f "$TEMP_DIR/sing-box.bak"
+    info " Sing-box updated from v${LOCAL:-unknown} to v${ONLINE}. "
+    return 0
+  fi
+
   pkill -f "${WORK_DIR}/sing-box run" 2>/dev/null || true
-  info " Sing-box updated from v${LOCAL:-unknown} to v${ONLINE}. "
+  sleep 3
+  if pgrep -f "${WORK_DIR}/sing-box run" >/dev/null 2>&1; then
+    rm -f "$TEMP_DIR/sing-box.bak"
+    info " Sing-box updated from v${LOCAL:-unknown} to v${ONLINE}. "
+    return 0
+  fi
+
+  warning " New sing-box v${ONLINE} did not restart; restoring v${LOCAL:-unknown}. "
+  cp -f "$TEMP_DIR/sing-box.bak" "${WORK_DIR}/sing-box"
+  chmod +x "${WORK_DIR}/sing-box"
+  pkill -f "${WORK_DIR}/sing-box run" 2>/dev/null || true
+  sleep 3
+
+  if pgrep -f "${WORK_DIR}/sing-box run" >/dev/null 2>&1; then
+    info " Restored old sing-box v${LOCAL:-unknown}. "
+  else
+    error " Failed to restart sing-box after rollback. "
+  fi
 }
