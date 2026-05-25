@@ -21,6 +21,7 @@ release_files=(
   docker_init.sh
   Dockerfile
   README.md
+  CHANGELOG.md
   LICENSE
   config.conf
   force_version
