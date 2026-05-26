@@ -794,15 +794,116 @@ EOF
 
 # 更换各协议的监听端口
 change_start_port() {
-  OLD_PORTS=$(awk -F ':|,' '/listen_port/{print $2}' ${WORK_DIR}/conf/*)
-  OLD_START_PORT=$(awk 'NR == 1 { min = $0 } { if ($0 < min) min = $0; count++ } END {print min}' <<< "$OLD_PORTS")
-  OLD_CONSECUTIVE_PORTS=$(awk 'END { print NR }' <<< "$OLD_PORTS")
-  input_start_port $OLD_CONSECUTIVE_PORTS
+  load_installed_protocol_ports
+  [ "${#INSTALLED_PORT_VALUES[@]}" = 0 ] && error " $(text 110) "
+
+  local OLD_PORTS=("${INSTALLED_PORT_VALUES[@]}")
+  local NEW_PORTS=("${INSTALLED_PORT_VALUES[@]}")
+  local SELECT_PORT PORT_ERROR_TIME _i _j _name _old_port _new_port _conflict_name _default_start
+
+  hint "\n $(text 150)\n"
+  hint " 1. $(text 149)"
+  for _i in "${!INSTALLED_PORT_VALUES[@]}"; do
+    hint " $(( _i + 2 )). ${INSTALLED_PORT_NAMES[_i]} (${INSTALLED_PORT_TAGS[_i]})  ${INSTALLED_PORT_VALUES[_i]}"
+  done
+  hint ""
+  reading " $(text 24) " SELECT_PORT
+
+  if ! [[ "$SELECT_PORT" =~ ^[0-9]+$ ]] || [ "$SELECT_PORT" -lt 1 ] || [ "$SELECT_PORT" -gt "$((${#INSTALLED_PORT_VALUES[@]} + 1))" ]; then
+    info " $(text 135) "
+    return
+  fi
+
+  if [ "$SELECT_PORT" = 1 ]; then
+    _default_start=$(awk 'NR == 1 { min = $0 } { if ($0 < min) min = $0 } END {print min}' <<< "$(printf '%s\n' "${OLD_PORTS[@]}")")
+    local _saved_start_port_default="$START_PORT_DEFAULT"
+    START_PORT_DEFAULT="$_default_start"
+    PORT_ERROR_TIME=6
+    unset START_PORT
+    while true; do
+      (( PORT_ERROR_TIME-- )) || true
+      [ "$PORT_ERROR_TIME" = 0 ] && START_PORT_DEFAULT="$_saved_start_port_default" && error "\n $(text 3) \n"
+      local NUM=${#INSTALLED_PORT_VALUES[@]}
+      reading "\n $(text 11) " START_PORT
+      START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
+      if valid_listen_port "$START_PORT"; then
+        for _i in "${!NEW_PORTS[@]}"; do
+          NEW_PORTS[_i]=$((START_PORT + _i))
+        done
+        break
+      fi
+      warning "\n $(text 36) \n"
+    done
+    START_PORT_DEFAULT="$_saved_start_port_default"
+  else
+    _i=$((SELECT_PORT - 2))
+    _name="${INSTALLED_PORT_NAMES[_i]} (${INSTALLED_PORT_TAGS[_i]})"
+    _old_port="${INSTALLED_PORT_VALUES[_i]}"
+    reading " $(text 151) " _new_port
+    [ -z "$_new_port" ] && info " $(text 135) " && return
+    valid_listen_port "$_new_port" || error " $(text 36) "
+    NEW_PORTS[_i]="$_new_port"
+  fi
+
+  for _i in "${!NEW_PORTS[@]}"; do
+    valid_listen_port "${NEW_PORTS[_i]}" || error " ${INSTALLED_PORT_NAMES[_i]} (${INSTALLED_PORT_TAGS[_i]}) port must be ${MIN_PORT}-${MAX_PORT}. "
+    if [ -s "${WORK_DIR}/nginx.conf" ]; then
+      local _nginx_port
+      _nginx_port=$(awk '/listen/{print $2; exit}' "${WORK_DIR}/nginx.conf")
+      if [ -n "$_nginx_port" ] && [ "${NEW_PORTS[_i]}" = "$_nginx_port" ]; then
+        _new_port="${NEW_PORTS[_i]}"
+        _conflict_name=nginx
+        error " $(text 152) "
+      fi
+    fi
+    for _j in "${!NEW_PORTS[@]}"; do
+      [ "$_i" = "$_j" ] && continue
+      if [ "${NEW_PORTS[_i]}" = "${NEW_PORTS[_j]}" ]; then
+        _new_port="${NEW_PORTS[_i]}"
+        _conflict_name="${INSTALLED_PORT_NAMES[_j]} (${INSTALLED_PORT_TAGS[_j]})"
+        error " $(text 152) "
+      fi
+    done
+    if ! array_contains "${NEW_PORTS[_i]}" "${OLD_PORTS[@]}" && ss -nltup | grep -q ":${NEW_PORTS[_i]}"; then
+      _new_port="${NEW_PORTS[_i]}"
+      error " $(text 153) "
+    fi
+  done
+
+  local CHANGED=false
+  for _i in "${!NEW_PORTS[@]}"; do
+    [ "${NEW_PORTS[_i]}" != "${OLD_PORTS[_i]}" ] && CHANGED=true && break
+  done
+  [ "$CHANGED" != true ] && info " $(text 135) " && return
+
+  check_port_hopping_nat
+  local OLD_HOPPING_START="$PORT_HOPPING_START" OLD_HOPPING_END="$PORT_HOPPING_END"
+  local CHANGE_HY2=false
+  for _i in "${!INSTALLED_PORT_CODES[@]}"; do
+    [ "${INSTALLED_PORT_CODES[_i]}" = c ] && [ "${NEW_PORTS[_i]}" != "${OLD_PORTS[_i]}" ] && CHANGE_HY2=true
+  done
+  [ "$CHANGE_HY2" = true ] && [ -n "$OLD_HOPPING_START" ] && [ -n "$OLD_HOPPING_END" ] && del_port_hopping_nat
+
   cmd_systemctl disable sing-box
-  for ((a=0; a<$OLD_CONSECUTIVE_PORTS; a++)) do
-    [ -s ${WORK_DIR}/conf/${CONF_FILES[a]} ] && sed -i "s/\(.*listen_port.*:\)$((OLD_START_PORT+a))/\1$((START_PORT+a))/" ${WORK_DIR}/conf/*
+  for _i in "${!NEW_PORTS[@]}"; do
+    [ "${NEW_PORTS[_i]}" = "${OLD_PORTS[_i]}" ] && continue
+    awk -v new_port="${NEW_PORTS[_i]}" '
+      BEGIN { changed=0 }
+      !changed && /"listen_port"[[:space:]]*:/ {
+        sub(/"listen_port"[[:space:]]*:[[:space:]]*[0-9]+/, "\"listen_port\":" new_port)
+        changed=1
+      }
+      { print }
+    ' "${INSTALLED_PORT_FILES[_i]}" > "${INSTALLED_PORT_FILES[_i]}.tmp" &&
+      mv "${INSTALLED_PORT_FILES[_i]}.tmp" "${INSTALLED_PORT_FILES[_i]}"
   done
   fetch_nodes_value
+  if [ "$CHANGE_HY2" = true ] && [ -n "$OLD_HOPPING_START" ] && [ -n "$OLD_HOPPING_END" ] && [ -n "$PORT_HYSTERIA2" ]; then
+    PORT_HOPPING_START="$OLD_HOPPING_START"
+    PORT_HOPPING_END="$OLD_HOPPING_END"
+    HY2_PORT_HOPPING_RANGE="${OLD_HOPPING_START}:${OLD_HOPPING_END}"
+    add_port_hopping_nat "$PORT_HOPPING_START" "$PORT_HOPPING_END" "$PORT_HYSTERIA2" >/dev/null 2>&1 || true
+  fi
   [ -n "$PORT_NGINX" ] && UUID_CONFIRM=$(sed -n 's#.*location[ ]\+\/\(.*\)-v[ml]ess.*#\1#gp' /etc/sing-box/nginx.conf | sed -n '1p') && export_nginx_conf_file
   cmd_systemctl enable sing-box
   [ -n "$ARGO_DOMAIN" ] && export_argo_json_file

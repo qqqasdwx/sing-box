@@ -179,6 +179,37 @@ validate_nginx_port() {
   protocol_port_in_use "$PORT_NGINX" && error " PORT_NGINX conflicts with a selected protocol port. "
 }
 
+load_installed_protocol_ports() {
+  INSTALLED_PORT_CODES=()
+  INSTALLED_PORT_NAMES=()
+  INSTALLED_PORT_TAGS=()
+  INSTALLED_PORT_FILES=()
+  INSTALLED_PORT_VALUES=()
+
+  local _idx _code _file _port
+  for _idx in "${!NODE_TAG[@]}"; do
+    _file=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[_idx]}_inbounds.json")
+    [ -s "$_file" ] || continue
+    _port=$(awk -F ':' '/"listen_port"[[:space:]]*:/ {gsub(/[[:space:],]/, "", $2); print $2; exit}' "$_file")
+    [ -n "$_port" ] || continue
+    _code=$(asc $((_idx + 98)))
+    INSTALLED_PORT_CODES+=("$_code")
+    INSTALLED_PORT_NAMES+=("${PROTOCOL_LIST[_idx]}")
+    INSTALLED_PORT_TAGS+=("${NODE_TAG[_idx]}")
+    INSTALLED_PORT_FILES+=("$_file")
+    INSTALLED_PORT_VALUES+=("$_port")
+  done
+}
+
+format_installed_protocol_ports() {
+  load_installed_protocol_ports
+  local _i _out=''
+  for _i in "${!INSTALLED_PORT_VALUES[@]}"; do
+    _out+="${_out:+, }${INSTALLED_PORT_TAGS[_i]}:${INSTALLED_PORT_VALUES[_i]}"
+  done
+  printf '%s' "$_out"
+}
+
 parameter_present() {
   local _needle=${1^^} _item
   shift
@@ -396,12 +427,9 @@ change_config() {
   ls ${WORK_DIR}/conf/*reality_inbounds.json >/dev/null 2>&1 && local SNI_NOW=$(awk 'match($0, /"server_name"[[:space:]]*:[[:space:]]*"[^"]+"/){gsub(/.*: *"/,""); gsub(/".*/,""); print; exit}' ${WORK_DIR}/conf/*reality_inbounds.json) && MENU_IDX+=(129) && MENU_KEY+=(sni) && MENU_VAL+=("$SNI_NOW")
 
   # 监听端口
-  local PORTS_NOW=$(awk -F ':|,' '/"listen_port"/{print $2}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null)
+  local PORTS_NOW=$(format_installed_protocol_ports)
   if [ -n "$PORTS_NOW" ]; then
-    local PORTS_NOW_START=$(awk 'NR == 1 { min = $0 } { if ($0 < min) min = $0 } END {print min}' <<< "$PORTS_NOW")
-    local PORTS_NOW_COUNT=$(awk 'END { print NR }' <<< "$PORTS_NOW")
-    local PORTS_NOW_END=$((PORTS_NOW_START + PORTS_NOW_COUNT - 1))
-    MENU_IDX+=(30) && MENU_KEY+=(ports) && MENU_VAL+=("${PORTS_NOW_START} - ${PORTS_NOW_END}")
+    MENU_IDX+=(30) && MENU_KEY+=(ports) && MENU_VAL+=("${PORTS_NOW}")
   fi
 
   # 节点名
