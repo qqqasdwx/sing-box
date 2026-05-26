@@ -84,6 +84,101 @@ array_contains_any() {
   return 1
 }
 
+normalize_install_protocols() {
+  local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _ord _protocol
+  _max_code=$(asc "$_max_ord")
+  INSTALL_PROTOCOLS=()
+
+  if [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-${_max_code}] ]]; then
+    for ((_ord=98; _ord<=_max_ord; _ord++)); do
+      INSTALL_PROTOCOLS+=("$(asc "$_ord")")
+    done
+  else
+    while IFS= read -r _protocol; do
+      INSTALL_PROTOCOLS+=("$_protocol")
+    done < <(grep -o . <<< "${CHOOSE_PROTOCOLS,,}" | sed "/[^b-${_max_code}]/d" | awk '!seen[$0]++')
+  fi
+}
+
+protocol_port_var() {
+  case "$1" in
+    b ) printf '%s' PORT_XTLS_REALITY ;;
+    c ) printf '%s' PORT_HYSTERIA2 ;;
+    d ) printf '%s' PORT_TUIC ;;
+    e ) printf '%s' PORT_SHADOWTLS ;;
+    f ) printf '%s' PORT_SHADOWSOCKS ;;
+    g ) printf '%s' PORT_TROJAN ;;
+    h ) printf '%s' PORT_VMESS_WS ;;
+    i ) printf '%s' PORT_VLESS_WS ;;
+    j ) printf '%s' PORT_H2_REALITY ;;
+    k ) printf '%s' PORT_GRPC_REALITY ;;
+    l ) printf '%s' PORT_ANYTLS ;;
+    m ) printf '%s' PORT_NAIVE ;;
+  esac
+}
+
+protocol_name_by_code() {
+  local _idx=$(( $(asc "$1") - 98 ))
+  printf '%s' "${PROTOCOL_LIST[_idx]}"
+}
+
+valid_listen_port() {
+  [[ "$1" =~ ^[1-9][0-9]{1,4}$ && "$1" -ge "$MIN_PORT" && "$1" -le "$MAX_PORT" ]]
+}
+
+resolve_protocol_ports() {
+  local _pos _code _var _port _default _idx _name
+  local _ports=() _names=()
+
+  for _pos in "${!INSTALL_PROTOCOLS[@]}"; do
+    _code=${INSTALL_PROTOCOLS[_pos]}
+    _var=$(protocol_port_var "$_code")
+    [ -z "$_var" ] && continue
+
+    _port=${!_var:-}
+    if [ -z "$_port" ]; then
+      _default=$(( START_PORT + _pos ))
+      printf -v "$_var" '%s' "$_default"
+      _port=$_default
+    fi
+
+    _name=$(protocol_name_by_code "$_code")
+    valid_listen_port "$_port" || error " ${_var} (${_name}) must be ${MIN_PORT}-${MAX_PORT}. "
+
+    for _idx in "${!_ports[@]}"; do
+      if [ "${_ports[_idx]}" = "$_port" ]; then
+        error " ${_var} (${_name}) conflicts with ${_names[_idx]} on port ${_port}. "
+      fi
+    done
+
+    _ports+=("$_port")
+    _names+=("${_var} (${_name})")
+  done
+}
+
+protocol_port_in_use() {
+  local _target=$1 _code _var
+  for _code in "${INSTALL_PROTOCOLS[@]}"; do
+    _var=$(protocol_port_var "$_code")
+    [ -n "$_var" ] && [ "${!_var:-}" = "$_target" ] && return 0
+  done
+  return 1
+}
+
+default_service_port() {
+  local _port=$(( START_PORT + ${#INSTALL_PROTOCOLS[@]} ))
+  while protocol_port_in_use "$_port"; do
+    _port=$(( _port + 1 ))
+  done
+  printf '%s' "$_port"
+}
+
+validate_nginx_port() {
+  [ -z "$PORT_NGINX" ] && return
+  valid_listen_port "$PORT_NGINX" || error " PORT_NGINX must be ${MIN_PORT}-${MAX_PORT}. "
+  protocol_port_in_use "$PORT_NGINX" && error " PORT_NGINX conflicts with a selected protocol port. "
+}
+
 parameter_present() {
   local _needle=${1^^} _item
   shift
@@ -705,7 +800,15 @@ input_nginx_port() {
     fi
     PORT_NGINX=${PORT_NGINX:-"$PORT_NGINX_DEFAULT"}
     if [[ "$PORT_NGINX" =~ ^[1-9][0-9]{1,4}$ && "$PORT_NGINX" -ge "$MIN_PORT" && "$PORT_NGINX" -le "$MAX_PORT" ]]; then
-      ss -nltup | grep -q ":$PORT_NGINX" && warning "\n $(text 44) \n" || break
+      if protocol_port_in_use "$PORT_NGINX"; then
+        [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && error " PORT_NGINX conflicts with a selected protocol port. "
+        warning "\n $(text 44) \n"
+      elif ss -nltup | grep -q ":$PORT_NGINX"; then
+        [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && error " PORT_NGINX is already in use. "
+        warning "\n $(text 44) \n"
+      else
+        break
+      fi
     fi
   done
 }

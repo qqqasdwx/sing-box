@@ -22,8 +22,8 @@ services:
 
       # 全局基础项
       # LANGUAGE: "" # 可选：c=中文，e=英文。脚本默认值：c。
-      # START_PORT: "8881" # 可选：第一个协议端口。脚本默认值：8881。
-      # PORT_NGINX: "" # 可选：订阅/Argo 的 nginx 端口。脚本默认值：启用订阅或 Argo 时为 START_PORT + 已选协议数量。
+      # START_PORT: "8881" # 可选：第一个默认协议端口。脚本默认值：8881；未单独指定的协议按 CHOOSE_PROTOCOLS 顺序递增。
+      # PORT_NGINX: "" # 可选：订阅/Argo 的 nginx 端口。脚本默认值：启用订阅或 Argo 时，从 START_PORT + 已选协议数量开始，并避开已选协议端口。
       # SERVER_IP: "" # 可选：服务器公网 IPv4/IPv6。脚本默认值：自动检测公网 IP，优先 IPv4；无 IPv4 时用 IPv6。
       # TLS_SERVER: "" # 可选：SNI/证书域名。脚本默认值：addons.mozilla.org。
       # NODE_NAME_CONFIRM: "" # 建议固定：全局节点名。脚本默认值：检测到的国家/地区 emoji + 容器 hostname。
@@ -41,12 +41,14 @@ services:
 
       # b. VLESS Reality
       # XTLS_REALITY: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_XTLS_REALITY: "" # 可选：b 协议监听端口。脚本默认值：START_PORT + b 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_XTLS_REALITY: "" # 可选：单协议节点名。
       # REALITY_PRIVATE: "" # 建议固定：Reality 私钥。未填写时每次启动由 sing-box 生成，会影响 b/j/k 协议。
       #   生成命令：docker run --rm ghcr.io/sagernet/sing-box:latest generate reality-keypair | awk '/PrivateKey/{print $NF}'
 
       # c. Hysteria2
       # HYSTERIA2: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_HYSTERIA2: "" # 可选：c 协议监听端口。脚本默认值：START_PORT + c 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_HYSTERIA2: "" # 可选：单协议节点名。
       # HY2_PORT_HOPPING_RANGE: "" # 可选：端口跳跃范围，格式 start:end，例如 50000:51000；Docker 不管理宿主机 NAT。
       # HY2_REALM: "false" # 可选：true/false；启用 Hysteria2 Realm。
@@ -59,12 +61,14 @@ services:
 
       # d. Tuic V5
       # TUIC: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_TUIC: "" # 可选：d 协议监听端口。脚本默认值：START_PORT + d 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_TUIC: "" # 可选：单协议节点名。
       # TUIC_PASSWORD: "" # 可选：Tuic 密码。脚本默认值：UUID_CONFIRM；固定 UUID_CONFIRM 后无需单独填写。
       # TUIC_CONGESTION_CONTROL: "" # 可选：Tuic 拥塞控制。脚本默认值：bbr。
 
       # e. ShadowTLS
       # SHADOWTLS: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_SHADOWTLS: "" # 可选：e 协议监听端口。脚本默认值：START_PORT + e 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_SHADOWTLS: "" # 可选：单协议节点名。
       # SHADOWTLS_PASSWORD: "" # 建议固定：未填写时每次启动随机生成。若同时启用 Shadowsocks，建议与 SHADOWSOCKS_PASSWORD 填同一个值。
       #   生成命令：docker run --rm ghcr.io/qqqasdwx/sing-box:latest sh -lc 'openssl rand -base64 16'
@@ -72,6 +76,7 @@ services:
 
       # f. Shadowsocks
       # SHADOWSOCKS: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_SHADOWSOCKS: "" # 可选：f 协议监听端口。脚本默认值：START_PORT + f 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_SHADOWSOCKS: "" # 可选：单协议节点名。
       # SHADOWSOCKS_PASSWORD: "" # 建议固定：未填写时每次启动随机生成。若同时启用 ShadowTLS，建议与 SHADOWTLS_PASSWORD 填同一个值。
       #   生成命令：docker run --rm ghcr.io/qqqasdwx/sing-box:latest sh -lc 'openssl rand -base64 16'
@@ -79,33 +84,40 @@ services:
 
       # g. Trojan
       # TROJAN: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_TROJAN: "" # 可选：g 协议监听端口。脚本默认值：START_PORT + g 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_TROJAN: "" # 可选：单协议节点名。
       # TROJAN_PASSWORD: "" # 可选：Trojan 密码。脚本默认值：UUID_CONFIRM；固定 UUID_CONFIRM 后无需单独填写。
 
       # h. VMess WebSocket
       # VMESS_WS: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_VMESS_WS: "" # 可选：h 协议监听端口。脚本默认值：START_PORT + h 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_VMESS_WS: "" # 可选：单协议节点名。
       # VMESS_HOST_DOMAIN: "" # 条件必填：选择 h 且 ARGO=false 时必填。
       # VMESS_WS_PATH: "" # 可选：WS 路径。脚本默认值：<VMess UUID>-vmess；固定 UUID_CONFIRM 后稳定。
 
       # i. VLESS WebSocket TLS
       # VLESS_WS: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_VLESS_WS: "" # 可选：i 协议监听端口。脚本默认值：START_PORT + i 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_VLESS_WS: "" # 可选：单协议节点名。
       # VLESS_HOST_DOMAIN: "" # 条件必填：选择 i 且 ARGO=false 时必填。
       # VLESS_WS_PATH: "" # 可选：WS 路径。脚本默认值：<VLESS UUID>-vless；固定 UUID_CONFIRM 后稳定。
 
       # j. H2 Reality
       # H2_REALITY: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_H2_REALITY: "" # 可选：j 协议监听端口。脚本默认值：START_PORT + j 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_H2_REALITY: "" # 可选：单协议节点名。使用全局 REALITY_PRIVATE 和 UUID_CONFIRM。
 
       # k. gRPC Reality
       # GRPC_REALITY: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_GRPC_REALITY: "" # 可选：k 协议监听端口。脚本默认值：START_PORT + k 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_GRPC_REALITY: "" # 可选：单协议节点名。使用全局 REALITY_PRIVATE 和 UUID_CONFIRM。
 
       # l. AnyTLS
       # ANYTLS: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_ANYTLS: "" # 可选：l 协议监听端口。脚本默认值：START_PORT + l 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_ANYTLS: "" # 可选：单协议节点名。密码默认使用 UUID_CONFIRM。
 
       # m. NaiveProxy
       # NAIVE: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # PORT_NAIVE: "" # 可选：m 协议监听端口。脚本默认值：START_PORT + m 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_NAIVE: "" # 可选：单协议节点名。用户名和密码默认使用 UUID_CONFIRM。

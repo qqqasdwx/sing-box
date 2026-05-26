@@ -1141,6 +1141,7 @@ change_protocols() {
   else
     unset PORT_NAIVE
   fi
+  validate_nginx_port
 
   # 停止 sing-box 服务
   cmd_systemctl disable sing-box

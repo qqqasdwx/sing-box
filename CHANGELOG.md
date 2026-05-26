@@ -2,6 +2,12 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-05-26
+
+- 支持按协议自定义监听端口；未设置的协议继续按 `START_PORT` 和 `CHOOSE_PROTOCOLS` 顺序使用默认递增端口。
+- Docker 与 VPS 共用协议端口解析和冲突校验，避免自定义协议端口与 `PORT_NGINX` 撞车。
+- 在 `config.conf`、README 和 Docker Compose 示例中补充所有协议端口变量。
+
 ## 2026-05-25
 
 - 支持按协议自定义节点名；未设置单协议名称时继续回退到全局节点名和默认主机名。

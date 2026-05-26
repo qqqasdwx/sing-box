@@ -34,16 +34,6 @@ docker_protocols_from_env() {
   CHOOSE_PROTOCOLS=${SELECTED:-a}
 }
 
-docker_protocol_count() {
-  local FILTERED
-  FILTERED=$(grep -o . <<< "${CHOOSE_PROTOCOLS,,}" | sed '/[^b-m]/d' | awk '!seen[$0]++')
-  if [ -z "$FILTERED" ]; then
-    echo "$CONSECUTIVE_PORTS"
-  else
-    awk 'END { print NR }' <<< "$FILTERED"
-  fi
-}
-
 docker_pick_free_port() {
   local PORT=${1:-20000}
   while ss -nltup 2>/dev/null | grep -q ":$PORT "; do
@@ -73,6 +63,8 @@ docker_prepare_env() {
   fi
 
   docker_protocols_from_env
+  normalize_install_protocols
+  resolve_protocol_ports
   CDN=${CDN:-"${CDN_DOMAIN[0]}"}
   UUID_CONFIRM=${UUID_CONFIRM:-"$UUID"}
   NODE_NAME_CONFIRM=${NODE_NAME_CONFIRM:-"$NODE_NAME"}
@@ -88,21 +80,10 @@ docker_prepare_env() {
   docker_bool "$REALM_WARP" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
   IS_HOPPING=${IS_HOPPING:-no_hopping}
 
-  local COUNT
-  COUNT=$(docker_protocol_count)
   if [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]]; then
-    PORT_NGINX=${PORT_NGINX:-$((START_PORT + COUNT))}
+    PORT_NGINX=${PORT_NGINX:-$(default_service_port)}
   fi
-
-  if [[ "$PORT_NGINX" =~ ^[0-9]+$ ]] &&
-     [ "$PORT_NGINX" -ge "$START_PORT" ] &&
-     [ "$PORT_NGINX" -lt $((START_PORT + COUNT)) ]; then
-    error " PORT_NGINX conflicts with the selected protocol port range. "
-  fi
-
-  if [ -n "$PORT_NGINX" ] && ! [[ "$PORT_NGINX" =~ ^[1-9][0-9]{1,4}$ && "$PORT_NGINX" -ge "$MIN_PORT" && "$PORT_NGINX" -le "$MAX_PORT" ]]; then
-    error " PORT_NGINX must be ${MIN_PORT}-${MAX_PORT}. "
-  fi
+  validate_nginx_port
 
   if [ "$IS_ARGO" = 'is_argo' ] && [ -n "$ARGO_DOMAIN" ] && [ -z "$ARGO_AUTH" ]; then
     error " ARGO_DOMAIN requires ARGO_AUTH. Leave both empty for Quick Tunnel. "

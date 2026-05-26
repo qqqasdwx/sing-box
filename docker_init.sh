@@ -419,6 +419,101 @@ array_contains_any() {
   return 1
 }
 
+normalize_install_protocols() {
+  local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _ord _protocol
+  _max_code=$(asc "$_max_ord")
+  INSTALL_PROTOCOLS=()
+
+  if [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-${_max_code}] ]]; then
+    for ((_ord=98; _ord<=_max_ord; _ord++)); do
+      INSTALL_PROTOCOLS+=("$(asc "$_ord")")
+    done
+  else
+    while IFS= read -r _protocol; do
+      INSTALL_PROTOCOLS+=("$_protocol")
+    done < <(grep -o . <<< "${CHOOSE_PROTOCOLS,,}" | sed "/[^b-${_max_code}]/d" | awk '!seen[$0]++')
+  fi
+}
+
+protocol_port_var() {
+  case "$1" in
+    b ) printf '%s' PORT_XTLS_REALITY ;;
+    c ) printf '%s' PORT_HYSTERIA2 ;;
+    d ) printf '%s' PORT_TUIC ;;
+    e ) printf '%s' PORT_SHADOWTLS ;;
+    f ) printf '%s' PORT_SHADOWSOCKS ;;
+    g ) printf '%s' PORT_TROJAN ;;
+    h ) printf '%s' PORT_VMESS_WS ;;
+    i ) printf '%s' PORT_VLESS_WS ;;
+    j ) printf '%s' PORT_H2_REALITY ;;
+    k ) printf '%s' PORT_GRPC_REALITY ;;
+    l ) printf '%s' PORT_ANYTLS ;;
+    m ) printf '%s' PORT_NAIVE ;;
+  esac
+}
+
+protocol_name_by_code() {
+  local _idx=$(( $(asc "$1") - 98 ))
+  printf '%s' "${PROTOCOL_LIST[_idx]}"
+}
+
+valid_listen_port() {
+  [[ "$1" =~ ^[1-9][0-9]{1,4}$ && "$1" -ge "$MIN_PORT" && "$1" -le "$MAX_PORT" ]]
+}
+
+resolve_protocol_ports() {
+  local _pos _code _var _port _default _idx _name
+  local _ports=() _names=()
+
+  for _pos in "${!INSTALL_PROTOCOLS[@]}"; do
+    _code=${INSTALL_PROTOCOLS[_pos]}
+    _var=$(protocol_port_var "$_code")
+    [ -z "$_var" ] && continue
+
+    _port=${!_var:-}
+    if [ -z "$_port" ]; then
+      _default=$(( START_PORT + _pos ))
+      printf -v "$_var" '%s' "$_default"
+      _port=$_default
+    fi
+
+    _name=$(protocol_name_by_code "$_code")
+    valid_listen_port "$_port" || error " ${_var} (${_name}) must be ${MIN_PORT}-${MAX_PORT}. "
+
+    for _idx in "${!_ports[@]}"; do
+      if [ "${_ports[_idx]}" = "$_port" ]; then
+        error " ${_var} (${_name}) conflicts with ${_names[_idx]} on port ${_port}. "
+      fi
+    done
+
+    _ports+=("$_port")
+    _names+=("${_var} (${_name})")
+  done
+}
+
+protocol_port_in_use() {
+  local _target=$1 _code _var
+  for _code in "${INSTALL_PROTOCOLS[@]}"; do
+    _var=$(protocol_port_var "$_code")
+    [ -n "$_var" ] && [ "${!_var:-}" = "$_target" ] && return 0
+  done
+  return 1
+}
+
+default_service_port() {
+  local _port=$(( START_PORT + ${#INSTALL_PROTOCOLS[@]} ))
+  while protocol_port_in_use "$_port"; do
+    _port=$(( _port + 1 ))
+  done
+  printf '%s' "$_port"
+}
+
+validate_nginx_port() {
+  [ -z "$PORT_NGINX" ] && return
+  valid_listen_port "$PORT_NGINX" || error " PORT_NGINX must be ${MIN_PORT}-${MAX_PORT}. "
+  protocol_port_in_use "$PORT_NGINX" && error " PORT_NGINX conflicts with a selected protocol port. "
+}
+
 parameter_present() {
   local _needle=${1^^} _item
   shift
@@ -1040,7 +1135,15 @@ input_nginx_port() {
     fi
     PORT_NGINX=${PORT_NGINX:-"$PORT_NGINX_DEFAULT"}
     if [[ "$PORT_NGINX" =~ ^[1-9][0-9]{1,4}$ && "$PORT_NGINX" -ge "$MIN_PORT" && "$PORT_NGINX" -le "$MAX_PORT" ]]; then
-      ss -nltup | grep -q ":$PORT_NGINX" && warning "\n $(text 44) \n" || break
+      if protocol_port_in_use "$PORT_NGINX"; then
+        [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && error " PORT_NGINX conflicts with a selected protocol port. "
+        warning "\n $(text 44) \n"
+      elif ss -nltup | grep -q ":$PORT_NGINX"; then
+        [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && error " PORT_NGINX is already in use. "
+        warning "\n $(text 44) \n"
+      else
+        break
+      fi
     fi
   done
 }
@@ -1926,7 +2029,6 @@ sing-box_variables() {
   fi
 
   # 选择安装的协议，由于选项 a 为全部协议，所以选项数不是从 a 开始，而是从 b 开始，处理输入：把大写全部变为小写，把不符合的选项去掉，把重复的选项合并
-  MAX_CHOOSE_PROTOCOLS=$(asc $(( CONSECUTIVE_PORTS+96+1 )))
   (( STEP_NUM++ )) || true
   if [ -z "$CHOOSE_PROTOCOLS" ]; then
     hint "\n (${STEP_NUM}/${TOTAL_STEPS:-?}) $(text 49) "
@@ -1937,7 +2039,7 @@ sing-box_variables() {
   fi
 
   # 对选择协议的输入处理逻辑：先把所有的大写转为小写，并把所有没有去选项剔除掉，最后按输入的次序排序。如果选项为 a(all) 和其他选项并存，将会忽略 a，如 abc 则会处理为 bc
-  [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-$MAX_CHOOSE_PROTOCOLS] ]] && INSTALL_PROTOCOLS=($(eval echo {b..$MAX_CHOOSE_PROTOCOLS})) || INSTALL_PROTOCOLS=($(grep -o . <<< "$CHOOSE_PROTOCOLS" | sed "/[^b-$MAX_CHOOSE_PROTOCOLS]/d" | awk '!seen[$0]++'))
+  normalize_install_protocols
 
   # 协议已确定，按实际选择重新计算总步骤数
   calc_install_steps
@@ -1951,11 +2053,14 @@ sing-box_variables() {
     done
     input_start_port ${#INSTALL_PROTOCOLS[@]}
   fi
+  resolve_protocol_ports
 
   # 输出模式选择，输入用于订阅的 Nginx 服务端口号， 后台根据选择安装依赖
   if [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]]; then
     (( STEP_NUM++ )) || true
+    [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' && -z "$PORT_NGINX" ]] && PORT_NGINX=$(default_service_port)
     input_nginx_port
+    validate_nginx_port
   fi
 
   # 输入服务器 IP,默认为检测到的服务器 IP，如果全部为空，则提示并退出脚本
@@ -5176,6 +5281,7 @@ change_protocols() {
   else
     unset PORT_NAIVE
   fi
+  validate_nginx_port
 
   # 停止 sing-box 服务
   cmd_systemctl disable sing-box
@@ -5494,16 +5600,6 @@ docker_protocols_from_env() {
   CHOOSE_PROTOCOLS=${SELECTED:-a}
 }
 
-docker_protocol_count() {
-  local FILTERED
-  FILTERED=$(grep -o . <<< "${CHOOSE_PROTOCOLS,,}" | sed '/[^b-m]/d' | awk '!seen[$0]++')
-  if [ -z "$FILTERED" ]; then
-    echo "$CONSECUTIVE_PORTS"
-  else
-    awk 'END { print NR }' <<< "$FILTERED"
-  fi
-}
-
 docker_pick_free_port() {
   local PORT=${1:-20000}
   while ss -nltup 2>/dev/null | grep -q ":$PORT "; do
@@ -5533,6 +5629,8 @@ docker_prepare_env() {
   fi
 
   docker_protocols_from_env
+  normalize_install_protocols
+  resolve_protocol_ports
   CDN=${CDN:-"${CDN_DOMAIN[0]}"}
   UUID_CONFIRM=${UUID_CONFIRM:-"$UUID"}
   NODE_NAME_CONFIRM=${NODE_NAME_CONFIRM:-"$NODE_NAME"}
@@ -5548,21 +5646,10 @@ docker_prepare_env() {
   docker_bool "$REALM_WARP" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
   IS_HOPPING=${IS_HOPPING:-no_hopping}
 
-  local COUNT
-  COUNT=$(docker_protocol_count)
   if [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]]; then
-    PORT_NGINX=${PORT_NGINX:-$((START_PORT + COUNT))}
+    PORT_NGINX=${PORT_NGINX:-$(default_service_port)}
   fi
-
-  if [[ "$PORT_NGINX" =~ ^[0-9]+$ ]] &&
-     [ "$PORT_NGINX" -ge "$START_PORT" ] &&
-     [ "$PORT_NGINX" -lt $((START_PORT + COUNT)) ]; then
-    error " PORT_NGINX conflicts with the selected protocol port range. "
-  fi
-
-  if [ -n "$PORT_NGINX" ] && ! [[ "$PORT_NGINX" =~ ^[1-9][0-9]{1,4}$ && "$PORT_NGINX" -ge "$MIN_PORT" && "$PORT_NGINX" -le "$MAX_PORT" ]]; then
-    error " PORT_NGINX must be ${MIN_PORT}-${MAX_PORT}. "
-  fi
+  validate_nginx_port
 
   if [ "$IS_ARGO" = 'is_argo' ] && [ -n "$ARGO_DOMAIN" ] && [ -z "$ARGO_AUTH" ]; then
     error " ARGO_DOMAIN requires ARGO_AUTH. Leave both empty for Quick Tunnel. "

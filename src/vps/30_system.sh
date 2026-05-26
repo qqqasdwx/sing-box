@@ -587,7 +587,6 @@ sing-box_variables() {
   fi
 
   # 选择安装的协议，由于选项 a 为全部协议，所以选项数不是从 a 开始，而是从 b 开始，处理输入：把大写全部变为小写，把不符合的选项去掉，把重复的选项合并
-  MAX_CHOOSE_PROTOCOLS=$(asc $(( CONSECUTIVE_PORTS+96+1 )))
   (( STEP_NUM++ )) || true
   if [ -z "$CHOOSE_PROTOCOLS" ]; then
     hint "\n (${STEP_NUM}/${TOTAL_STEPS:-?}) $(text 49) "
@@ -598,7 +597,7 @@ sing-box_variables() {
   fi
 
   # 对选择协议的输入处理逻辑：先把所有的大写转为小写，并把所有没有去选项剔除掉，最后按输入的次序排序。如果选项为 a(all) 和其他选项并存，将会忽略 a，如 abc 则会处理为 bc
-  [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-$MAX_CHOOSE_PROTOCOLS] ]] && INSTALL_PROTOCOLS=($(eval echo {b..$MAX_CHOOSE_PROTOCOLS})) || INSTALL_PROTOCOLS=($(grep -o . <<< "$CHOOSE_PROTOCOLS" | sed "/[^b-$MAX_CHOOSE_PROTOCOLS]/d" | awk '!seen[$0]++'))
+  normalize_install_protocols
 
   # 协议已确定，按实际选择重新计算总步骤数
   calc_install_steps
@@ -612,11 +611,14 @@ sing-box_variables() {
     done
     input_start_port ${#INSTALL_PROTOCOLS[@]}
   fi
+  resolve_protocol_ports
 
   # 输出模式选择，输入用于订阅的 Nginx 服务端口号， 后台根据选择安装依赖
   if [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]]; then
     (( STEP_NUM++ )) || true
+    [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' && -z "$PORT_NGINX" ]] && PORT_NGINX=$(default_service_port)
     input_nginx_port
+    validate_nginx_port
   fi
 
   # 输入服务器 IP,默认为检测到的服务器 IP，如果全部为空，则提示并退出脚本

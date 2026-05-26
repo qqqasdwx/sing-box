@@ -106,6 +106,42 @@ for z in "${!ALL_PARAMETER[@]}"; do
     --PORT_NGINX )
       ((z++)); PORT_NGINX=${ALL_PARAMETER[z]}
       ;;
+    --PORT_XTLS_REALITY )
+      ((z++)); PORT_XTLS_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_HYSTERIA2 )
+      ((z++)); PORT_HYSTERIA2=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_TUIC )
+      ((z++)); PORT_TUIC=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_SHADOWTLS )
+      ((z++)); PORT_SHADOWTLS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_SHADOWSOCKS )
+      ((z++)); PORT_SHADOWSOCKS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_TROJAN )
+      ((z++)); PORT_TROJAN=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_VMESS_WS )
+      ((z++)); PORT_VMESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_VLESS_WS )
+      ((z++)); PORT_VLESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_H2_REALITY )
+      ((z++)); PORT_H2_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_GRPC_REALITY )
+      ((z++)); PORT_GRPC_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_ANYTLS )
+      ((z++)); PORT_ANYTLS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_NAIVE )
+      ((z++)); PORT_NAIVE=${ALL_PARAMETER[z]}
+      ;;
     --SERVER_IP )
       ((z++)); SERVER_IP=${ALL_PARAMETER[z]}
       ;;
