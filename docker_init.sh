@@ -5604,10 +5604,10 @@ protocol_restart_export() {
 }
 
 read_new_value() {
-  local PROMPT=$1 CURRENT=$2 OUT_VAR=$3 NEW_VAL
-  reading "\n ${PROMPT} ($(menu_text '当前' 'current'): ${CURRENT:-N/A}, $(menu_text '回车跳过' 'Enter to skip')): " NEW_VAL
-  [ -z "$NEW_VAL" ] && info " $(text 135) " && return 1
-  printf -v "$OUT_VAR" '%s' "$NEW_VAL"
+  local _prompt=$1 _current=$2 _out_var=$3 _input
+  reading "\n ${_prompt} ($(menu_text '当前' 'current'): ${_current:-N/A}, $(menu_text '回车跳过' 'Enter to skip')): " _input
+  [ -z "$_input" ] && info " $(text 135) " && return 1
+  printf -v "$_out_var" '%s' "$_input"
 }
 
 valid_uuid_or_error() {
