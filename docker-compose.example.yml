@@ -16,6 +16,7 @@ services:
       # g=Trojan；h=VMess WebSocket；i=VLESS WebSocket TLS；j=H2 Reality；k=gRPC Reality；l=AnyTLS；m=NaiveProxy。
       # 脚本默认值：不填写 CHOOSE_PROTOCOLS 且不启用单协议开关时为 a，即全部协议。
       # 示例 bcf = VLESS Reality + Hysteria2 + Shadowsocks。设置 CHOOSE_PROTOCOLS 后会忽略下面的单协议开关。
+      # PORT_* 和 NODE_NAME_* 只在对应协议被 CHOOSE_PROTOCOLS 选中或单协议开关为 true 时生效。
       CHOOSE_PROTOCOLS: "bcf"
       SUBSCRIBE: "true" # 建议必填：是否启用订阅；true/false。脚本默认值：true。
       ARGO: "false" # 建议必填：是否启用 Argo；true/false。脚本默认值：true。
