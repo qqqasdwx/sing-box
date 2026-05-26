@@ -60,10 +60,13 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
   --START_PORT 8881 \
   --SERVER_IP 203.0.113.10 \
   --SUBSCRIBE=true \
-  --NODE_NAME_CONFIRM sing-box
+  --NODE_NAME_CONFIRM sing-box \
+  --NODE_NAME_HYSTERIA2 sing-box-hy2
 ```
 
 协议选择：`a` 为全部；`b` VLESS Reality；`c` Hysteria2；`d` Tuic；`e` ShadowTLS；`f` Shadowsocks；`g` Trojan；`h` VMess WS；`i` VLESS WS TLS；`j` H2 Reality；`k` gRPC Reality；`l` AnyTLS；`m` NaiveProxy。
+
+节点名称优先级：单协议节点名 > 全局 `NODE_NAME_CONFIRM` > 默认主机名。支持的单协议变量包括 `NODE_NAME_XTLS_REALITY`、`NODE_NAME_HYSTERIA2`、`NODE_NAME_TUIC`、`NODE_NAME_SHADOWTLS`、`NODE_NAME_SHADOWSOCKS`、`NODE_NAME_TROJAN`、`NODE_NAME_VMESS_WS`、`NODE_NAME_VLESS_WS`、`NODE_NAME_H2_REALITY`、`NODE_NAME_GRPC_REALITY`、`NODE_NAME_ANYTLS`、`NODE_NAME_NAIVE`。
 
 ## Docker 使用
 
@@ -82,6 +85,8 @@ docker run -d --name sing-box --network host --restart unless-stopped \
   -e START_PORT=8881 \
   -e SERVER_IP=203.0.113.10 \
   -e SUBSCRIBE=true \
+  -e NODE_NAME_CONFIRM=sing-box \
+  -e NODE_NAME_HYSTERIA2=sing-box-hy2 \
   ghcr.io/qqqasdwx/sing-box:latest
 ```
 

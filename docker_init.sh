@@ -362,11 +362,10 @@ text() {
 # sing-box 协议分类：Reality 类 (b/j/k)、Hysteria2(c)、WS 类 (h/i)
 calc_install_steps() {
   local _total=5  # 固定步骤：协议选择、起始端口、VPS IP、UUID、节点名
-  local HAS_REALITY=false HAS_WS=false HAS_HY2=false
+  local HAS_REALITY=false HAS_WS=false
   for _P in "${INSTALL_PROTOCOLS[@]}"; do
     [[ "$_P" =~ ^[bjk]$ ]] && HAS_REALITY=true
     [[ "$_P" =~ ^[hi]$ ]] && HAS_WS=true
-    [[ "$_P" == 'c' ]] && HAS_HY2=true
   done
   [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]] && (( _total++ ))  # nginx 端口
   $HAS_REALITY && (( _total++ ))                # Reality 私钥
@@ -374,6 +373,63 @@ calc_install_steps() {
   # Hysteria2 Realm / WARP / Port Hopping are protocol sub-options and are not counted as install steps.
   [ "$IS_ARGO" = 'is_argo' ] && (( _total++ ))  # Argo 域名
   TOTAL_STEPS=$_total
+}
+
+parameter_value_from() {
+  local _idx=$1 _pos
+  local _values=()
+  for ((_pos=_idx; _pos<${#ALL_PARAMETER[@]}; _pos++)); do
+    [[ "${ALL_PARAMETER[_pos]}" =~ ^- ]] && break
+    _values+=("${ALL_PARAMETER[_pos]}")
+  done
+  printf '%s' "${_values[*]}"
+}
+
+apply_custom_node_names() {
+  [ -n "${NODE_NAME_XTLS_REALITY:-}" ] && NODE_NAME[11]=$NODE_NAME_XTLS_REALITY
+  [ -n "${NODE_NAME_HYSTERIA2:-}" ] && NODE_NAME[12]=$NODE_NAME_HYSTERIA2
+  [ -n "${NODE_NAME_TUIC:-}" ] && NODE_NAME[13]=$NODE_NAME_TUIC
+  [ -n "${NODE_NAME_SHADOWTLS:-}" ] && NODE_NAME[14]=$NODE_NAME_SHADOWTLS
+  [ -n "${NODE_NAME_SHADOWSOCKS:-}" ] && NODE_NAME[15]=$NODE_NAME_SHADOWSOCKS
+  [ -n "${NODE_NAME_TROJAN:-}" ] && NODE_NAME[16]=$NODE_NAME_TROJAN
+  [ -n "${NODE_NAME_VMESS_WS:-}" ] && NODE_NAME[17]=$NODE_NAME_VMESS_WS
+  [ -n "${NODE_NAME_VLESS_WS:-}" ] && NODE_NAME[18]=$NODE_NAME_VLESS_WS
+  [ -n "${NODE_NAME_H2_REALITY:-}" ] && NODE_NAME[19]=$NODE_NAME_H2_REALITY
+  [ -n "${NODE_NAME_GRPC_REALITY:-}" ] && NODE_NAME[20]=$NODE_NAME_GRPC_REALITY
+  [ -n "${NODE_NAME_ANYTLS:-}" ] && NODE_NAME[21]=$NODE_NAME_ANYTLS
+  [ -n "${NODE_NAME_NAIVE:-}" ] && NODE_NAME[22]=$NODE_NAME_NAIVE
+}
+
+array_contains() {
+  local _needle=$1 _item
+  shift
+  for _item in "$@"; do
+    [ "$_item" = "$_needle" ] && return 0
+  done
+  return 1
+}
+
+array_contains_any() {
+  local -n _haystack=$1
+  shift
+  local _needle
+  for _needle in "$@"; do
+    array_contains "$_needle" "${_haystack[@]}" && return 0
+  done
+  return 1
+}
+
+parameter_present() {
+  local _needle=${1^^} _item
+  shift
+  for _item in "$@"; do
+    [ "${_item^^}" = "$_needle" ] && return 0
+  done
+  return 1
+}
+
+first_matching_file() {
+  compgen -G "$1" | sed -n '1p'
 }
 
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
@@ -975,7 +1031,7 @@ input_nginx_port() {
   local PORT_NGINX_DEFAULT=$(shuf -i ${MIN_PORT}-${MAX_PORT} -n 1)
   [[ "$IS_FAST_INSTALL" = 'is_fast_install' && -z "$PORT_NGINX" ]] && PORT_NGINX="$PORT_NGINX_DEFAULT"
   while true; do
-    [[ "$PORT_ERROR_TIME" > 1 && "$PORT_ERROR_TIME" < 6 ]] && unset IN_USED PORT_NGINX
+    [[ "$PORT_ERROR_TIME" -gt 1 && "$PORT_ERROR_TIME" -lt 6 ]] && unset IN_USED PORT_NGINX
     (( PORT_ERROR_TIME-- )) || true
     if [ "$PORT_ERROR_TIME" = 0 ]; then
       error "\n $(text 3) \n"
@@ -1281,7 +1337,6 @@ change_argo() {
   export_nginx_conf_file
   export_list
 }
-
 check_root() {
   [ "$(id -u)" != 0 ] && error "\n $(text 43) \n"
 }
@@ -1556,7 +1611,7 @@ check_system_info() {
   [[ -z "$SYS" ]] && command -v lsb_release >/dev/null 2>&1 && SYS="$(lsb_release -sd)"
   [[ -z "$SYS" && -s /etc/lsb-release ]] && SYS="$(awk -F '"' 'tolower($0) ~ /distrib_description/{print $2}' /etc/lsb-release)"
   [[ -z "$SYS" && -s /etc/redhat-release ]] && SYS="$(cat /etc/redhat-release)"
-  [[ -z "$SYS" && -s /etc/issue ]] && SYS="$(sed -E '/^$|^\\/d' /etc/issue | awk -F '\\' '{print $1}' | sed 's/[ ]*$//g')"
+  [[ -z "$SYS" && -s /etc/issue ]] && SYS="$(sed -E '/^$|^\\/d; s/\\.*//; s/[ ]*$//g; q' /etc/issue)"
 
   REGEX=("debian" "ubuntu" "centos|red hat|kernel|alma|rocky" "arch linux" "alpine" "fedora")
   RELEASE=("Debian" "Ubuntu" "CentOS" "Arch" "Alpine" "Fedora")
@@ -1783,7 +1838,7 @@ check_system_ip() {
   [ "$L" = 'C' ] && local IS_CHINESE='?lang=zh-CN'
   local DEFAULT_LOCAL_INTERFACE4=$(ip -4 route show default | awk '/default/ {for (i=0; i<NF; i++) if ($i=="dev") {print $(i+1); exit}}')
   local DEFAULT_LOCAL_INTERFACE6=$(ip -6 route show default | awk '/default/ {for (i=0; i<NF; i++) if ($i=="dev") {print $(i+1); exit}}')
-  if [ -n ""${DEFAULT_LOCAL_INTERFACE4}${DEFAULT_LOCAL_INTERFACE6}"" ]; then
+  if [ -n "${DEFAULT_LOCAL_INTERFACE4}${DEFAULT_LOCAL_INTERFACE6}" ]; then
     local DEFAULT_LOCAL_IP4=$(ip -4 addr show $DEFAULT_LOCAL_INTERFACE4 | sed -n 's#.*inet \([^/]\+\)/[0-9]\+.*global.*#\1#gp')
     local DEFAULT_LOCAL_IP6=$(ip -6 addr show $DEFAULT_LOCAL_INTERFACE6 | sed -n 's#.*inet6 \([^/]\+\)/[0-9]\+.*global.*#\1#gp')
     [ -n "$DEFAULT_LOCAL_IP4" ] && local BIND_ADDRESS4="--bind-address=$DEFAULT_LOCAL_IP4"
@@ -1954,14 +2009,14 @@ sing-box_variables() {
   [ "$(check_chatgpt $(grep -oE '[46]' <<< "$STRATEGY"))" = 'unlock' ] && CHATGPT_OUT=direct
 
   # 如果选择有 b j k 这些 reality 协议，自定义 reality 公私钥，如果没有则自动生成
-  if [ "$NONINTERACTIVE_INSTALL" != 'noninteractive_install' ] && [[ "${INSTALL_PROTOCOLS[@]}" =~ 'b'|'j'|'k' ]]; then
+  if [ "$NONINTERACTIVE_INSTALL" != 'noninteractive_install' ] && array_contains_any INSTALL_PROTOCOLS b j k; then
     (( STEP_NUM++ )) || true
     input_reality_key
   fi
 
   # 如选择有 c. hysteria2 时，先选择 Realm / WARP，再选择是否使用端口跳跃。
   # 这三项属于 Hysteria2 子选项，不计入安装总步骤，也不显示步骤编号。
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ 'c' ]]; then
+  if array_contains c "${INSTALL_PROTOCOLS[@]}"; then
     input_hy2_realm
     local _SAVED_TOTAL_STEPS="$TOTAL_STEPS"
     TOTAL_STEPS=''
@@ -1970,7 +2025,7 @@ sing-box_variables() {
   fi
 
   # 如选择有 h. vmess + ws 或 i. vless + ws 时，先检测是否有支持的 http 端口可用，如有则要求输入域名和 cdn
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ 'h' ]]; then
+  if array_contains h "${INSTALL_PROTOCOLS[@]}"; then
     if [ "$IS_ARGO" = 'is_argo' ]; then
       if [ "$ARGO_READY" != 'argo_ready' ]; then
         (( STEP_NUM++ )) || true
@@ -1986,7 +2041,7 @@ sing-box_variables() {
     fi
   fi
 
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ 'i' ]]; then
+  if array_contains i "${INSTALL_PROTOCOLS[@]}"; then
     if [ "$IS_ARGO" = 'is_argo' ]; then
       if [ "$ARGO_READY" != 'argo_ready' ]; then
         (( STEP_NUM++ )) || true
@@ -2819,13 +2874,13 @@ http {
   [[ -n "$PORT_VMESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vmess websocket
     location /${UUID_CONFIRM}-vmess {
-      if (\$http_upgrade != "websocket") {
+      if (\$http_upgrade != \"websocket\") {
          return 404;
       }
       proxy_pass                          http://127.0.0.1:${PORT_VMESS_WS};
       proxy_http_version                  1.1;
       proxy_set_header Upgrade            \$http_upgrade;
-      proxy_set_header Connection         "upgrade";
+      proxy_set_header Connection         \"upgrade\";
       proxy_set_header X-Real-IP          \$remote_addr;
       proxy_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
       proxy_set_header Host               \$host;
@@ -2836,14 +2891,14 @@ http {
   [[ -n "$PORT_VLESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vless websocket
     location /${UUID_CONFIRM}-vless {
-      if (\$http_upgrade != "websocket") {
+      if (\$http_upgrade != \"websocket\") {
          return 404;
       }
       proxy_http_version                  1.1;
       proxy_pass                          https://127.0.0.1:${PORT_VLESS_WS};
       proxy_ssl_protocols                 TLSv1.3;
       proxy_set_header Upgrade            \$http_upgrade;
-      proxy_set_header Connection         "upgrade";
+      proxy_set_header Connection         \"upgrade\";
       proxy_set_header X-Real-IP          \$remote_addr;
       proxy_set_header X-Forwarded-For    \$proxy_add_x_forwarded_for;
       proxy_set_header Host               \$host;
@@ -2877,7 +2932,6 @@ http {
 
   echo "$NGINX_CONF" > ${WORK_DIR}/nginx.conf
 }
-
 # 生成 sing-box 配置文件
 sing-box_json() {
   local IS_CHANGE=$1
@@ -3104,14 +3158,14 @@ EOF
   TLS_SERVER=$(openssl x509 -noout -ext subjectAltName -in ${WORK_DIR}/cert/cert.pem 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
 
   # naive 在 -r 新增协议时，如 cert_200.pem 过期 / 缺失 / SNI 不一致则自动更新
-  [[ "${INSTALL_PROTOCOLS[@]}" =~ 'm' ]] && ssl_certificate "$TLS_SERVER" naive_only
+  array_contains m "${INSTALL_PROTOCOLS[@]}" && ssl_certificate "$TLS_SERVER" naive_only
 
   # 生成 2022-blake3-aes-128-gcm 的 password
   local SIP022_PASSWORD=${SIP022_PASSWORD:-"$(openssl rand -base64 16)"}
 
   # 第1个协议为 b  (a为全部)，生成 XTLS + Reality 配置
   CHECK_PROTOCOLS=b
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_XTLS_REALITY" ] && PORT_XTLS_REALITY=$(( START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}") ))
     NODE_NAME[11]=${NODE_NAME[11]:-"$NODE_NAME_CONFIRM"} && UUID[11]=${UUID[11]:-"$UUID_CONFIRM"} && REALITY_PRIVATE[11]=${REALITY_PRIVATE[11]:-"$REALITY_PRIVATE"} && REALITY_PUBLIC[11]=${REALITY_PUBLIC[11]:-"$REALITY_PUBLIC"} &&
     cat > ${WORK_DIR}/conf/11_${NODE_TAG[0]}_inbounds.json << EOF
@@ -3161,7 +3215,7 @@ EOF
 
   # 生成 Hysteria2 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_HYSTERIA2" ] && PORT_HYSTERIA2=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     [ "$IS_HOPPING" = 'is_hopping' ] && add_port_hopping_nat $PORT_HOPPING_START $PORT_HOPPING_END $PORT_HYSTERIA2
     NODE_NAME[12]=${NODE_NAME[12]:-"$NODE_NAME_CONFIRM"} && UUID[12]=${UUID[12]:-"$UUID_CONFIRM"}
@@ -3217,7 +3271,7 @@ EOF
 
   # 生成 Tuic V5 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_TUIC" ] && PORT_TUIC=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[13]=${NODE_NAME[13]:-"$NODE_NAME_CONFIRM"} && UUID[13]=${UUID[13]:-"$UUID_CONFIRM"} && TUIC_PASSWORD=${TUIC_PASSWORD:-"$UUID_CONFIRM"} && TUIC_CONGESTION_CONTROL=${TUIC_CONGESTION_CONTROL:-"bbr"}
     cat > ${WORK_DIR}/conf/13_${NODE_TAG[2]}_inbounds.json << EOF
@@ -3252,7 +3306,7 @@ EOF
 
   # 生成 ShadowTLS V5 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_SHADOWTLS" ] && PORT_SHADOWTLS=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[14]=${NODE_NAME[14]:-"$NODE_NAME_CONFIRM"} && UUID[14]=${UUID[14]:-"$UUID_CONFIRM"} && SHADOWTLS_PASSWORD=${SHADOWTLS_PASSWORD:-"$SIP022_PASSWORD"} && SHADOWTLS_METHOD=${SHADOWTLS_METHOD:-"2022-blake3-aes-128-gcm"}
 
@@ -3301,7 +3355,7 @@ EOF
 
   # 生成 Shadowsocks 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_SHADOWSOCKS" ] && PORT_SHADOWSOCKS=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[15]=${NODE_NAME[15]:-"$NODE_NAME_CONFIRM"} && SHADOWSOCKS_PASSWORD=${SHADOWSOCKS_PASSWORD:-"$SIP022_PASSWORD"} && SHADOWSOCKS_METHOD=${SHADOWSOCKS_METHOD:-"2022-blake3-aes-128-gcm"}
     cat > ${WORK_DIR}/conf/15_${NODE_TAG[4]}_inbounds.json << EOF
@@ -3331,7 +3385,7 @@ EOF
 
   # 生成 Trojan 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_TROJAN" ] && PORT_TROJAN=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[16]=${NODE_NAME[16]:-"$NODE_NAME_CONFIRM"} && TROJAN_PASSWORD=${TROJAN_PASSWORD:-"$UUID_CONFIRM"}
     cat > ${WORK_DIR}/conf/16_${NODE_TAG[5]}_inbounds.json << EOF
@@ -3369,7 +3423,7 @@ EOF
 
   # 生成 vmess + ws 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_VMESS_WS" ] && PORT_VMESS_WS=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[17]=${NODE_NAME[17]:-"$NODE_NAME_CONFIRM"} && UUID[17]=${UUID[17]:-"$UUID_CONFIRM"} && WS_SERVER_IP[17]=${WS_SERVER_IP[17]:-"$SERVER_IP"} && CDN[17]=${CDN[17]:-"$CDN"} && CDN_PORT[17]=${CDN_PORT[17]:-${CDN_PORT:-80}} && VMESS_WS_PATH=${VMESS_WS_PATH:-"${UUID[17]}-vmess"}
     cat > ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json << EOF
@@ -3415,7 +3469,7 @@ EOF
 
   # 生成 vless + ws + tls 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_VLESS_WS" ] && PORT_VLESS_WS=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[18]=${NODE_NAME[18]:-"$NODE_NAME_CONFIRM"} && UUID[18]=${UUID[18]:-"$UUID_CONFIRM"} && WS_SERVER_IP[18]=${WS_SERVER_IP[18]:-"$SERVER_IP"} && CDN[18]=${CDN[18]:-"$CDN"} && CDN_PORT[18]=${CDN_PORT[18]:-${CDN_PORT:-443}} && VLESS_WS_PATH=${VLESS_WS_PATH:-"${UUID[18]}-vless"}
     cat > ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json << EOF
@@ -3468,7 +3522,7 @@ EOF
 
   # 生成 H2 + Reality 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_H2_REALITY" ] && PORT_H2_REALITY=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[19]=${NODE_NAME[19]:-"$NODE_NAME_CONFIRM"} && UUID[19]=${UUID[19]:-"$UUID_CONFIRM"} && REALITY_PRIVATE[19]=${REALITY_PRIVATE[19]:-"$REALITY_PRIVATE"} && REALITY_PUBLIC[19]=${REALITY_PUBLIC[19]:-"$REALITY_PUBLIC"}
     cat > ${WORK_DIR}/conf/19_${NODE_TAG[8]}_inbounds.json << EOF
@@ -3520,7 +3574,7 @@ EOF
 
   # 生成 gRPC + Reality 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_GRPC_REALITY" ] && PORT_GRPC_REALITY=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[20]=${NODE_NAME[20]:-"$NODE_NAME_CONFIRM"} && UUID[20]=${UUID[20]:-"$UUID_CONFIRM"} && REALITY_PRIVATE[20]=${REALITY_PRIVATE[20]:-"$REALITY_PRIVATE"} && REALITY_PUBLIC[20]=${REALITY_PUBLIC[20]:-"$REALITY_PUBLIC"}
     cat > ${WORK_DIR}/conf/20_${NODE_TAG[9]}_inbounds.json << EOF
@@ -3573,7 +3627,7 @@ EOF
 
   # 生成 anytls 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_ANYTLS" ] && PORT_ANYTLS=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[21]=${NODE_NAME[21]:-"$NODE_NAME_CONFIRM"} && UUID[21]=${UUID[21]:-"$UUID_CONFIRM"}
 
@@ -3604,7 +3658,7 @@ EOF
 
   # 生成 naive 配置
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_NAIVE" ] && PORT_NAIVE=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[22]=${NODE_NAME[22]:-"$NODE_NAME_CONFIRM"} && UUID[22]=${UUID[22]:-"$UUID_CONFIRM"}
 
@@ -3809,12 +3863,23 @@ fetch_nodes_value() {
   PORT_NGINX=$(awk '/listen/{print $2; exit}' <<< "$NGINX_JSON") &&
   UUID_CONFIRM=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' <<< "$NGINX_JSON" | sed -n '1p')
 
+  local NODE_CONF JSON
+
   # 获取 XTLS + Reality key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[0]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[0]}_inbounds.json) && NODE_NAME[11]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[0]}.*/\1/p" <<< "$JSON") && PORT_XTLS_REALITY=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && UUID[11]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON") && REALITY_PRIVATE[11]=$(awk -F '"' '/"private_key"/{print $4}' <<< "$JSON") && REALITY_PUBLIC[11]=$(awk -F '"' '/"public_key"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[0]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[11]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[0]}.*/\1/p" <<< "$JSON")
+    PORT_XTLS_REALITY=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    UUID[11]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
+    REALITY_PRIVATE[11]=$(awk -F '"' '/"private_key"/{print $4}' <<< "$JSON")
+    REALITY_PUBLIC[11]=$(awk -F '"' '/"public_key"/{print $4}' <<< "$JSON")
+  fi
 
   # 获取 Hysteria2 key-value
-  if [ -s ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json ]; then
-    local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json)
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
     NODE_NAME[12]=$(awk -F '"' -v suffix=" ${NODE_TAG[1]}" '/"tag"[[:space:]]*:/ {v=$4; sub(suffix"$", "", v); print v; exit}' <<< "$JSON")
     PORT_HYSTERIA2=$(awk -F ':' '/"listen_port"[[:space:]]*:/ {gsub(/[[:space:],]/, "", $2); print $2; exit}' <<< "$JSON")
     UUID[12]=$(awk -F '"' '/"password"[[:space:]]*:/ {count++; if (count == 1) {print $4; exit}}' <<< "$JSON")
@@ -3832,34 +3897,119 @@ fetch_nodes_value() {
   fi
 
   # 获取 Tuic V5 key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[2]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[2]}_inbounds.json) && NODE_NAME[13]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[2]}.*/\1/p" <<< "$JSON") && PORT_TUIC=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && UUID[13]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON") && TUIC_PASSWORD=$(awk -F '"' '/"password"/{print $4}' <<< "$JSON") && TUIC_CONGESTION_CONTROL=$(awk -F '"' '/"congestion_control"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[2]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[13]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[2]}.*/\1/p" <<< "$JSON")
+    PORT_TUIC=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    UUID[13]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
+    TUIC_PASSWORD=$(awk -F '"' '/"password"/{print $4}' <<< "$JSON")
+    TUIC_CONGESTION_CONTROL=$(awk -F '"' '/"congestion_control"/{print $4}' <<< "$JSON")
+  fi
 
   # 获取 ShadowTLS key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[3]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[3]}_inbounds.json) && NODE_NAME[14]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[3]}.*/\1/p" <<< "$JSON") && PORT_SHADOWTLS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && UUID[14]=$(awk -F '"' '/"password"/{count++; if (count == 1) {print $4; exit}}' <<< "$JSON") && SHADOWTLS_PASSWORD=$(awk -F '"' '/"password"/{count++; if (count == 2) {print $4; exit}}' <<< "$JSON") && SHADOWTLS_METHOD=$(awk -F '"' '/"method"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[3]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[14]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[3]}.*/\1/p" <<< "$JSON")
+    PORT_SHADOWTLS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    UUID[14]=$(awk -F '"' '/"password"/{count++; if (count == 1) {print $4; exit}}' <<< "$JSON")
+    SHADOWTLS_PASSWORD=$(awk -F '"' '/"password"/{count++; if (count == 2) {print $4; exit}}' <<< "$JSON")
+    SHADOWTLS_METHOD=$(awk -F '"' '/"method"/{print $4}' <<< "$JSON")
+  fi
 
   # 获取 Shadowsocks key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[4]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[4]}_inbounds.json) && NODE_NAME[15]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[4]}.*/\1/p" <<< "$JSON") && PORT_SHADOWSOCKS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && SHADOWSOCKS_PASSWORD=$(awk -F '"' '/"password"/{print $4}' <<< "$JSON") && SHADOWSOCKS_METHOD=$(awk -F '"' '/"method"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[4]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[15]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[4]}.*/\1/p" <<< "$JSON")
+    PORT_SHADOWSOCKS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    SHADOWSOCKS_PASSWORD=$(awk -F '"' '/"password"/{print $4}' <<< "$JSON")
+    SHADOWSOCKS_METHOD=$(awk -F '"' '/"method"/{print $4}' <<< "$JSON")
+  fi
 
   # 获取 Trojan key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[5]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[5]}_inbounds.json) && NODE_NAME[16]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[5]}.*/\1/p" <<< "$JSON") && PORT_TROJAN=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && TROJAN_PASSWORD=$(awk -F '"' '/"password"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[5]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[16]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[5]}.*/\1/p" <<< "$JSON")
+    PORT_TROJAN=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    TROJAN_PASSWORD=$(awk -F '"' '/"password"/{print $4}' <<< "$JSON")
+  fi
 
   # 获取 vmess + ws key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[6]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[6]}_inbounds.json) && NODE_NAME[17]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[6]}.*/\1/p" <<< "$JSON") && PORT_VMESS_WS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && UUID[17]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON") && VMESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON") && WS_SERVER_IP[17]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON") && CDN[17]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON") && [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] && ARGO_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON") || VMESS_HOST_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[6]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[17]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[6]}.*/\1/p" <<< "$JSON")
+    PORT_VMESS_WS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    UUID[17]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
+    VMESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
+    WS_SERVER_IP[17]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
+    CDN[17]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
+    if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
+      ARGO_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON")
+    else
+      VMESS_HOST_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON")
+    fi
+  fi
 
   # 获取 vless + ws + tls key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[7]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[7]}_inbounds.json) && NODE_NAME[18]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[7]}.*/\1/p" <<< "$JSON") && PORT_VLESS_WS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && UUID[18]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON") && VLESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON") && WS_SERVER_IP[18]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON") && CDN[18]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON") && [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] && ARGO_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON") || VLESS_HOST_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[7]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[18]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[7]}.*/\1/p" <<< "$JSON")
+    PORT_VLESS_WS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    UUID[18]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
+    VLESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
+    WS_SERVER_IP[18]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
+    CDN[18]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
+    if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
+      ARGO_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON")
+    else
+      VLESS_HOST_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON")
+    fi
+  fi
 
   # 获取 H2 + Reality key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[8]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[8]}_inbounds.json) && NODE_NAME[19]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[8]}.*/\1/p" <<< "$JSON") && PORT_H2_REALITY=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && UUID[19]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON") && REALITY_PRIVATE[19]=$(awk -F '"' '/"private_key"/{print $4}' <<< "$JSON") && REALITY_PUBLIC[19]=$(awk -F '"' '/"public_key"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[8]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[19]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[8]}.*/\1/p" <<< "$JSON")
+    PORT_H2_REALITY=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    UUID[19]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
+    REALITY_PRIVATE[19]=$(awk -F '"' '/"private_key"/{print $4}' <<< "$JSON")
+    REALITY_PUBLIC[19]=$(awk -F '"' '/"public_key"/{print $4}' <<< "$JSON")
+  fi
 
   # 获取 gRPC + Reality key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[9]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[9]}_inbounds.json) && NODE_NAME[20]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[9]}.*/\1/p" <<< "$JSON") && PORT_GRPC_REALITY=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && UUID[20]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON") && REALITY_PRIVATE[20]=$(awk -F '"' '/"private_key"/{print $4}' <<< "$JSON") && REALITY_PUBLIC[20]=$(awk -F '"' '/"public_key"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[9]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[20]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[9]}.*/\1/p" <<< "$JSON")
+    PORT_GRPC_REALITY=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    UUID[20]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
+    REALITY_PRIVATE[20]=$(awk -F '"' '/"private_key"/{print $4}' <<< "$JSON")
+    REALITY_PUBLIC[20]=$(awk -F '"' '/"public_key"/{print $4}' <<< "$JSON")
+  fi
 
   # 获取 anytls key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[10]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[10]}_inbounds.json) && NODE_NAME[21]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[10]}.*/\1/p" <<< "$JSON") && PORT_ANYTLS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && UUID[21]=$(awk -F '"' '/"password"/{print $4}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[10]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[21]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[10]}.*/\1/p" <<< "$JSON")
+    PORT_ANYTLS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    UUID[21]=$(awk -F '"' '/"password"/{print $4}' <<< "$JSON")
+  fi
 
   # 获取 naive key-value
-  [ -s ${WORK_DIR}/conf/*_${NODE_TAG[11]}_inbounds.json ] && local JSON=$(cat ${WORK_DIR}/conf/*_${NODE_TAG[11]}_inbounds.json) && NODE_NAME[22]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[11]}.*/\1/p" <<< "$JSON") && PORT_NAIVE=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON") && UUID[22]=$(awk -F '"' '/"username"/{print $4; exit}' <<< "$JSON")
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[11]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[22]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[11]}.*/\1/p" <<< "$JSON")
+    PORT_NAIVE=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
+    UUID[22]=$(awk -F '"' '/"username"/{print $4; exit}' <<< "$JSON")
+  fi
 }
 
 # 获取 Argo 临时隧道域名
@@ -3883,7 +4033,6 @@ fetch_quicktunnel_domain() {
   [ -s ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json ] && sed -i "s/VMESS_HOST_DOMAIN.*/VMESS_HOST_DOMAIN\": \"$ARGO_DOMAIN\"/" ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json
   [ -s ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json ] && sed -i "s/\"server_name\":.*/\"server_name\": \"$ARGO_DOMAIN\",/" ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json
 }
-
 # 安装 sing-box 全家桶
 install_sing-box() {
   sing-box_variables
@@ -4124,7 +4273,7 @@ export_list() {
     CLASH2_PROXY_GROUPS_INSERT=("- ${NODE_NAME[11]} ${NODE_TAG[0]}" "- ${NODE_NAME[12]} ${NODE_TAG[1]}" "- ${NODE_NAME[13]} ${NODE_TAG[2]}" "- ${NODE_NAME[14]} ${NODE_TAG[3]}" "- ${NODE_NAME[15]} ${NODE_TAG[4]}" "- ${NODE_NAME[16]} ${NODE_TAG[5]}" "- ${NODE_NAME[17]} ${NODE_TAG[6]}" "- ${NODE_NAME[18]} ${NODE_TAG[7]}" "- ${NODE_NAME[20]} ${NODE_TAG[9]}" "- ${NODE_NAME[21]} ${NODE_TAG[10]}")
 
     CLASH2_YAML=$(cat ${TEMP_DIR}/clash2)
-    for x in ${!CLASH2_PORT[@]}; do
+    for x in "${!CLASH2_PORT[@]}"; do
       [[ ${CLASH2_PORT[x]} =~ [0-9]+ ]] && { CLASH2_YAML=$(sed "/proxy-groups:/i\  ${CLASH2_PROXY_INSERT[x]}" <<< "$CLASH2_YAML"); CLASH2_YAML=$(sed -E "/- name: (♻️ 自动选择|📲 电报消息|💬 OpenAi|📹 油管视频|🎥 奈飞视频|📺 巴哈姆特|📺 哔哩哔哩|🌍 国外媒体|🌏 国内媒体|📢 谷歌FCM|Ⓜ️ 微软Bing|Ⓜ️ 微软云盘|Ⓜ️ 微软服务|🍎 苹果服务|🎮 游戏平台|🎶 网易音乐|🎯 全球直连)|^rules:$/i\      ${CLASH2_PROXY_GROUPS_INSERT[x]}" <<< "$CLASH2_YAML"); }
     done
     echo "$CLASH2_YAML" > ${WORK_DIR}/subscribe/clash2
@@ -4708,7 +4857,9 @@ change_protocols() {
 
   # 查找已安装的协议，并遍历其在所有协议列表中的名称，获取协议名后存放在 EXISTED_PROTOCOLS; 没有的协议存放在 NOT_EXISTED_PROTOCOLS
   INSTALLED_PROTOCOLS_LIST=$(awk -F '"' '/"tag":/{print $4}' ${WORK_DIR}/conf/*_inbounds.json | grep -v 'shadowtls-in' | awk '{print $NF}')
-  for f in ${!NODE_TAG[@]}; do [[ $INSTALLED_PROTOCOLS_LIST =~ "${NODE_TAG[f]}" ]] && EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}") || NOT_EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}"); done
+  for f in "${!NODE_TAG[@]}"; do
+    [[ $INSTALLED_PROTOCOLS_LIST =~ ${NODE_TAG[f]} ]] && EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}") || NOT_EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}")
+  done
 
   # 列出已安装协议
   hint "\n $(text 136) (${#EXISTED_PROTOCOLS[@]})"
@@ -4726,7 +4877,7 @@ change_protocols() {
   done
 
   for k in "${EXISTED_PROTOCOLS[@]}"; do
-    [[ ! "${REMOVE_PROTOCOLS[@]}" =~ "$k" ]] && KEEP_PROTOCOLS+=("$k")
+    array_contains "$k" "${REMOVE_PROTOCOLS[@]}" || KEEP_PROTOCOLS+=("$k")
   done
 
   # 如有未安装的协议，列表显示并选择安装，把增加的协议存在放在 ADD_PROTOCOLS
@@ -4776,7 +4927,7 @@ change_protocols() {
   fetch_nodes_value
 
   # 用于新节点的配置信息
-  UUID_CONFIRM=$(awk '{print $1}' <<< "${UUID[@]} $TROJAN_PASSWORD")
+  UUID_CONFIRM=$(awk '{print $1}' <<< "${UUID[*]} $TROJAN_PASSWORD")
   for v in "${NODE_NAME[@]}"; do
     [ -n "$v" ] && NODE_NAME_CONFIRM="$v" && break
   done
@@ -4784,7 +4935,7 @@ change_protocols() {
 
   # 寻找待删除协议的 inbound 文件名
   for o in "${REMOVE_PROTOCOLS[@]}"; do
-    for s in ${!PROTOCOL_LIST[@]}; do
+    for s in "${!PROTOCOL_LIST[@]}"; do
       [ "$o" = "${PROTOCOL_LIST[s]}" ] && REMOVE_FILE+=("${NODE_TAG[s]}_inbounds.json")
     done
   done
@@ -4806,15 +4957,15 @@ change_protocols() {
 
   # 根据全部协议，找到空余的端口号
   for q in "${!REINSTALL_PROTOCOLS[@]}"; do
-    [[ ! ${KEEP_PORTS[@]} =~ $[START_PORT + q] ]] && ADD_PORTS+=($[START_PORT + q])
+    array_contains "$((START_PORT + q))" "${KEEP_PORTS[@]}" || ADD_PORTS+=("$((START_PORT + q))")
   done
 
   # 所有协议的端口号
-  REINSTALL_PORTS=(${KEEP_PORTS[@]} ${ADD_PORTS[@]})
+  REINSTALL_PORTS=("${KEEP_PORTS[@]}" "${ADD_PORTS[@]}")
 
   CHECK_PROTOCOLS=b
   # 获取 Reality 端口
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_XTLS_REALITY=${REINSTALL_PORTS[POSITION]}
     NEED_PRIVATE_KEY='need_private_key'
@@ -4824,7 +4975,7 @@ change_protocols() {
 
   # 获取 Hysteria2 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_HYSTERIA2=${REINSTALL_PORTS[POSITION]}
     if [[ " ${ADD_PROTOCOLS[*]} " =~ " ${PROTOCOL_LIST[1]} " ]] && [ -z "$IS_HY2_REALM" ]; then
@@ -4837,7 +4988,7 @@ change_protocols() {
 
   # 获取 Tuic V5 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_TUIC=${REINSTALL_PORTS[POSITION]}
   else
@@ -4846,14 +4997,14 @@ change_protocols() {
 
   # 获取 ShadowTLS 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_SHADOWTLS=${REINSTALL_PORTS[POSITION]}
   fi
 
   # 获取 Shadowsocks 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_SHADOWSOCKS=${REINSTALL_PORTS[POSITION]}
   else
@@ -4862,7 +5013,7 @@ change_protocols() {
 
   # 获取 Trojan 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_TROJAN=${REINSTALL_PORTS[POSITION]}
   else
@@ -4881,7 +5032,7 @@ change_protocols() {
 
   # 获取 vmess + ws 配置信息
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     local DOMAIN_ERROR_TIME=5
     if [[ "$ARGO_READY" != 'argo_ready' || "$ORIGIN_READY" != 'origin_ready' ]]; then
       if [ "$ARGO_ORIGIN_RULES_STATUS" = 'is_origin' ]; then
@@ -4916,7 +5067,7 @@ change_protocols() {
 
   # 获取 vless + ws + tls 配置信息
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     local DOMAIN_ERROR_TIME=5
     if [[ "$ARGO_READY" != 'argo_ready' || "$ORIGIN_READY" != 'origin_ready' ]]; then
       if [ "$ARGO_ORIGIN_RULES_STATUS" = 'is_origin' ]; then
@@ -4980,7 +5131,7 @@ change_protocols() {
 
   # 获取 H2 + Reality 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_H2_REALITY=${REINSTALL_PORTS[POSITION]}
     NEED_PRIVATE_KEY='need_private_key'
@@ -4990,7 +5141,7 @@ change_protocols() {
 
   # 获取 gRPC + Reality 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_GRPC_REALITY=${REINSTALL_PORTS[POSITION]}
     NEED_PRIVATE_KEY='need_private_key'
@@ -5010,7 +5161,7 @@ change_protocols() {
 
   # 获取 anytls 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_ANYTLS=${REINSTALL_PORTS[POSITION]}
   else
@@ -5019,7 +5170,7 @@ change_protocols() {
 
   # 获取 naive 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_NAIVE=${REINSTALL_PORTS[POSITION]}
   else
@@ -5152,6 +5303,9 @@ version() {
 
 # 判断当前 Sing-box 的运行状态，并对应的给菜单和动作赋值
 menu_setting() {
+  OPTION=()
+  ACTION=()
+
   if [[ "${STATUS[0]}" =~ $(text 27)|$(text 28) ]]; then
     OPTION[1]="1 .  $(text 29)"
     [ "${STATUS[0]}" = "$(text 28)" ] && OPTION[2]="2 .  $(text 27) Sing-box (sb -s)" || OPTION[2]="2 .  $(text 28) Sing-box (sb -s)"
@@ -5166,40 +5320,57 @@ menu_setting() {
     OPTION[11]="11.  $(text 69)"
     OPTION[12]="12.  $(text 76)"
 
-    ACTION[1]() { export_list; exit 0; }
+    menu_action_export_list() { export_list; exit 0; }
 
-    [ "${STATUS[0]}" = "$(text 28)" ] &&
-    ACTION[2]() {
-      cmd_systemctl disable sing-box
-      cmd_systemctl status sing-box &>/dev/null && error " Sing-box $(text 27) $(text 38) " || info " Sing-box $(text 27) $(text 37)"
-    } ||
-    ACTION[2]() {
-      cmd_systemctl enable sing-box
-      sleep 2
-      cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 28) $(text 37)" || error " Sing-box $(text 28) $(text 38) "
-    }
+    if [ "${STATUS[0]}" = "$(text 28)" ]; then
+      menu_action_toggle_sing_box() {
+        cmd_systemctl disable sing-box
+        cmd_systemctl status sing-box &>/dev/null && error " Sing-box $(text 27) $(text 38) " || info " Sing-box $(text 27) $(text 37)"
+      }
+    else
+      menu_action_toggle_sing_box() {
+        cmd_systemctl enable sing-box
+        sleep 2
+        cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 28) $(text 37)" || error " Sing-box $(text 28) $(text 38) "
+      }
+    fi
 
-    [ "${STATUS[1]}" = "$(text 28)" ] &&
-    ACTION[3]() {
-      cmd_systemctl disable argo
-      cmd_systemctl status argo &>/dev/null && error " Argo $(text 27) $(text 38) " || info " Argo $(text 27) $(text 37)"
-    } ||
-    ACTION[3]() {
-      cmd_systemctl enable argo
-      sleep 2
-      cmd_systemctl status argo &>/dev/null &&  info " Argo $(text 28) $(text 37)" || error " Argo $(text 28) $(text 38) "
-      grep -qs '\--url' ${ARGO_DAEMON_FILE} && fetch_quicktunnel_domain && export_list
-    }
+    if [ "${STATUS[1]}" = "$(text 28)" ]; then
+      menu_action_toggle_argo() {
+        cmd_systemctl disable argo
+        cmd_systemctl status argo &>/dev/null && error " Argo $(text 27) $(text 38) " || info " Argo $(text 27) $(text 37)"
+      }
+    else
+      menu_action_toggle_argo() {
+        cmd_systemctl enable argo
+        sleep 2
+        cmd_systemctl status argo &>/dev/null &&  info " Argo $(text 28) $(text 37)" || error " Argo $(text 28) $(text 38) "
+        grep -qs '\--url' ${ARGO_DAEMON_FILE} && fetch_quicktunnel_domain && export_list
+      }
+    fi
 
-    ACTION[4]() { change_argo; exit; }
-    ACTION[5]() { change_config; exit; }
-    ACTION[6]() { version; exit; }
-    ACTION[7]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
-    ACTION[8]() { change_protocols; exit; }
-    ACTION[9]() { uninstall; exit; }
-    ACTION[10]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    ACTION[11]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    ACTION[12]() { bash <(wget --no-check-certificate -qO- https://tcp.hy2.sh/); exit; }
+    menu_action_change_argo() { change_argo; exit; }
+    menu_action_change_config() { change_config; exit; }
+    menu_action_version() { version; exit; }
+    menu_action_bbr() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
+    menu_action_change_protocols() { change_protocols; exit; }
+    menu_action_uninstall() { uninstall; exit; }
+    menu_action_argox() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
+    menu_action_sba() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
+    menu_action_hy2_tcp() { bash <(wget --no-check-certificate -qO- https://tcp.hy2.sh/); exit; }
+
+    ACTION[1]=menu_action_export_list
+    ACTION[2]=menu_action_toggle_sing_box
+    ACTION[3]=menu_action_toggle_argo
+    ACTION[4]=menu_action_change_argo
+    ACTION[5]=menu_action_change_config
+    ACTION[6]=menu_action_version
+    ACTION[7]=menu_action_bbr
+    ACTION[8]=menu_action_change_protocols
+    ACTION[9]=menu_action_uninstall
+    ACTION[10]=menu_action_argox
+    ACTION[11]=menu_action_sba
+    ACTION[12]=menu_action_hy2_tcp
   else
     OPTION[1]="1.  $(text 115)"
     OPTION[2]="2.  $(text 34) + Argo + $(text 80) $(text 89)"
@@ -5211,19 +5382,42 @@ menu_setting() {
     OPTION[8]="8.  $(text 69)"
     OPTION[9]="9.  $(text 76)"
 
-    ACTION[1]() { IS_FAST_INSTALL='is_fast_install'; CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}; START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}; CDN=${CDN:-"${CDN_DOMAIN[0]}"}; IS_SUB='is_sub'; IS_ARGO='is_argo'; HY2_PORT_HOPPING_RANGE=${HY2_PORT_HOPPING_RANGE:-'50000:51000'}; install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[2]() { IS_SUB=is_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[3]() { IS_SUB=no_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[4]() { IS_SUB=is_sub; IS_ARGO=no_argo; install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[5]() { install_sing-box; export_list install; create_shortcut; exit; }
-    ACTION[6]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
-    ACTION[7]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    ACTION[8]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    ACTION[9]() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://tcp.hy2.sh/); exit; }
+    menu_action_fast_install() {
+      IS_FAST_INSTALL='is_fast_install'
+      CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
+      START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
+      CDN=${CDN:-"${CDN_DOMAIN[0]}"}
+      IS_SUB='is_sub'
+      IS_ARGO='is_argo'
+      HY2_PORT_HOPPING_RANGE=${HY2_PORT_HOPPING_RANGE:-'50000:51000'}
+      install_sing-box
+      export_list install
+      create_shortcut
+      exit
+    }
+    menu_action_install_with_argo_sub() { IS_SUB=is_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
+    menu_action_install_with_argo() { IS_SUB=no_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
+    menu_action_install_with_sub() { IS_SUB=is_sub; IS_ARGO=no_argo; install_sing-box; export_list install; create_shortcut; exit; }
+    menu_action_install() { install_sing-box; export_list install; create_shortcut; exit; }
+    menu_action_bbr() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
+    menu_action_argox() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
+    menu_action_sba() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
+    menu_action_hy2_tcp() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://tcp.hy2.sh/); exit; }
+
+    ACTION[1]=menu_action_fast_install
+    ACTION[2]=menu_action_install_with_argo_sub
+    ACTION[3]=menu_action_install_with_argo
+    ACTION[4]=menu_action_install_with_sub
+    ACTION[5]=menu_action_install
+    ACTION[6]=menu_action_bbr
+    ACTION[7]=menu_action_argox
+    ACTION[8]=menu_action_sba
+    ACTION[9]=menu_action_hy2_tcp
   fi
 
   [ "${#OPTION[@]}" -ge '10' ] && OPTION[0]="0 .  $(text 35)" || OPTION[0]="0.  $(text 35)"
-  ACTION[0]() { exit; }
+  menu_action_exit() { exit; }
+  ACTION[0]=menu_action_exit
 }
 
 menu() {
@@ -5251,7 +5445,7 @@ menu() {
 
   # 输入必须是数字且少于等于最大可选项
   if grep -qE "^[0-9]{1,2}$" <<< "$CHOOSE" && [ "$CHOOSE" -lt "${#OPTION[*]}" ]; then
-    ACTION[$CHOOSE]
+    "${ACTION[$CHOOSE]}"
   else
     warning " $(text 36) [0-$((${#OPTION[*]}-1))] " && sleep 1 && menu
   fi
@@ -5342,6 +5536,7 @@ docker_prepare_env() {
   CDN=${CDN:-"${CDN_DOMAIN[0]}"}
   UUID_CONFIRM=${UUID_CONFIRM:-"$UUID"}
   NODE_NAME_CONFIRM=${NODE_NAME_CONFIRM:-"$NODE_NAME"}
+  apply_custom_node_names
   TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
 
   docker_false "$SUBSCRIBE" && IS_SUB=no_sub || IS_SUB=is_sub
