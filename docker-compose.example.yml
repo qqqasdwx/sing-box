@@ -38,7 +38,7 @@ services:
       # ARGO_AUTH: "" # 条件必填：填写 ARGO_DOMAIN 时必填，可用 Json、Tunnel Token 或 Cloudflare API Token。
       # ARGO_METRICS_PORT: "" # 可选：临时 Argo 隧道 metrics 端口。脚本默认值：从 PORT_NGINX + 1 开始选择空闲本地端口。
       # CDN: "" # 可选：WS 节点的 CDN 域名。脚本默认值：skk.moe。
-      # CDN_PORT: "" # 可选：WS CDN 端口。脚本默认值：VMess WS 为 80，VLESS WS TLS 为 443。
+      # CDN_PORT: "" # 可选：WS 客户端连接端口。脚本默认值：VMess WS 为 80，VLESS WS TLS 为 443。
 
       # b. VLESS Reality
       # XTLS_REALITY: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
@@ -91,14 +91,14 @@ services:
 
       # h. VMess WebSocket
       # VMESS_WS: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
-      # PORT_VMESS_WS: "" # 可选：h 协议监听端口。脚本默认值：START_PORT + h 在 CHOOSE_PROTOCOLS 中的位置。
+      # PORT_VMESS_WS: "" # 可选：h 协议源站监听端口；客户端走 CDN_PORT，通常无需填写。Argo 下是本机内部回源端口，Origin Rules 下是 Cloudflare 回源端口。脚本默认值：START_PORT + h 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_VMESS_WS: "" # 可选：单协议节点名。
       # VMESS_HOST_DOMAIN: "" # 条件必填：选择 h 且 ARGO=false 时必填。
       # VMESS_WS_PATH: "" # 可选：WS 路径。脚本默认值：<VMess UUID>-vmess；固定 UUID_CONFIRM 后稳定。
 
       # i. VLESS WebSocket TLS
       # VLESS_WS: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
-      # PORT_VLESS_WS: "" # 可选：i 协议监听端口。脚本默认值：START_PORT + i 在 CHOOSE_PROTOCOLS 中的位置。
+      # PORT_VLESS_WS: "" # 可选：i 协议源站监听端口；客户端走 CDN_PORT，通常无需填写。Argo 下是本机内部回源端口，Origin Rules 下是 Cloudflare 回源端口。脚本默认值：START_PORT + i 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_VLESS_WS: "" # 可选：单协议节点名。
       # VLESS_HOST_DOMAIN: "" # 条件必填：选择 i 且 ARGO=false 时必填。
       # VLESS_WS_PATH: "" # 可选：WS 路径。脚本默认值：<VLESS UUID>-vless；固定 UUID_CONFIRM 后稳定。
