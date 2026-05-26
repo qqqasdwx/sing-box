@@ -1,0 +1,111 @@
+# qqqasdwx/sing-box Docker Compose 示例。
+# 使用方法：cp docker-compose.example.yml docker-compose.yml && docker compose up -d
+#
+# Docker 入口会在每次容器启动时重新生成配置。标记为“建议固定”的变量如果不填写，
+# 重启或重建后客户端链接、密码、节点名或临时域名可能变化。
+
+services:
+  sing-box:
+    image: ghcr.io/qqqasdwx/sing-box:latest
+    container_name: sing-box
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      # 全局选择
+      # 协议代码：a=全部；b=VLESS Reality；c=Hysteria2；d=Tuic V5；e=ShadowTLS；f=Shadowsocks；
+      # g=Trojan；h=VMess WebSocket；i=VLESS WebSocket TLS；j=H2 Reality；k=gRPC Reality；l=AnyTLS；m=NaiveProxy。
+      # 脚本默认值：不填写 CHOOSE_PROTOCOLS 且不启用单协议开关时为 a，即全部协议。
+      # 示例 bcf = VLESS Reality + Hysteria2 + Shadowsocks。设置 CHOOSE_PROTOCOLS 后会忽略下面的单协议开关。
+      CHOOSE_PROTOCOLS: "bcf"
+      SUBSCRIBE: "true" # 建议必填：是否启用订阅；true/false。脚本默认值：true。
+      ARGO: "false" # 建议必填：是否启用 Argo；true/false。脚本默认值：true。
+
+      # 全局基础项
+      # LANGUAGE: # 可选：c=中文，e=英文。脚本默认值：c。
+      # START_PORT: # 可选：第一个协议端口。脚本默认值：8881。
+      # PORT_NGINX: # 可选：订阅/Argo 的 nginx 端口。脚本默认值：启用订阅或 Argo 时为 START_PORT + 已选协议数量。
+      # SERVER_IP: # 可选：服务器公网 IPv4/IPv6。脚本默认值：自动检测公网 IP，优先 IPv4；无 IPv4 时用 IPv6。
+      # TLS_SERVER: # 可选：SNI/证书域名。脚本默认值：addons.mozilla.org。
+      # NODE_NAME_CONFIRM: # 建议固定：全局节点名。脚本默认值：检测到的国家/地区 emoji + 容器 hostname。
+
+      # 全局身份凭据
+      # UUID_CONFIRM: # 建议固定：全局 UUID。未填写时每次启动随机生成，会影响 b/c/d/g/h/i/j/k/l/m 协议。
+      #   生成命令：docker run --rm ghcr.io/qqqasdwx/sing-box:latest sh -lc 'cat /proc/sys/kernel/random/uuid'
+
+      # Argo 与 WebSocket 共用项
+      # ARGO_DOMAIN: # 建议固定：ARGO=true 且留空时使用 trycloudflare 临时域名，重启或重建会变化；固定域名示例 sb.example.com。
+      # ARGO_AUTH: # 条件必填：填写 ARGO_DOMAIN 时必填，可用 Json、Tunnel Token 或 Cloudflare API Token。
+      # ARGO_METRICS_PORT: # 可选：临时 Argo 隧道 metrics 端口。脚本默认值：从 PORT_NGINX + 1 开始选择空闲本地端口。
+      # CDN: # 可选：WS 节点的 CDN 域名。脚本默认值：skk.moe。
+      # CDN_PORT: # 可选：WS CDN 端口。脚本默认值：VMess WS 为 80，VLESS WS TLS 为 443。
+
+      # b. VLESS Reality
+      # XTLS_REALITY: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_XTLS_REALITY: # 可选：单协议节点名。
+      # REALITY_PRIVATE: # 建议固定：Reality 私钥。未填写时每次启动由 sing-box 生成，会影响 b/j/k 协议。
+      #   生成命令：docker run --rm ghcr.io/sagernet/sing-box:latest generate reality-keypair | awk '/PrivateKey/{print $NF}'
+
+      # c. Hysteria2
+      # HYSTERIA2: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_HYSTERIA2: # 可选：单协议节点名。
+      # HY2_PORT_HOPPING_RANGE: # 可选：端口跳跃范围，格式 start:end，例如 50000:51000；Docker 不管理宿主机 NAT。
+      # HY2_REALM: # 可选：true/false；启用 Hysteria2 Realm。
+      # REALM: # 可选：HY2_REALM 的旧别名。
+      # HY2_WARP: # 可选：true/false；启用 WARP 辅助 Realm，并隐含 HY2_REALM=true。
+      # REALM_WARP: # 可选：HY2_WARP 的旧别名。
+      # HY2_REALM_ID: # 可选：Realm ID。脚本默认值：Hysteria2 的 UUID。
+      # HY2_UP: # 可选：导出的客户端上行 Mbps。脚本默认值：200。
+      # HY2_DOWN: # 可选：导出的客户端下行 Mbps。脚本默认值：1000。
+
+      # d. Tuic V5
+      # TUIC: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_TUIC: # 可选：单协议节点名。
+      # TUIC_PASSWORD: # 可选：Tuic 密码。脚本默认值：UUID_CONFIRM；固定 UUID_CONFIRM 后无需单独填写。
+      # TUIC_CONGESTION_CONTROL: # 可选：Tuic 拥塞控制。脚本默认值：bbr。
+
+      # e. ShadowTLS
+      # SHADOWTLS: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_SHADOWTLS: # 可选：单协议节点名。
+      # SHADOWTLS_PASSWORD: # 建议固定：未填写时每次启动随机生成。若同时启用 Shadowsocks，建议与 SHADOWSOCKS_PASSWORD 填同一个值。
+      #   生成命令：docker run --rm ghcr.io/qqqasdwx/sing-box:latest sh -lc 'openssl rand -base64 16'
+      # SHADOWTLS_METHOD: # 可选：ShadowTLS 底层 Shadowsocks 方法。脚本默认值：2022-blake3-aes-128-gcm。
+
+      # f. Shadowsocks
+      # SHADOWSOCKS: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_SHADOWSOCKS: # 可选：单协议节点名。
+      # SHADOWSOCKS_PASSWORD: # 建议固定：未填写时每次启动随机生成。若同时启用 ShadowTLS，建议与 SHADOWTLS_PASSWORD 填同一个值。
+      #   生成命令：docker run --rm ghcr.io/qqqasdwx/sing-box:latest sh -lc 'openssl rand -base64 16'
+      # SHADOWSOCKS_METHOD: # 可选：Shadowsocks 方法。脚本默认值：2022-blake3-aes-128-gcm。
+
+      # g. Trojan
+      # TROJAN: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_TROJAN: # 可选：单协议节点名。
+      # TROJAN_PASSWORD: # 可选：Trojan 密码。脚本默认值：UUID_CONFIRM；固定 UUID_CONFIRM 后无需单独填写。
+
+      # h. VMess WebSocket
+      # VMESS_WS: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_VMESS_WS: # 可选：单协议节点名。
+      # VMESS_HOST_DOMAIN: # 条件必填：选择 h 且 ARGO=false 时必填。
+      # VMESS_WS_PATH: # 可选：WS 路径。脚本默认值：<VMess UUID>-vmess；固定 UUID_CONFIRM 后稳定。
+
+      # i. VLESS WebSocket TLS
+      # VLESS_WS: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_VLESS_WS: # 可选：单协议节点名。
+      # VLESS_HOST_DOMAIN: # 条件必填：选择 i 且 ARGO=false 时必填。
+      # VLESS_WS_PATH: # 可选：WS 路径。脚本默认值：<VLESS UUID>-vless；固定 UUID_CONFIRM 后稳定。
+
+      # j. H2 Reality
+      # H2_REALITY: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_H2_REALITY: # 可选：单协议节点名。使用全局 REALITY_PRIVATE 和 UUID_CONFIRM。
+
+      # k. gRPC Reality
+      # GRPC_REALITY: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_GRPC_REALITY: # 可选：单协议节点名。使用全局 REALITY_PRIVATE 和 UUID_CONFIRM。
+
+      # l. AnyTLS
+      # ANYTLS: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_ANYTLS: # 可选：单协议节点名。密码默认使用 UUID_CONFIRM。
+
+      # m. NaiveProxy
+      # NAIVE: # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
+      # NODE_NAME_NAIVE: # 可选：单协议节点名。用户名和密码默认使用 UUID_CONFIRM。
