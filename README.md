@@ -76,6 +76,8 @@ Docker 镜像：
 docker pull ghcr.io/qqqasdwx/sing-box:latest
 ```
 
+Compose 示例见 [docker-compose.example.yml](docker-compose.example.yml)。示例文件列出了 Docker 支持的环境变量，并包含用临时镜像生成 `UUID_CONFIRM` 和 `REALITY_PRIVATE` 的命令。
+
 最小示例：
 
 ```sh
@@ -83,7 +85,6 @@ docker run -d --name sing-box --network host --restart unless-stopped \
   -e LANGUAGE=c \
   -e CHOOSE_PROTOCOLS=bcf \
   -e START_PORT=8881 \
-  -e SERVER_IP=203.0.113.10 \
   -e SUBSCRIBE=true \
   -e NODE_NAME_CONFIRM=sing-box \
   -e NODE_NAME_HYSTERIA2=sing-box-hy2 \
@@ -98,14 +99,13 @@ docker run -d --name sing-box --network host --restart unless-stopped \
   -e CHOOSE_PROTOCOLS=a \
   -e START_PORT=8881 \
   -e PORT_NGINX=8899 \
-  -e SERVER_IP=203.0.113.10 \
   -e ARGO=true \
   -e ARGO_DOMAIN=sb.example.com \
   -e ARGO_AUTH='REDACTED_JSON_TOKEN_OR_CF_API_TOKEN' \
   ghcr.io/qqqasdwx/sing-box:latest
 ```
 
-`START_PORT` 是第一个协议端口。启用订阅或 Argo 时，`PORT_NGINX` 是 nginx 回源端口；未指定时默认使用 `START_PORT + 已选协议数量`，并会检查是否与协议端口冲突。
+`START_PORT` 是第一个协议端口。`SERVER_IP` 可选；Docker 启动时留空会自动检测公网 IPv4/IPv6。启用订阅或 Argo 时，`PORT_NGINX` 是 nginx 回源端口；未指定时默认使用 `START_PORT + 已选协议数量`，并会检查是否与协议端口冲突。
 
 ## Nekobox 设置 ShadowTLS 方法
 

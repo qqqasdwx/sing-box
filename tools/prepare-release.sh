@@ -21,6 +21,7 @@ release_files=(
   docker_init.sh
   Dockerfile
   README.md
+  docker-compose.example.yml
   CHANGELOG.md
   BEHAVIOR_DIFFS.md
   LICENSE

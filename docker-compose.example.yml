@@ -1,0 +1,94 @@
+# qqqasdwx/sing-box Docker Compose 示例。
+# 使用方法：cp docker-compose.example.yml docker-compose.yml && docker compose up -d
+#
+# 用临时容器生成 UUID：
+#   docker run --rm ghcr.io/qqqasdwx/sing-box:latest sh -lc 'cat /proc/sys/kernel/random/uuid'
+#
+# 用临时 sing-box 容器生成 REALITY_PRIVATE：
+#   docker run --rm ghcr.io/sagernet/sing-box:latest generate reality-keypair | awk '/PrivateKey/{print $NF}'
+
+services:
+  sing-box:
+    image: ghcr.io/qqqasdwx/sing-box:latest
+    container_name: sing-box
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      # 建议必填：部署前明确选择，不依赖 Docker 默认值。
+      # 协议代码：a=全部；b=VLESS Reality；c=Hysteria2；d=Tuic V5；e=ShadowTLS；f=Shadowsocks；
+      # g=Trojan；h=VMess WebSocket；i=VLESS WebSocket TLS；j=H2 Reality；k=gRPC Reality；l=AnyTLS；m=NaiveProxy。
+      # 示例 bcf = VLESS Reality + Hysteria2 + Shadowsocks。设置 CHOOSE_PROTOCOLS 后会忽略下面的单协议开关。
+      CHOOSE_PROTOCOLS: "bcf"
+      SUBSCRIBE: "true" # 建议必填：是否启用订阅；true/false。
+      ARGO: "false" # 建议必填：是否启用 Argo；true/false。true 且认证留空时使用临时隧道。
+
+      # 条件必填：只有触发对应条件时取消注释并填写。
+      # ARGO_DOMAIN: # ARGO=true 且使用固定 Argo 域名时填写，例如 sb.example.com；临时隧道不填。
+      # ARGO_AUTH: # 填写 ARGO_DOMAIN 时必填，可用 Json、Tunnel Token 或 Cloudflare API Token。
+      # VMESS_HOST_DOMAIN: # 选择 h=VMess WebSocket 且 ARGO=false 时必填。
+      # VLESS_HOST_DOMAIN: # 选择 i=VLESS WebSocket TLS 且 ARGO=false 时必填。
+
+      # 基础可选项：需要覆盖默认值时再取消注释；不填写就不要传入容器。
+      # LANGUAGE: # 可选：c=中文，e=英文；默认 c。
+      # START_PORT: # 可选：第一个协议端口；默认 8881。
+      # PORT_NGINX: # 可选：订阅/Argo 的 nginx 端口；默认 START_PORT + 已选协议数量。
+      # SERVER_IP: # 可选：服务器公网 IPv4/IPv6；不填自动检测。
+      # CDN: # 可选：WS 节点的 CDN 域名；默认使用脚本内置值。
+      # CDN_PORT: # 可选：WS CDN 端口；VMess 默认 80，VLESS 默认 443。
+      # TLS_SERVER: # 可选：SNI/证书域名；默认 addons.mozilla.org。
+
+      # 单协议开关：可选，仅在 CHOOSE_PROTOCOLS 不填写时生效；取值 true/false。
+      # XTLS_REALITY: # b=VLESS Reality。
+      # HYSTERIA2: # c=Hysteria2。
+      # TUIC: # d=Tuic V5。
+      # SHADOWTLS: # e=ShadowTLS。
+      # SHADOWSOCKS: # f=Shadowsocks。
+      # TROJAN: # g=Trojan。
+      # VMESS_WS: # h=VMess WebSocket。
+      # VLESS_WS: # i=VLESS WebSocket TLS。
+      # H2_REALITY: # j=H2 Reality。
+      # GRPC_REALITY: # k=gRPC Reality。
+      # ANYTLS: # l=AnyTLS。
+      # NAIVE: # m=NaiveProxy。
+
+      # 身份与密钥：可选，不填写会自动生成；建议固定后备份。
+      # UUID_CONFIRM: # UUID；可用顶部临时容器命令生成。
+      # UUID: # UUID_CONFIRM 的旧 Docker 别名。
+      # REALITY_PRIVATE: # Reality 私钥；选择 b/j/k 协议时可用顶部 sing-box 命令生成。
+
+      # 节点名称：可选；优先级为单协议名称 > 全局名称 > hostname。
+      # NODE_NAME_CONFIRM: # 全局节点名。
+      # NODE_NAME: # NODE_NAME_CONFIRM 的旧 Docker 别名。
+      # NODE_NAME_XTLS_REALITY: # VLESS Reality 节点名。
+      # NODE_NAME_HYSTERIA2: # Hysteria2 节点名。
+      # NODE_NAME_TUIC: # Tuic 节点名。
+      # NODE_NAME_SHADOWTLS: # ShadowTLS 节点名。
+      # NODE_NAME_SHADOWSOCKS: # Shadowsocks 节点名。
+      # NODE_NAME_TROJAN: # Trojan 节点名。
+      # NODE_NAME_VMESS_WS: # VMess WS 节点名。
+      # NODE_NAME_VLESS_WS: # VLESS WS TLS 节点名。
+      # NODE_NAME_H2_REALITY: # H2 Reality 节点名。
+      # NODE_NAME_GRPC_REALITY: # gRPC Reality 节点名。
+      # NODE_NAME_ANYTLS: # AnyTLS 节点名。
+      # NODE_NAME_NAIVE: # NaiveProxy 节点名。
+
+      # Hysteria2 选项：可选，仅选择 c=Hysteria2 时有意义。
+      # HY2_PORT_HOPPING_RANGE: # 端口跳跃范围，格式 start:end，例如 50000:51000；Docker 不管理宿主机 NAT。
+      # HY2_REALM: # true/false；启用 Hysteria2 Realm。
+      # REALM: # HY2_REALM 的旧别名。
+      # HY2_WARP: # true/false；启用 WARP 辅助 Realm，并隐含 HY2_REALM=true。
+      # REALM_WARP: # HY2_WARP 的旧别名。
+      # HY2_REALM_ID: # Realm ID；不填使用 Hysteria2 UUID。
+      # HY2_UP: # 导出的客户端上行 Mbps；默认 200。
+      # HY2_DOWN: # 导出的客户端下行 Mbps；默认 1000。
+
+      # 协议密码与路径：可选；不填写会自动生成或使用默认值。
+      # TUIC_PASSWORD: # Tuic 密码；默认 UUID_CONFIRM。
+      # TUIC_CONGESTION_CONTROL: # Tuic 拥塞控制；默认 bbr。
+      # SHADOWTLS_PASSWORD: # ShadowTLS 底层 Shadowsocks 密码。
+      # SHADOWTLS_METHOD: # ShadowTLS 底层 Shadowsocks 方法；默认 2022-blake3-aes-128-gcm。
+      # SHADOWSOCKS_PASSWORD: # Shadowsocks 密码。
+      # SHADOWSOCKS_METHOD: # Shadowsocks 方法；默认 2022-blake3-aes-128-gcm。
+      # TROJAN_PASSWORD: # Trojan 密码；默认 UUID_CONFIRM。
+      # VMESS_WS_PATH: # VMess WS 路径；默认 <uuid>-vmess。
+      # VLESS_WS_PATH: # VLESS WS 路径；默认 <uuid>-vless。
