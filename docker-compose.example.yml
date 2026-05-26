@@ -1,11 +1,5 @@
 # qqqasdwx/sing-box Docker Compose 示例。
 # 使用方法：cp docker-compose.example.yml docker-compose.yml && docker compose up -d
-#
-# 用临时容器生成 UUID：
-#   docker run --rm ghcr.io/qqqasdwx/sing-box:latest sh -lc 'cat /proc/sys/kernel/random/uuid'
-#
-# 用临时 sing-box 容器生成 REALITY_PRIVATE：
-#   docker run --rm ghcr.io/sagernet/sing-box:latest generate reality-keypair | awk '/PrivateKey/{print $NF}'
 
 services:
   sing-box:
@@ -55,9 +49,11 @@ services:
       # NAIVE: # m=NaiveProxy。
 
       # 身份与密钥：可选，不填写会自动生成；建议固定后备份。
-      # UUID_CONFIRM: # UUID。脚本默认值：随机 UUID；可用顶部临时容器命令提前生成并固定。
+      # UUID_CONFIRM: # UUID。脚本默认值：随机 UUID；可用下方临时容器命令提前生成并固定。
+      #   生成命令：docker run --rm ghcr.io/qqqasdwx/sing-box:latest sh -lc 'cat /proc/sys/kernel/random/uuid'
       # UUID: # UUID_CONFIRM 的旧 Docker 别名。
-      # REALITY_PRIVATE: # Reality 私钥。脚本默认值：用 sing-box generate reality-keypair 自动生成；选择 b/j/k 协议时可用顶部命令提前生成并固定。
+      # REALITY_PRIVATE: # Reality 私钥。脚本默认值：用 sing-box generate reality-keypair 自动生成；选择 b/j/k 协议时可用下方命令提前生成并固定。
+      #   生成命令：docker run --rm ghcr.io/sagernet/sing-box:latest generate reality-keypair | awk '/PrivateKey/{print $NF}'
 
       # 节点名称：可选；优先级为单协议名称 > 全局名称 > hostname。
       # NODE_NAME_CONFIRM: # 全局节点名。脚本默认值：检测到的国家/地区 emoji + 容器 hostname。
