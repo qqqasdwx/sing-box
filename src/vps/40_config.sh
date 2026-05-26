@@ -949,6 +949,8 @@ fetch_nodes_value() {
     NODE_NAME[12]=$(awk -F '"' -v suffix=" ${NODE_TAG[1]}" '/"tag"[[:space:]]*:/ {v=$4; sub(suffix"$", "", v); print v; exit}' <<< "$JSON")
     PORT_HYSTERIA2=$(awk -F ':' '/"listen_port"[[:space:]]*:/ {gsub(/[[:space:],]/, "", $2); print $2; exit}' <<< "$JSON")
     UUID[12]=$(awk -F '"' '/"password"[[:space:]]*:/ {count++; if (count == 1) {print $4; exit}}' <<< "$JSON")
+    HY2_UP=${HY2_UP:-"$(sed -n '/type: hysteria2/ s/.*,[ ]*up:[ ]*"\([0-9]\+\)[ ]*Mbps.*/\1/gp' $WORK_DIR/subscribe/proxies 2>/dev/null)"}
+    HY2_DOWN=${HY2_DOWN:-"$(sed -n '/type: hysteria2/ s/.*,[ ]*down:[ ]*"\([0-9]\+\)[ ]*Mbps.*/\1/gp' $WORK_DIR/subscribe/proxies 2>/dev/null)"}
     HY2_UP=${HY2_UP:-"$(sed -n '/type: hysteria2/ s/.*,[ ]*up:[ ]*"\([0-9]\+\)[ ]*Mbps.*/\1/gp' $WORK_DIR/list)"}
     HY2_DOWN=${HY2_DOWN:-"$(sed -n '/type: hysteria2/ s/.*,[ ]*down:[ ]*"\([0-9]\+\)[ ]*Mbps.*/\1/gp' $WORK_DIR/list)"}
     if grep -q '"realm"[[:space:]]*:' <<< "$JSON"; then
@@ -1013,6 +1015,7 @@ fetch_nodes_value() {
     VMESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
     WS_SERVER_IP[17]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
     CDN[17]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
+    CDN_PORT[17]=$(awk  -F '"' '/"CDN_PORT"/{print $4}' <<< "$JSON")
     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
       ARGO_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON")
     else
@@ -1030,6 +1033,7 @@ fetch_nodes_value() {
     VLESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
     WS_SERVER_IP[18]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
     CDN[18]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
+    CDN_PORT[18]=$(awk  -F '"' '/"CDN_PORT"/{print $4}' <<< "$JSON")
     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
       ARGO_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON")
     else

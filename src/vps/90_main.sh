@@ -77,7 +77,10 @@ for z in "${!ALL_PARAMETER[@]}"; do
       change_argo; exit 0
       ;;
     -D )
-      change_config; exit 0
+      check_install
+      [ "${STATUS[0]}" = "$(text 26)" ] && error "\n Sing-box $(text 26) "
+      protocol_config_menu
+      exit 0
       ;;
     -U )
       check_install; uninstall; exit 0

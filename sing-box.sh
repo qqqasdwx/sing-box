@@ -279,8 +279,8 @@ E[119]="Using Cloudflare API to create Tunnel and handle DNS config..."
 C[119]="使用 Cloudflare API 创建 Tunnel 和处理 DNS 配置..."
 E[120]="Found existing tunnel with the same name. Tunnel ID: \$EXISTING_TUNNEL_ID. Status: \$EXISTING_TUNNEL_STATUS. Overwrite? [y/N] (default y):"
 C[120]="发现同名隧道已创建，隧道 ID: \$EXISTING_TUNNEL_ID，状态: \$EXISTING_TUNNEL_STATUS。是否覆盖? [y/N] (默认为 y):"
-E[121]="Change node configuration (sb -d)"
-C[121]="修改节点配置 (sb -d)"
+E[121]="Node / protocol configuration (sb -d)"
+C[121]="节点 / 协议配置 (sb -d)"
 E[122]="Invalid access token. Please roll at https://dash.cloudflare.com/profile/api-tokens to re-generate."
 C[122]="Token 访问令牌无效。请在 https://dash.cloudflare.com/profile/api-tokens 轮转，以重新获取"
 E[123]="Token zone resource failed. The tunnel root domain and the authorized domain of the token are inconsistent. Please go to https://dash.cloudflare.com/profile/api-tokens to re-authorize."
@@ -2898,8 +2898,9 @@ sync_firewall_rules() {
 export_argo_json_file() {
   local FILE_PATH=$1
   [[ -z "$PORT_NGINX" && -s ${WORK_DIR}/nginx.conf ]] && local PORT_NGINX=$(awk '/listen/{print $2; exit}' ${WORK_DIR}/nginx.conf)
-  [ ! -s $FILE_PATH/tunnel.json ] && echo $ARGO_JSON > $FILE_PATH/tunnel.json
-  [ ! -s $FILE_PATH/tunnel.yml ] && cat > $FILE_PATH/tunnel.yml << EOF
+  [ -z "$ARGO_JSON" ] && [ -s "$FILE_PATH/tunnel.json" ] && ARGO_JSON=$(cat "$FILE_PATH/tunnel.json")
+  [ ! -s "$FILE_PATH/tunnel.json" ] && echo "$ARGO_JSON" > "$FILE_PATH/tunnel.json"
+  cat > "$FILE_PATH/tunnel.yml" << EOF
 tunnel: $(awk -F '"' '{print $12}' <<< "$ARGO_JSON")
 credentials-file: ${WORK_DIR}/tunnel.json
 
@@ -2965,6 +2966,9 @@ export_nginx_conf_file() {
     ${PACKAGE_INSTALL[int]} nginx >/dev/null 2>&1
   fi
 
+  local VMESS_NGINX_PATH="${VMESS_WS_PATH:-${UUID_CONFIRM}-vmess}"
+  local VLESS_NGINX_PATH="${VLESS_WS_PATH:-${UUID_CONFIRM}-vless}"
+
   NGINX_CONF="user  root;
 worker_processes  auto;
 
@@ -3026,7 +3030,7 @@ http {
 
   [[ -n "$PORT_VMESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vmess websocket
-    location /${UUID_CONFIRM}-vmess {
+    location /${VMESS_NGINX_PATH} {
       if (\$http_upgrade != \"websocket\") {
          return 404;
       }
@@ -3043,7 +3047,7 @@ http {
 
   [[ -n "$PORT_VLESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vless websocket
-    location /${UUID_CONFIRM}-vless {
+    location /${VLESS_NGINX_PATH} {
       if (\$http_upgrade != \"websocket\") {
          return 404;
       }
@@ -4036,6 +4040,8 @@ fetch_nodes_value() {
     NODE_NAME[12]=$(awk -F '"' -v suffix=" ${NODE_TAG[1]}" '/"tag"[[:space:]]*:/ {v=$4; sub(suffix"$", "", v); print v; exit}' <<< "$JSON")
     PORT_HYSTERIA2=$(awk -F ':' '/"listen_port"[[:space:]]*:/ {gsub(/[[:space:],]/, "", $2); print $2; exit}' <<< "$JSON")
     UUID[12]=$(awk -F '"' '/"password"[[:space:]]*:/ {count++; if (count == 1) {print $4; exit}}' <<< "$JSON")
+    HY2_UP=${HY2_UP:-"$(sed -n '/type: hysteria2/ s/.*,[ ]*up:[ ]*"\([0-9]\+\)[ ]*Mbps.*/\1/gp' $WORK_DIR/subscribe/proxies 2>/dev/null)"}
+    HY2_DOWN=${HY2_DOWN:-"$(sed -n '/type: hysteria2/ s/.*,[ ]*down:[ ]*"\([0-9]\+\)[ ]*Mbps.*/\1/gp' $WORK_DIR/subscribe/proxies 2>/dev/null)"}
     HY2_UP=${HY2_UP:-"$(sed -n '/type: hysteria2/ s/.*,[ ]*up:[ ]*"\([0-9]\+\)[ ]*Mbps.*/\1/gp' $WORK_DIR/list)"}
     HY2_DOWN=${HY2_DOWN:-"$(sed -n '/type: hysteria2/ s/.*,[ ]*down:[ ]*"\([0-9]\+\)[ ]*Mbps.*/\1/gp' $WORK_DIR/list)"}
     if grep -q '"realm"[[:space:]]*:' <<< "$JSON"; then
@@ -4100,6 +4106,7 @@ fetch_nodes_value() {
     VMESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
     WS_SERVER_IP[17]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
     CDN[17]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
+    CDN_PORT[17]=$(awk  -F '"' '/"CDN_PORT"/{print $4}' <<< "$JSON")
     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
       ARGO_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON")
     else
@@ -4117,6 +4124,7 @@ fetch_nodes_value() {
     VLESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
     WS_SERVER_IP[18]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
     CDN[18]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
+    CDN_PORT[18]=$(awk  -F '"' '/"CDN_PORT"/{print $4}' <<< "$JSON")
     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
       ARGO_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON")
     else
@@ -4982,6 +4990,7 @@ EOF
 
 # 更换各协议的监听端口
 change_start_port() {
+  local TARGET_CODE=${1:-}
   load_installed_protocol_ports
   [ "${#INSTALLED_PORT_VALUES[@]}" = 0 ] && error " $(text 110) "
 
@@ -4989,13 +4998,20 @@ change_start_port() {
   local NEW_PORTS=("${INSTALLED_PORT_VALUES[@]}")
   local SELECT_PORT PORT_ERROR_TIME _i _j _name _old_port _new_port _conflict_name _default_start
 
-  hint "\n $(text 150)\n"
-  hint " 1. $(text 149)"
-  for _i in "${!INSTALLED_PORT_VALUES[@]}"; do
-    hint " $(( _i + 2 )). ${INSTALLED_PORT_NAMES[_i]} (${INSTALLED_PORT_TAGS[_i]})  ${INSTALLED_PORT_VALUES[_i]}"
-  done
-  hint ""
-  reading " $(text 24) " SELECT_PORT
+  if [ -n "$TARGET_CODE" ]; then
+    for _i in "${!INSTALLED_PORT_CODES[@]}"; do
+      [ "${INSTALLED_PORT_CODES[_i]}" = "$TARGET_CODE" ] && SELECT_PORT=$(( _i + 2 )) && break
+    done
+    [ -z "$SELECT_PORT" ] && error " $(text 110) "
+  else
+    hint "\n $(text 150)\n"
+    hint " 1. $(text 149)"
+    for _i in "${!INSTALLED_PORT_VALUES[@]}"; do
+      hint " $(( _i + 2 )). ${INSTALLED_PORT_NAMES[_i]} (${INSTALLED_PORT_TAGS[_i]})  ${INSTALLED_PORT_VALUES[_i]}"
+    done
+    hint ""
+    reading " $(text 24) " SELECT_PORT
+  fi
 
   if ! [[ "$SELECT_PORT" =~ ^[0-9]+$ ]] || [ "$SELECT_PORT" -lt 1 ] || [ "$SELECT_PORT" -gt "$((${#INSTALLED_PORT_VALUES[@]} + 1))" ]; then
     info " $(text 135) "
@@ -5092,9 +5108,13 @@ change_start_port() {
     HY2_PORT_HOPPING_RANGE="${OLD_HOPPING_START}:${OLD_HOPPING_END}"
     add_port_hopping_nat "$PORT_HOPPING_START" "$PORT_HOPPING_END" "$PORT_HYSTERIA2" >/dev/null 2>&1 || true
   fi
-  [ -n "$PORT_NGINX" ] && UUID_CONFIRM=$(sed -n 's#.*location[ ]\+\/\(.*\)-v[ml]ess.*#\1#gp' /etc/sing-box/nginx.conf | sed -n '1p') && export_nginx_conf_file
+  if [ -n "$PORT_NGINX" ]; then
+    UUID_CONFIRM=$(sed -n 's#.*location ~ \^/\([^/]*\)/auto.*#\1#p' "${WORK_DIR}/nginx.conf" | sed -n '1p')
+    [ -z "$UUID_CONFIRM" ] && UUID_CONFIRM=$(sed -n 's#.*location[ ]\+/\(.*\)-v[ml]ess.*#\1#gp' "${WORK_DIR}/nginx.conf" | sed -n '1p')
+    export_nginx_conf_file
+  fi
   cmd_systemctl enable sing-box
-  [ -n "$ARGO_DOMAIN" ] && export_argo_json_file
+  [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
   sync_firewall_rules
   sleep 2
   export_list
@@ -5488,6 +5508,886 @@ change_protocols() {
   export_list
 }
 
+menu_text() {
+  [ "$L" = 'C' ] && printf '%s' "$1" || printf '%s' "$2"
+}
+
+menu_pause() {
+  local _PAUSE
+  reading "\n $(menu_text '按回车返回菜单...' 'Press Enter to return...')" _PAUSE
+}
+
+literal_replace_file() {
+  local FILE=$1 OLD=$2 NEW=$3 TMP_FILE
+  [ -s "$FILE" ] || return 0
+  [ -n "$OLD" ] || return 1
+  TMP_FILE="${FILE}.tmp"
+  awk -v old="$OLD" -v new="$NEW" '
+    {
+      line=$0
+      while ((pos=index(line, old)) > 0) {
+        line=substr(line, 1, pos - 1) new substr(line, pos + length(old))
+      }
+      print line
+    }
+  ' "$FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$FILE"
+}
+
+literal_replace_many() {
+  local OLD=$1 NEW=$2 FILE
+  shift 2
+  for FILE in "$@"; do
+    literal_replace_file "$FILE" "$OLD" "$NEW"
+  done
+}
+
+replace_json_string_key_file() {
+  local FILE=$1 KEY=$2 NEW=$3 OCCURRENCE=${4:-1} TMP_FILE
+  [ -s "$FILE" ] || return 0
+  TMP_FILE="${FILE}.tmp"
+  awk -v key="$KEY" -v new="$NEW" -v occurrence="$OCCURRENCE" '
+    {
+      line=$0
+      pattern="\"" key "\"[[:space:]]*:[[:space:]]*\"[^\"]*\""
+      if (line ~ pattern) {
+        count++
+        if (count == occurrence && match(line, pattern)) {
+          line=substr(line, 1, RSTART - 1) "\"" key "\":\"" new "\"" substr(line, RSTART + RLENGTH)
+        }
+      }
+      print line
+    }
+  ' "$FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$FILE"
+}
+
+protocol_index_by_code() {
+  printf '%s' "$(( $(asc "$1") - 98 ))"
+}
+
+protocol_node_index_by_code() {
+  printf '%s' "$(( $(protocol_index_by_code "$1") + 11 ))"
+}
+
+protocol_file_by_code() {
+  local CODE=$1 IDX
+  IDX=$(protocol_index_by_code "$CODE")
+  first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[IDX]}_inbounds.json"
+}
+
+protocol_installed_by_code() {
+  local FILE
+  FILE=$(protocol_file_by_code "$1")
+  [ -s "$FILE" ]
+}
+
+protocol_status_text() {
+  protocol_installed_by_code "$1" && menu_text '已安装' 'installed' || menu_text '未安装' 'not installed'
+}
+
+protocol_restart_export() {
+  check_install
+  fetch_nodes_value
+
+  if [ -s "${WORK_DIR}/nginx.conf" ]; then
+    [ -z "$PORT_NGINX" ] && PORT_NGINX=$(awk '/listen/{print $2; exit}' "${WORK_DIR}/nginx.conf")
+    [ -n "$PORT_NGINX" ] && export_nginx_conf_file
+  fi
+
+  [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
+
+  cmd_systemctl restart sing-box
+  sleep 2
+  cmd_systemctl status sing-box &>/dev/null && \
+    info "\n Sing-box $(text 28) $(text 37) \n" || \
+    warning "\n Sing-box $(text 27) $(text 38) \n"
+
+  export_list
+  menu_pause
+}
+
+read_new_value() {
+  local PROMPT=$1 CURRENT=$2 OUT_VAR=$3 NEW_VAL
+  reading "\n ${PROMPT} ($(menu_text '当前' 'current'): ${CURRENT:-N/A}, $(menu_text '回车跳过' 'Enter to skip')): " NEW_VAL
+  [ -z "$NEW_VAL" ] && info " $(text 135) " && return 1
+  printf -v "$OUT_VAR" '%s' "$NEW_VAL"
+}
+
+valid_uuid_or_error() {
+  [[ "${1,,}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]] || error " $(text 4) "
+}
+
+reality_public_from_private() {
+  local PRIVATE_KEY=$1 B64 MOD PRIV_LEN PREFIX_HEX PRIV_HEX
+  [ -n "$PRIVATE_KEY" ] || return 1
+  [[ "$PRIVATE_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || return 1
+
+  if command -v xxd >/dev/null 2>&1; then
+    B64=$(printf '%s' "$PRIVATE_KEY" | tr '_-' '/+')
+    MOD=$(( ${#B64} % 4 ))
+    [ "$MOD" -eq 2 ] && B64="${B64}=="
+    [ "$MOD" -eq 3 ] && B64="${B64}="
+    [ "$MOD" -eq 1 ] && return 1
+
+    echo "$B64" | base64 -d > "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || return 1
+    PRIV_LEN=$(stat -c%s "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || stat -f%z "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null)
+    [ "$PRIV_LEN" = 32 ] || return 1
+
+    PREFIX_HEX="302e020100300506032b656e04220420"
+    PRIV_HEX=$(xxd -p -c 256 "${TEMP_DIR}/_X25519_PRIV_RAW" | tr -d '\n')
+    printf "%s%s" "$PREFIX_HEX" "$PRIV_HEX" | xxd -r -p > "${TEMP_DIR}/_X25519_PRIV_DER"
+    openssl pkcs8 -inform DER -in "${TEMP_DIR}/_X25519_PRIV_DER" -nocrypt -out "${TEMP_DIR}/_X25519_PRIV_PEM" 2>/dev/null || return 1
+    openssl pkey -in "${TEMP_DIR}/_X25519_PRIV_PEM" -pubout -outform DER > "${TEMP_DIR}/_X25519_PUB_DER" 2>/dev/null || return 1
+    tail -c 32 "${TEMP_DIR}/_X25519_PUB_DER" > "${TEMP_DIR}/_X25519_PUB_RAW"
+    base64 -w0 "${TEMP_DIR}/_X25519_PUB_RAW" | tr '+/' '-_' | sed -E 's/=+$//'
+  else
+    wget --no-check-certificate -qO- --tries=3 --timeout=2 "https://realitykey.cloudflare.now.cc/?privateKey=${PRIVATE_KEY}" | awk -F '"' '/publicKey/{print $4}'
+  fi
+}
+
+protocol_primary_secret() {
+  local CODE=$1 NODE_IDX
+  NODE_IDX=$(protocol_node_index_by_code "$CODE")
+  case "$CODE" in
+    f ) printf '%s' "$SHADOWSOCKS_PASSWORD" ;;
+    g ) printf '%s' "$TROJAN_PASSWORD" ;;
+    * ) printf '%s' "${UUID[NODE_IDX]}" ;;
+  esac
+}
+
+protocol_primary_secret_label() {
+  case "$1" in
+    b|d|h|i|j|k ) menu_text 'UUID' 'UUID' ;;
+    e ) menu_text 'ShadowTLS 握手密码' 'ShadowTLS handshake password' ;;
+    f ) menu_text 'Shadowsocks 密码' 'Shadowsocks password' ;;
+    g ) menu_text 'Trojan 密码' 'Trojan password' ;;
+    l ) menu_text 'AnyTLS 密码' 'AnyTLS password' ;;
+    m ) menu_text 'NaiveProxy 用户名/密码' 'NaiveProxy username/password' ;;
+    * ) menu_text '密码' 'password' ;;
+  esac
+}
+
+protocol_edit_node_name() {
+  local CODE=$1 IDX NODE_IDX FILE OLD_NAME NEW_NAME OLD_TAG NEW_TAG
+  IDX=$(protocol_index_by_code "$CODE")
+  NODE_IDX=$(protocol_node_index_by_code "$CODE")
+  FILE=$(protocol_file_by_code "$CODE")
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_NAME="${NODE_NAME[NODE_IDX]}"
+  read_new_value "$(menu_text '请输入新的节点名' 'Enter new node name')" "$OLD_NAME" NEW_NAME || return
+  OLD_TAG="${OLD_NAME} ${NODE_TAG[IDX]}"
+  NEW_TAG="${NEW_NAME} ${NODE_TAG[IDX]}"
+  literal_replace_file "$FILE" "$OLD_TAG" "$NEW_TAG"
+  [ -s "${WORK_DIR}/conf/03_route.json" ] && literal_replace_file "${WORK_DIR}/conf/03_route.json" "$OLD_TAG" "$NEW_TAG"
+  protocol_restart_export
+}
+
+protocol_edit_primary_secret() {
+  local CODE=$1 IDX FILE OLD_VAL NEW_VAL LABEL OLD_PATH NEW_PATH
+  IDX=$(protocol_index_by_code "$CODE")
+  FILE=$(protocol_file_by_code "$CODE")
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_VAL=$(protocol_primary_secret "$CODE")
+  LABEL=$(protocol_primary_secret_label "$CODE")
+  read_new_value "$(menu_text "请输入新的${LABEL}" "Enter new ${LABEL}")" "$OLD_VAL" NEW_VAL || return
+  [[ "$CODE" =~ ^[bdhijk]$ ]] && valid_uuid_or_error "$NEW_VAL"
+
+  case "$CODE" in
+    b|d|h|i|j|k )
+      replace_json_string_key_file "$FILE" uuid "$NEW_VAL"
+      ;;
+    c|e|f|g|l )
+      replace_json_string_key_file "$FILE" password "$NEW_VAL" 1
+      ;;
+    m )
+      replace_json_string_key_file "$FILE" username "$NEW_VAL"
+      replace_json_string_key_file "$FILE" password "$NEW_VAL"
+      ;;
+  esac
+
+  if [ "$CODE" = h ]; then
+    OLD_PATH="${OLD_VAL}-vmess"
+    NEW_PATH="${NEW_VAL}-vmess"
+    grep -q "\"path\":\"/${OLD_PATH}\"" "$FILE" && literal_replace_file "$FILE" "$OLD_PATH" "$NEW_PATH"
+  elif [ "$CODE" = i ]; then
+    OLD_PATH="${OLD_VAL}-vless"
+    NEW_PATH="${NEW_VAL}-vless"
+    grep -q "\"path\":\"/${OLD_PATH}\"" "$FILE" && literal_replace_file "$FILE" "$OLD_PATH" "$NEW_PATH"
+  fi
+
+  protocol_restart_export
+}
+
+protocol_edit_reality_key() {
+  local CODE=$1 NODE_IDX FILE OLD_PRIVATE OLD_PUBLIC NEW_PRIVATE NEW_PUBLIC KEYPAIR
+  NODE_IDX=$(protocol_node_index_by_code "$CODE")
+  FILE=$(protocol_file_by_code "$CODE")
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_PRIVATE="${REALITY_PRIVATE[NODE_IDX]}"
+  OLD_PUBLIC="${REALITY_PUBLIC[NODE_IDX]}"
+  reading "\n $(menu_text '请输入新的 Reality privateKey，回车则随机生成' 'Enter new Reality privateKey, or press Enter to generate'): " NEW_PRIVATE
+  if [ -z "$NEW_PRIVATE" ]; then
+    KEYPAIR=$(${WORK_DIR}/sing-box generate reality-keypair)
+    NEW_PRIVATE=$(awk '/PrivateKey/{print $NF}' <<< "$KEYPAIR")
+    NEW_PUBLIC=$(awk '/PublicKey/{print $NF}' <<< "$KEYPAIR")
+  else
+    [[ "$NEW_PRIVATE" =~ ^[A-Za-z0-9_-]{43}$ ]] || error " $(text 101) "
+    NEW_PUBLIC=$(reality_public_from_private "$NEW_PRIVATE")
+    [ -n "$NEW_PUBLIC" ] || error " $(text 116) "
+  fi
+  literal_replace_file "$FILE" "$OLD_PRIVATE" "$NEW_PRIVATE"
+  literal_replace_file "$FILE" "$OLD_PUBLIC" "$NEW_PUBLIC"
+  protocol_restart_export
+}
+
+menu_edit_tls_server() {
+  local OLD_VAL NEW_VAL
+  OLD_VAL=$(openssl x509 -noout -ext subjectAltName -in "${WORK_DIR}/cert/cert.pem" 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
+  read_new_value "$(menu_text '请输入新的 SNI / 证书域名' 'Enter new SNI / certificate domain')" "$OLD_VAL" NEW_VAL || return
+  ssl_certificate "$NEW_VAL"
+  ls ${WORK_DIR}/conf/*_inbounds.json >/dev/null 2>&1 && literal_replace_many "$OLD_VAL" "$NEW_VAL" ${WORK_DIR}/conf/*_inbounds.json
+  [ -s "${WORK_DIR}/conf/22_${NODE_TAG[11]}_inbounds.json" ] && ssl_certificate "$NEW_VAL" naive_only
+  protocol_restart_export
+}
+
+menu_edit_server_ip() {
+  local OLD_VAL NEW_VAL
+  fetch_nodes_value
+  OLD_VAL="$SERVER_IP"
+  read_new_value "$(menu_text '请输入新的服务器公网 IP' 'Enter new public server IP')" "$OLD_VAL" NEW_VAL || return
+  [[ "$NEW_VAL" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || [[ "$NEW_VAL" =~ ^[0-9a-fA-F:]+$ ]] || error " $(text 133) "
+  literal_replace_many "$OLD_VAL" "$NEW_VAL" ${WORK_DIR}/conf/*_inbounds.json ${WORK_DIR}/list ${WORK_DIR}/subscribe/*
+  export_list
+  menu_pause
+}
+
+protocol_edit_method() {
+  local CODE=$1 FILE OLD_VAL NEW_VAL LABEL
+  FILE=$(protocol_file_by_code "$CODE")
+  [ -s "$FILE" ] || error " $(text 110) "
+  if [ "$CODE" = e ]; then
+    OLD_VAL="$SHADOWTLS_METHOD"
+    LABEL=$(menu_text 'ShadowTLS 底层 Shadowsocks 加密方法' 'ShadowTLS Shadowsocks method')
+  else
+    OLD_VAL="$SHADOWSOCKS_METHOD"
+    LABEL=$(menu_text 'Shadowsocks 加密方法' 'Shadowsocks method')
+  fi
+  read_new_value "$LABEL" "$OLD_VAL" NEW_VAL || return
+  literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
+  protocol_restart_export
+}
+
+protocol_edit_shadowtls_ss_password() {
+  local FILE OLD_VAL NEW_VAL
+  FILE=$(protocol_file_by_code e)
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_VAL="$SHADOWTLS_PASSWORD"
+  read_new_value "$(menu_text '请输入 ShadowTLS 底层 Shadowsocks 密码' 'Enter ShadowTLS Shadowsocks password')" "$OLD_VAL" NEW_VAL || return
+  replace_json_string_key_file "$FILE" password "$NEW_VAL" 2
+  protocol_restart_export
+}
+
+protocol_edit_tuic_password() {
+  local FILE OLD_VAL NEW_VAL
+  FILE=$(protocol_file_by_code d)
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_VAL="$TUIC_PASSWORD"
+  read_new_value "$(menu_text '请输入新的 Tuic 密码' 'Enter new Tuic password')" "$OLD_VAL" NEW_VAL || return
+  replace_json_string_key_file "$FILE" password "$NEW_VAL"
+  protocol_restart_export
+}
+
+protocol_edit_tuic_congestion() {
+  local FILE OLD_VAL NEW_VAL
+  FILE=$(protocol_file_by_code d)
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_VAL="${TUIC_CONGESTION_CONTROL:-bbr}"
+  read_new_value "$(menu_text '请输入 Tuic 拥塞控制算法，例如 bbr/cubic/new_reno' 'Enter Tuic congestion control, e.g. bbr/cubic/new_reno')" "$OLD_VAL" NEW_VAL || return
+  literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
+  protocol_restart_export
+}
+
+protocol_edit_hy2_bandwidth() {
+  local HY2_UP_NEW HY2_DOWN_NEW
+  while true; do
+    reading "\n $(text 141) " HY2_UP_NEW
+    [[ "$HY2_UP_NEW" =~ ^[1-9][0-9]*$ ]] && break
+    warning " $(text 143) "
+  done
+  while true; do
+    reading " $(text 142) " HY2_DOWN_NEW
+    [[ "$HY2_DOWN_NEW" =~ ^[1-9][0-9]*$ ]] && break
+    warning " $(text 143) "
+  done
+  sed -i -E "s/(up: \")([0-9]+)( Mbps\")/\1${HY2_UP_NEW}\3/g; s/(down: \")([0-9]+)( Mbps\")/\1${HY2_DOWN_NEW}\3/g" ${WORK_DIR}/subscribe/proxies ${WORK_DIR}/list 2>/dev/null || true
+  export_list
+  menu_pause
+}
+
+protocol_toggle_hy2_realm() {
+  fetch_nodes_value
+  if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+    set_hy2_realm_config disable
+    sync_hy2_warp_route disable
+  else
+    IS_HY2_REALM=is_hy2_realm
+    HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
+    input_hy2_warp
+    set_hy2_realm_config enable
+    [ "$IS_HY2_WARP" = 'is_hy2_warp' ] && sync_hy2_warp_route enable || sync_hy2_warp_route disable
+  fi
+  protocol_restart_export
+}
+
+protocol_toggle_hy2_warp() {
+  fetch_nodes_value
+  [ "$IS_HY2_REALM" = 'is_hy2_realm' ] || error " Hysteria2 Realm $(text 26) "
+  if [ "$IS_HY2_WARP" = 'is_hy2_warp' ]; then
+    sync_hy2_warp_route disable
+  else
+    sync_hy2_warp_route enable
+  fi
+  protocol_restart_export
+}
+
+protocol_edit_hy2_realm_id() {
+  local OLD_VAL NEW_VAL FILE
+  fetch_nodes_value
+  [ "$IS_HY2_REALM" = 'is_hy2_realm' ] || error " Hysteria2 Realm $(text 26) "
+  FILE=$(protocol_file_by_code c)
+  OLD_VAL="${HY2_REALM_ID:-${UUID[12]}}"
+  read_new_value "$(menu_text '请输入 Hysteria2 Realm ID' 'Enter Hysteria2 Realm ID')" "$OLD_VAL" NEW_VAL || return
+  literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
+  protocol_restart_export
+}
+
+protocol_edit_hy2_hopping() {
+  local OLD_START OLD_END NEW_RANGE NEW_START NEW_END HOPPING_TARGET HOPPING_ERROR_TIME=6
+  check_port_hopping_nat
+  OLD_START="$PORT_HOPPING_START"
+  OLD_END="$PORT_HOPPING_END"
+  hint "\n $(text 97) \n"
+
+  while true; do
+    (( HOPPING_ERROR_TIME-- )) || true
+    [ "$HOPPING_ERROR_TIME" = 0 ] && error "\n $(text 3) \n"
+    reading " $(text 98) " NEW_RANGE
+    NEW_RANGE=$(sed 's/[-－—：]/:/g' <<< "$NEW_RANGE" | tr -cd '0-9:')
+
+    if [ -z "$NEW_RANGE" ]; then
+      [ -n "$OLD_START" ] && [ -n "$OLD_END" ] && del_port_hopping_nat
+      unset PORT_HOPPING_START PORT_HOPPING_END HY2_PORT_HOPPING_RANGE
+      break
+    elif [[ "$NEW_RANGE" =~ ^[0-9]{4,5}:[0-9]{4,5}$ ]]; then
+      NEW_START=${NEW_RANGE%:*}
+      NEW_END=${NEW_RANGE#*:}
+      if [[ "$NEW_START" -lt "$NEW_END" && "$NEW_START" -ge "$MIN_HOPPING_PORT" && "$NEW_END" -le "$MAX_HOPPING_PORT" ]]; then
+        [ -n "$OLD_START" ] && [ -n "$OLD_END" ] && del_port_hopping_nat
+        PORT_HOPPING_START=$NEW_START
+        PORT_HOPPING_END=$NEW_END
+        HY2_PORT_HOPPING_RANGE="$NEW_RANGE"
+        HOPPING_TARGET=$(awk -F '[:,]' '/"listen_port"/{print $2; exit}' ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json 2>/dev/null)
+        (add_port_hopping_nat "$PORT_HOPPING_START" "$PORT_HOPPING_END" "$HOPPING_TARGET") >/dev/null 2>&1 || true
+        break
+      fi
+    fi
+    warning "\n $(text 36) "
+  done
+
+  export_list
+  menu_pause
+}
+
+protocol_edit_ws_path() {
+  local CODE=$1 NODE_IDX FILE OLD_VAL NEW_VAL
+  NODE_IDX=$(protocol_node_index_by_code "$CODE")
+  FILE=$(protocol_file_by_code "$CODE")
+  [ -s "$FILE" ] || error " $(text 110) "
+  [ "$CODE" = h ] && OLD_VAL="$VMESS_WS_PATH" || OLD_VAL="$VLESS_WS_PATH"
+  read_new_value "$(menu_text '请输入新的 WebSocket 路径，不带开头 /' 'Enter new WebSocket path without leading /')" "$OLD_VAL" NEW_VAL || return
+  NEW_VAL="${NEW_VAL#/}"
+  [ -n "$NEW_VAL" ] || error " $(text 36) "
+  literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
+  protocol_restart_export
+}
+
+protocol_edit_ws_cdn() {
+  local CODE=$1 NODE_IDX FILE OLD_HOST OLD_PORT NEW_INPUT
+  NODE_IDX=$(protocol_node_index_by_code "$CODE")
+  FILE=$(protocol_file_by_code "$CODE")
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_HOST="${CDN[NODE_IDX]}"
+  OLD_PORT="${CDN_PORT[NODE_IDX]}"
+  [ -z "$OLD_PORT" ] && { [ "$CODE" = h ] && OLD_PORT=80 || OLD_PORT=443; }
+  reading "\n $(menu_text '请输入新的 CDN 优选地址，可带 :端口' 'Enter new CDN preferred address, optional :port') ($(menu_text '当前' 'current'): ${OLD_HOST}:${OLD_PORT}, $(menu_text '回车跳过' 'Enter to skip')): " NEW_INPUT
+  [ -z "$NEW_INPUT" ] && info " $(text 135) " && return
+  parse_host_port "$NEW_INPUT" "$OLD_PORT" || error " $(text 36) "
+  literal_replace_file "$FILE" "\"CDN\": \"${OLD_HOST}\"" "\"CDN\": \"${PARSED_HOST}\""
+  literal_replace_file "$FILE" "\"CDN_PORT\": \"${OLD_PORT}\"" "\"CDN_PORT\": \"${PARSED_PORT}\""
+  protocol_restart_export
+}
+
+protocol_edit_ws_cdn_port() {
+  local CODE=$1 NODE_IDX FILE OLD_VAL NEW_VAL
+  NODE_IDX=$(protocol_node_index_by_code "$CODE")
+  FILE=$(protocol_file_by_code "$CODE")
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_VAL="${CDN_PORT[NODE_IDX]}"
+  [ -z "$OLD_VAL" ] && { [ "$CODE" = h ] && OLD_VAL=80 || OLD_VAL=443; }
+  read_new_value "$(menu_text '请输入新的客户端 CDN 端口' 'Enter new client CDN port')" "$OLD_VAL" NEW_VAL || return
+  [[ "$NEW_VAL" =~ ^[1-9][0-9]{0,4}$ && "$NEW_VAL" -le 65535 ]] || error " $(text 36) "
+  literal_replace_file "$FILE" "\"CDN_PORT\": \"${OLD_VAL}\"" "\"CDN_PORT\": \"${NEW_VAL}\""
+  protocol_restart_export
+}
+
+protocol_edit_ws_domain() {
+  local CODE=$1 FILE OLD_VAL NEW_VAL
+  if [ -s "${ARGO_DAEMON_FILE}" ]; then
+    change_argo
+    exit
+  fi
+  FILE=$(protocol_file_by_code "$CODE")
+  [ -s "$FILE" ] || error " $(text 110) "
+  [ "$CODE" = h ] && OLD_VAL="$VMESS_HOST_DOMAIN" || OLD_VAL="$VLESS_HOST_DOMAIN"
+  read_new_value "$(menu_text '请输入新的 WS Host 域名' 'Enter new WS Host domain')" "$OLD_VAL" NEW_VAL || return
+  literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
+  protocol_restart_export
+}
+
+protocol_edit_ws_origin_ip() {
+  local CODE=$1 NODE_IDX FILE OLD_VAL NEW_VAL
+  NODE_IDX=$(protocol_node_index_by_code "$CODE")
+  FILE=$(protocol_file_by_code "$CODE")
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_VAL="${WS_SERVER_IP[NODE_IDX]}"
+  read_new_value "$(menu_text '请输入新的 WS 源站 IP' 'Enter new WS origin IP')" "$OLD_VAL" NEW_VAL || return
+  literal_replace_file "$FILE" "\"WS_SERVER_IP_SHOW\": \"${OLD_VAL}\"" "\"WS_SERVER_IP_SHOW\": \"${NEW_VAL}\""
+  protocol_restart_export
+}
+
+edit_nginx_port() {
+  local OLD_PORT NEW_PORT
+  check_install
+  fetch_nodes_value
+  OLD_PORT="$PORT_NGINX"
+  [ -n "$OLD_PORT" ] || error " Nginx $(text 26) "
+  read_new_value "$(menu_text '请输入新的 Nginx / 订阅回源端口' 'Enter new Nginx / subscribe origin port')" "$OLD_PORT" NEW_PORT || return
+  valid_listen_port "$NEW_PORT" || error " $(text 36) "
+  load_installed_protocol_ports
+  array_contains "$NEW_PORT" "${INSTALLED_PORT_VALUES[@]}" && error " PORT_NGINX conflicts with a protocol port. "
+  if [ "$NEW_PORT" != "$OLD_PORT" ] && ss -nltup | grep -q ":${NEW_PORT}"; then
+    error " $(text 153) "
+  fi
+  PORT_NGINX="$NEW_PORT"
+  literal_replace_file "$ARGO_DAEMON_FILE" "localhost:${OLD_PORT}" "localhost:${NEW_PORT}"
+  export_nginx_conf_file
+  [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
+  sync_firewall_rules
+  cmd_systemctl restart sing-box
+  [ -s "$ARGO_DAEMON_FILE" ] && cmd_systemctl restart argo
+  export_list
+  menu_pause
+}
+
+restart_nginx_runtime() {
+  command -v nginx >/dev/null 2>&1 || error " Nginx $(text 26) "
+  [ -s "${WORK_DIR}/nginx.conf" ] || error " Nginx $(text 26) "
+
+  nginx -s reload -c "${WORK_DIR}/nginx.conf" >/dev/null 2>&1 || {
+    local NGINX_PID
+    NGINX_PID=$(ps -eo pid,args | awk -v work_dir="$WORK_DIR" '$0~(work_dir"/nginx.conf"){print $1;exit}')
+    [ -n "$NGINX_PID" ] && kill "$NGINX_PID" >/dev/null 2>&1 || true
+    nginx -c "${WORK_DIR}/nginx.conf" >/dev/null 2>&1
+  }
+  info " Nginx restart $(text 37)"
+  menu_pause
+}
+
+show_config_summary() {
+  local CODE IDX NODE_IDX PORT_VAR PORT FILE
+  check_install
+  fetch_nodes_value
+  hint "\n $(menu_text '当前配置摘要' 'Current Configuration Summary')\n"
+  info " Sing-box: ${STATUS[0]}   Argo: ${STATUS[1]}   Nginx: ${STATUS[2]}"
+  info " Server IP: ${SERVER_IP:-N/A}"
+  [ -n "$PORT_NGINX" ] && info " Nginx: ${PORT_NGINX}"
+  [ -n "$ARGO_DOMAIN" ] && info " Argo: ${ARGO_DOMAIN}"
+  for IDX in "${!PROTOCOL_LIST[@]}"; do
+    CODE=$(asc $(( IDX + 98 )))
+    NODE_IDX=$(( IDX + 11 ))
+    FILE=$(protocol_file_by_code "$CODE")
+    [ -s "$FILE" ] || continue
+    PORT_VAR=$(protocol_port_var "$CODE")
+    PORT="${!PORT_VAR:-}"
+    info " ${CODE}. ${PROTOCOL_LIST[IDX]} | ${NODE_NAME[NODE_IDX]} | ${PORT:-N/A}"
+  done
+  menu_pause
+}
+
+protocol_print_summary() {
+  local CODE=$1 IDX NODE_IDX PORT_VAR PORT TLS_NOW HOST_NOW CDN_NOW CDN_PORT_NOW PATH_NOW
+  IDX=$(protocol_index_by_code "$CODE")
+  NODE_IDX=$(protocol_node_index_by_code "$CODE")
+  PORT_VAR=$(protocol_port_var "$CODE")
+  PORT="${!PORT_VAR:-}"
+  TLS_NOW=$(openssl x509 -noout -ext subjectAltName -in "${WORK_DIR}/cert/cert.pem" 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
+
+  info " $(menu_text '状态' 'Status'): $(protocol_status_text "$CODE")"
+  protocol_installed_by_code "$CODE" || return
+  info " $(menu_text '节点名' 'Node name'): ${NODE_NAME[NODE_IDX]} ${NODE_TAG[IDX]}"
+  info " $(menu_text '监听端口' 'Listen port'): ${PORT:-N/A}"
+  info " $(protocol_primary_secret_label "$CODE"): $(protocol_primary_secret "$CODE")"
+
+  case "$CODE" in
+    b|j|k )
+      info " Reality privateKey: ${REALITY_PRIVATE[NODE_IDX]}"
+      info " Reality publicKey: ${REALITY_PUBLIC[NODE_IDX]}"
+      info " SNI: ${TLS_NOW:-N/A} ($(menu_text '全局' 'global'))"
+      ;;
+    c )
+      info " SNI: ${TLS_NOW:-N/A} ($(menu_text '全局' 'global'))"
+      info " Hysteria2 $(menu_text '带宽' 'bandwidth'): ${HY2_UP:-200}/${HY2_DOWN:-1000} Mbps"
+      info " Realm: ${IS_HY2_REALM:-off}   WARP: ${IS_HY2_WARP:-off}   Realm ID: ${HY2_REALM_ID:-N/A}"
+      info " Port Hopping: ${HY2_PORT_HOPPING_RANGE:-disabled}"
+      ;;
+    d )
+      info " Tuic password: ${TUIC_PASSWORD:-N/A}"
+      info " Congestion: ${TUIC_CONGESTION_CONTROL:-bbr}"
+      info " SNI: ${TLS_NOW:-N/A} ($(menu_text '全局' 'global'))"
+      ;;
+    e )
+      info " Shadowsocks password: ${SHADOWTLS_PASSWORD:-N/A}"
+      info " Method: ${SHADOWTLS_METHOD:-N/A}"
+      info " SNI: ${TLS_NOW:-N/A} ($(menu_text '全局' 'global'))"
+      ;;
+    f )
+      info " Method: ${SHADOWSOCKS_METHOD:-N/A}"
+      ;;
+    h|i )
+      [ "$CODE" = h ] && PATH_NOW="$VMESS_WS_PATH" || PATH_NOW="$VLESS_WS_PATH"
+      [ "$CODE" = h ] && HOST_NOW="${VMESS_HOST_DOMAIN:-$ARGO_DOMAIN}" || HOST_NOW="${VLESS_HOST_DOMAIN:-$ARGO_DOMAIN}"
+      CDN_NOW="${CDN[NODE_IDX]}"
+      CDN_PORT_NOW="${CDN_PORT[NODE_IDX]}"
+      [ -z "$CDN_PORT_NOW" ] && { [ "$CODE" = h ] && CDN_PORT_NOW=80 || CDN_PORT_NOW=443; }
+      info " WS path: /${PATH_NOW}"
+      info " Host: ${HOST_NOW:-N/A}"
+      info " CDN: ${CDN_NOW:-N/A}:${CDN_PORT_NOW}"
+      info " Origin IP: ${WS_SERVER_IP[NODE_IDX]:-N/A}"
+      ;;
+    g|l|m )
+      info " SNI: ${TLS_NOW:-N/A} ($(menu_text '全局' 'global'))"
+      ;;
+  esac
+}
+
+protocol_detail_menu() {
+  local CODE=$1 IDX CHOOSE
+  IDX=$(protocol_index_by_code "$CODE")
+
+  while true; do
+    check_install
+    fetch_nodes_value
+    hint "\n ${CODE}. ${PROTOCOL_LIST[IDX]} (${NODE_TAG[IDX]})\n"
+    protocol_print_summary "$CODE"
+    hint ""
+    hint " 1. $(menu_text '安装 / 删除此协议' 'Install / remove this protocol')"
+
+    if protocol_installed_by_code "$CODE"; then
+      hint " 2. $(menu_text '修改节点名' 'Change node name')"
+      hint " 3. $(menu_text '修改监听端口' 'Change listen port')"
+      hint " 4. $(menu_text '修改主要 UUID / 密码' 'Change primary UUID / password')"
+      case "$CODE" in
+        b|j|k )
+          hint " 5. $(menu_text '修改 Reality privateKey' 'Change Reality privateKey')"
+          hint " 6. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
+          hint " 7. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          ;;
+        c )
+          hint " 5. $(menu_text '修改 Hysteria2 带宽' 'Change Hysteria2 bandwidth')"
+          hint " 6. $(menu_text '开启 / 关闭 Realm' 'Toggle Realm')"
+          hint " 7. $(menu_text '开启 / 关闭 WARP 辅助 Realm' 'Toggle WARP-assisted Realm')"
+          hint " 8. $(menu_text '修改 Realm ID' 'Change Realm ID')"
+          hint " 9. $(menu_text '修改端口跳跃' 'Change Port Hopping')"
+          hint " 10. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
+          hint " 11. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          ;;
+        d )
+          hint " 5. $(menu_text '修改 Tuic 密码' 'Change Tuic password')"
+          hint " 6. $(menu_text '修改 Tuic 拥塞控制' 'Change Tuic congestion control')"
+          hint " 7. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
+          hint " 8. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          ;;
+        e )
+          hint " 5. $(menu_text '修改底层 Shadowsocks 密码' 'Change inner Shadowsocks password')"
+          hint " 6. $(menu_text '修改加密方法' 'Change method')"
+          hint " 7. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
+          hint " 8. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          ;;
+        f )
+          hint " 5. $(menu_text '修改加密方法' 'Change method')"
+          hint " 6. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          ;;
+        h|i )
+          hint " 5. $(menu_text '修改 WebSocket 路径' 'Change WebSocket path')"
+          hint " 6. $(menu_text '修改 CDN 优选地址' 'Change CDN preferred address')"
+          hint " 7. $(menu_text '修改 CDN 客户端端口' 'Change CDN client port')"
+          hint " 8. $(menu_text '修改 Host 域名 / Argo 隧道' 'Change Host domain / Argo tunnel')"
+          hint " 9. $(menu_text '修改源站 IP 备注' 'Change origin IP note')"
+          hint " 10. $(menu_text '修改源站监听端口' 'Change origin listen port')"
+          ;;
+        g|l|m )
+          hint " 5. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
+          hint " 6. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          ;;
+      esac
+    fi
+
+    hint " 0. $(menu_text '返回' 'Back')"
+    reading "\n $(text 24) " CHOOSE
+    [ "$CHOOSE" = 0 ] && return
+
+    case "$CHOOSE" in
+      1 ) change_protocols; exit ;;
+      2 ) protocol_installed_by_code "$CODE" && protocol_edit_node_name "$CODE" ;;
+      3 ) protocol_installed_by_code "$CODE" && change_start_port "$CODE"; menu_pause ;;
+      4 ) protocol_installed_by_code "$CODE" && protocol_edit_primary_secret "$CODE" ;;
+      5 )
+        case "$CODE" in
+          b|j|k ) protocol_edit_reality_key "$CODE" ;;
+          c ) protocol_edit_hy2_bandwidth ;;
+          d ) protocol_edit_tuic_password ;;
+          e ) protocol_edit_shadowtls_ss_password ;;
+          f ) protocol_edit_method "$CODE" ;;
+          h|i ) protocol_edit_ws_path "$CODE" ;;
+          g|l|m ) menu_edit_tls_server ;;
+        esac
+        ;;
+      6 )
+        case "$CODE" in
+          b|j|k ) menu_edit_tls_server ;;
+          c ) protocol_toggle_hy2_realm ;;
+          d ) protocol_edit_tuic_congestion ;;
+          e ) protocol_edit_method "$CODE" ;;
+          f ) menu_edit_server_ip ;;
+          h|i ) protocol_edit_ws_cdn "$CODE" ;;
+          g|l|m ) menu_edit_server_ip ;;
+        esac
+        ;;
+      7 )
+        case "$CODE" in
+          b|j|k ) menu_edit_server_ip ;;
+          c ) protocol_toggle_hy2_warp ;;
+          d|e ) menu_edit_tls_server ;;
+          h|i ) protocol_edit_ws_cdn_port "$CODE" ;;
+        esac
+        ;;
+      8 )
+        case "$CODE" in
+          c ) protocol_edit_hy2_realm_id ;;
+          d|e ) menu_edit_server_ip ;;
+          h|i ) protocol_edit_ws_domain "$CODE" ;;
+        esac
+        ;;
+      9 )
+        case "$CODE" in
+          c ) protocol_edit_hy2_hopping ;;
+          h|i ) protocol_edit_ws_origin_ip "$CODE" ;;
+        esac
+        ;;
+      10 )
+        case "$CODE" in
+          c ) menu_edit_tls_server ;;
+          h|i ) change_start_port "$CODE"; menu_pause ;;
+        esac
+        ;;
+      11 )
+        [ "$CODE" = c ] && menu_edit_server_ip
+        ;;
+      * )
+        warning " $(text 36) "
+        sleep 1
+        ;;
+    esac
+  done
+}
+
+protocol_config_menu() {
+  local CHOOSE CODE IDX NODE_IDX STATUS_TEXT
+  while true; do
+    check_install
+    fetch_nodes_value
+    hint "\n $(menu_text '节点 / 协议配置' 'Node / Protocol Configuration')\n"
+    for IDX in "${!PROTOCOL_LIST[@]}"; do
+      CODE=$(asc $(( IDX + 98 )))
+      NODE_IDX=$(( IDX + 11 ))
+      STATUS_TEXT=$(protocol_status_text "$CODE")
+      hint " $(( IDX + 1 )). ${CODE}. ${PROTOCOL_LIST[IDX]} [${STATUS_TEXT}] ${NODE_NAME[NODE_IDX]:+ - ${NODE_NAME[NODE_IDX]}}"
+    done
+    hint " 13. $(text 62)"
+    hint " 0. $(menu_text '返回' 'Back')"
+    reading "\n $(text 24) " CHOOSE
+    [ "$CHOOSE" = 0 ] && return
+    if [[ "$CHOOSE" =~ ^[0-9]+$ ]] && [ "$CHOOSE" -ge 1 ] && [ "$CHOOSE" -le "${#PROTOCOL_LIST[@]}" ]; then
+      CODE=$(asc $(( CHOOSE + 97 )))
+      protocol_detail_menu "$CODE"
+    elif [ "$CHOOSE" = 13 ]; then
+      change_protocols
+      exit
+    else
+      warning " $(text 36) "
+      sleep 1
+    fi
+  done
+}
+
+status_nodes_menu() {
+  local CHOOSE
+  while true; do
+    hint "\n $(menu_text '状态与节点' 'Status & Nodes')\n"
+    hint " 1. $(text 29)"
+    hint " 2. $(menu_text '查看运行状态' 'View service status')"
+    hint " 3. $(menu_text '重新生成订阅' 'Regenerate subscriptions')"
+    hint " 4. $(menu_text '查看当前配置摘要' 'View current config summary')"
+    hint " 0. $(menu_text '返回' 'Back')"
+    reading "\n $(text 24) " CHOOSE
+    case "$CHOOSE" in
+      0 ) return ;;
+      1|3 ) export_list; exit ;;
+      2 )
+        check_install
+        info "\n Sing-box: ${STATUS[0]} ${SING_BOX_VERSION} ${SING_BOX_MEMORY_USAGE}"
+        info " Argo: ${STATUS[1]} ${ARGO_VERSION} ${ARGO_MEMORY_USAGE}"
+        info " Nginx: ${STATUS[2]} ${NGINX_VERSION} ${NGINX_MEMORY_USAGE}"
+        menu_pause
+        ;;
+      4 ) show_config_summary ;;
+      * ) warning " $(text 36) "; sleep 1 ;;
+    esac
+  done
+}
+
+toggle_sing_box_service() {
+  check_install
+  if [ "${STATUS[0]}" = "$(text 28)" ]; then
+    cmd_systemctl disable sing-box
+    cmd_systemctl status sing-box &>/dev/null && error " Sing-box $(text 27) $(text 38) " || info " Sing-box $(text 27) $(text 37)"
+  else
+    cmd_systemctl enable sing-box
+    sleep 2
+    cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 28) $(text 37)" || error " Sing-box $(text 28) $(text 38) "
+  fi
+  menu_pause
+}
+
+toggle_argo_service() {
+  check_install
+  if [ "${STATUS[1]}" = "$(text 28)" ]; then
+    cmd_systemctl disable argo
+    cmd_systemctl status argo &>/dev/null && error " Argo $(text 27) $(text 38) " || info " Argo $(text 27) $(text 37)"
+  else
+    cmd_systemctl enable argo
+    sleep 2
+    cmd_systemctl status argo &>/dev/null &&  info " Argo $(text 28) $(text 37)" || error " Argo $(text 28) $(text 38) "
+    grep -qs '\--url' ${ARGO_DAEMON_FILE} && fetch_quicktunnel_domain && export_list
+  fi
+  menu_pause
+}
+
+service_control_menu() {
+  local CHOOSE
+  while true; do
+    check_install
+    hint "\n $(menu_text '服务控制' 'Service Control')\n"
+    [ "${STATUS[0]}" = "$(text 28)" ] && hint " 1. $(text 27) Sing-box" || hint " 1. $(text 28) Sing-box"
+    hint " 2. $(menu_text '重启 Sing-box' 'Restart Sing-box')"
+    [ "${STATUS[1]}" = "$(text 28)" ] && hint " 3. $(text 27) Argo" || hint " 3. $(text 28) Argo"
+    hint " 4. $(menu_text '重启 Argo' 'Restart Argo')"
+    hint " 5. $(menu_text '重启 Nginx' 'Restart Nginx')"
+    hint " 6. $(menu_text '重载全部服务' 'Reload all services')"
+    hint " 0. $(menu_text '返回' 'Back')"
+    reading "\n $(text 24) " CHOOSE
+    case "$CHOOSE" in
+      0 ) return ;;
+      1 ) toggle_sing_box_service ;;
+      2 ) cmd_systemctl restart sing-box; info " Sing-box restart $(text 37)"; menu_pause ;;
+      3 ) toggle_argo_service ;;
+      4 ) cmd_systemctl restart argo; info " Argo restart $(text 37)"; menu_pause ;;
+      5 ) restart_nginx_runtime ;;
+      6 )
+        cmd_systemctl restart sing-box
+        [ -s "$ARGO_DAEMON_FILE" ] && cmd_systemctl restart argo
+        info " $(menu_text '全部服务已重载' 'All services reloaded')"
+        menu_pause
+        ;;
+      * ) warning " $(text 36) "; sleep 1 ;;
+    esac
+  done
+}
+
+global_config_menu() {
+  local CHOOSE
+  while true; do
+    hint "\n $(menu_text '全局配置' 'Global Configuration')\n"
+    hint " 1. $(menu_text '修改导出服务器 IP' 'Change exported server IP')"
+    hint " 2. $(menu_text '修改 SNI / 证书域名' 'Change SNI / certificate domain')"
+    hint " 3. $(menu_text '重排 / 修改所有协议监听端口' 'Reorder / change protocol listen ports')"
+    hint " 4. $(menu_text '旧版通用配置菜单' 'Legacy generic config menu')"
+    hint " 0. $(menu_text '返回' 'Back')"
+    reading "\n $(text 24) " CHOOSE
+    case "$CHOOSE" in
+      0 ) return ;;
+      1 ) menu_edit_server_ip ;;
+      2 ) menu_edit_tls_server ;;
+      3 ) change_start_port; menu_pause ;;
+      4 ) change_config; exit ;;
+      * ) warning " $(text 36) "; sleep 1 ;;
+    esac
+  done
+}
+
+argo_cdn_subscribe_menu() {
+  local CHOOSE
+  while true; do
+    hint "\n $(menu_text 'Argo / CDN / 订阅' 'Argo / CDN / Subscribe')\n"
+    hint " 1. $(text 92)"
+    hint " 2. $(menu_text '修改 Nginx / 订阅回源端口' 'Change Nginx / subscribe origin port')"
+    hint " 3. $(menu_text '重新生成订阅' 'Regenerate subscriptions')"
+    hint " 4. $(menu_text '进入 WS 协议页修改 CDN/Host/路径' 'Open WS protocol pages for CDN/Host/path')"
+    hint " 0. $(menu_text '返回' 'Back')"
+    reading "\n $(text 24) " CHOOSE
+    case "$CHOOSE" in
+      0 ) return ;;
+      1 ) change_argo; exit ;;
+      2 ) edit_nginx_port ;;
+      3 ) export_list; exit ;;
+      4 ) protocol_config_menu ;;
+      * ) warning " $(text 36) "; sleep 1 ;;
+    esac
+  done
+}
+
+maintenance_menu() {
+  local CHOOSE
+  while true; do
+    hint "\n $(menu_text '高级维护' 'Advanced Maintenance')\n"
+    hint " 1. $(text 31)"
+    hint " 2. $(text 32)"
+    hint " 3. $(text 59)"
+    hint " 4. $(text 69)"
+    hint " 5. $(text 76)"
+    hint " 0. $(menu_text '返回' 'Back')"
+    reading "\n $(text 24) " CHOOSE
+    case "$CHOOSE" in
+      0 ) return ;;
+      1 ) version; exit ;;
+      2 ) bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit ;;
+      3 ) bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit ;;
+      4 ) bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit ;;
+      5 ) bash <(wget --no-check-certificate -qO- https://tcp.hy2.sh/); exit ;;
+      * ) warning " $(text 36) "; sleep 1 ;;
+    esac
+  done
+}
+
 # 卸载 sing-box 全家桶
 uninstall() {
   if [ -d ${WORK_DIR} ]; then
@@ -5562,70 +6462,30 @@ menu_setting() {
   ACTION=()
 
   if [[ "${STATUS[0]}" =~ $(text 27)|$(text 28) ]]; then
-    OPTION[1]="1 .  $(text 29)"
-    [ "${STATUS[0]}" = "$(text 28)" ] && OPTION[2]="2 .  $(text 27) Sing-box (sb -s)" || OPTION[2]="2 .  $(text 28) Sing-box (sb -s)"
-    [ "${STATUS[1]}" = "$(text 28)" ] && OPTION[3]="3 .  $(text 27) Argo (sb -a)" || OPTION[3]="3 .  $(text 28) Argo (sb -a)"
-    OPTION[4]="4 .  $(text 92)"
-    OPTION[5]="5 .  $(text 121)"
-    OPTION[6]="6 .  $(text 31)"
-    OPTION[7]="7 .  $(text 32)"
-    OPTION[8]="8 .  $(text 62)"
-    OPTION[9]="9 .  $(text 33)"
-    OPTION[10]="10.  $(text 59)"
-    OPTION[11]="11.  $(text 69)"
-    OPTION[12]="12.  $(text 76)"
+    OPTION[1]="1.  $(menu_text '状态与节点' 'Status & Nodes')"
+    OPTION[2]="2.  $(menu_text '服务控制' 'Service Control')"
+    OPTION[3]="3.  $(menu_text '节点 / 协议配置' 'Node / Protocol Configuration')"
+    OPTION[4]="4.  $(menu_text '全局配置' 'Global Configuration')"
+    OPTION[5]="5.  $(menu_text 'Argo / CDN / 订阅' 'Argo / CDN / Subscribe')"
+    OPTION[6]="6.  $(menu_text '高级维护' 'Advanced Maintenance')"
+    OPTION[7]="7.  $(text 33)"
 
-    menu_action_export_list() { export_list; exit 0; }
-
-    if [ "${STATUS[0]}" = "$(text 28)" ]; then
-      menu_action_toggle_sing_box() {
-        cmd_systemctl disable sing-box
-        cmd_systemctl status sing-box &>/dev/null && error " Sing-box $(text 27) $(text 38) " || info " Sing-box $(text 27) $(text 37)"
-      }
-    else
-      menu_action_toggle_sing_box() {
-        cmd_systemctl enable sing-box
-        sleep 2
-        cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 28) $(text 37)" || error " Sing-box $(text 28) $(text 38) "
-      }
-    fi
-
-    if [ "${STATUS[1]}" = "$(text 28)" ]; then
-      menu_action_toggle_argo() {
-        cmd_systemctl disable argo
-        cmd_systemctl status argo &>/dev/null && error " Argo $(text 27) $(text 38) " || info " Argo $(text 27) $(text 37)"
-      }
-    else
-      menu_action_toggle_argo() {
-        cmd_systemctl enable argo
-        sleep 2
-        cmd_systemctl status argo &>/dev/null &&  info " Argo $(text 28) $(text 37)" || error " Argo $(text 28) $(text 38) "
-        grep -qs '\--url' ${ARGO_DAEMON_FILE} && fetch_quicktunnel_domain && export_list
-      }
-    fi
-
-    menu_action_change_argo() { change_argo; exit; }
-    menu_action_change_config() { change_config; exit; }
-    menu_action_version() { version; exit; }
-    menu_action_bbr() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
-    menu_action_change_protocols() { change_protocols; exit; }
+    menu_action_return_main() { menu_setting; menu; }
+    menu_action_status_nodes() { status_nodes_menu; menu_action_return_main; }
+    menu_action_service_control() { service_control_menu; menu_action_return_main; }
+    menu_action_protocol_config() { protocol_config_menu; menu_action_return_main; }
+    menu_action_global_config() { global_config_menu; menu_action_return_main; }
+    menu_action_argo_cdn_subscribe() { argo_cdn_subscribe_menu; menu_action_return_main; }
+    menu_action_maintenance() { maintenance_menu; menu_action_return_main; }
     menu_action_uninstall() { uninstall; exit; }
-    menu_action_argox() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    menu_action_sba() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    menu_action_hy2_tcp() { bash <(wget --no-check-certificate -qO- https://tcp.hy2.sh/); exit; }
 
-    ACTION[1]=menu_action_export_list
-    ACTION[2]=menu_action_toggle_sing_box
-    ACTION[3]=menu_action_toggle_argo
-    ACTION[4]=menu_action_change_argo
-    ACTION[5]=menu_action_change_config
-    ACTION[6]=menu_action_version
-    ACTION[7]=menu_action_bbr
-    ACTION[8]=menu_action_change_protocols
-    ACTION[9]=menu_action_uninstall
-    ACTION[10]=menu_action_argox
-    ACTION[11]=menu_action_sba
-    ACTION[12]=menu_action_hy2_tcp
+    ACTION[1]=menu_action_status_nodes
+    ACTION[2]=menu_action_service_control
+    ACTION[3]=menu_action_protocol_config
+    ACTION[4]=menu_action_global_config
+    ACTION[5]=menu_action_argo_cdn_subscribe
+    ACTION[6]=menu_action_maintenance
+    ACTION[7]=menu_action_uninstall
   else
     OPTION[1]="1.  $(text 115)"
     OPTION[2]="2.  $(text 34) + Argo + $(text 80) $(text 89)"
@@ -5792,7 +6652,10 @@ for z in "${!ALL_PARAMETER[@]}"; do
       change_argo; exit 0
       ;;
     -D )
-      change_config; exit 0
+      check_install
+      [ "${STATUS[0]}" = "$(text 26)" ] && error "\n Sing-box $(text 26) "
+      protocol_config_menu
+      exit 0
       ;;
     -U )
       check_install; uninstall; exit 0

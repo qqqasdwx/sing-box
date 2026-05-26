@@ -1408,8 +1408,9 @@ sync_firewall_rules() {
 export_argo_json_file() {
   local FILE_PATH=$1
   [[ -z "$PORT_NGINX" && -s ${WORK_DIR}/nginx.conf ]] && local PORT_NGINX=$(awk '/listen/{print $2; exit}' ${WORK_DIR}/nginx.conf)
-  [ ! -s $FILE_PATH/tunnel.json ] && echo $ARGO_JSON > $FILE_PATH/tunnel.json
-  [ ! -s $FILE_PATH/tunnel.yml ] && cat > $FILE_PATH/tunnel.yml << EOF
+  [ -z "$ARGO_JSON" ] && [ -s "$FILE_PATH/tunnel.json" ] && ARGO_JSON=$(cat "$FILE_PATH/tunnel.json")
+  [ ! -s "$FILE_PATH/tunnel.json" ] && echo "$ARGO_JSON" > "$FILE_PATH/tunnel.json"
+  cat > "$FILE_PATH/tunnel.yml" << EOF
 tunnel: $(awk -F '"' '{print $12}' <<< "$ARGO_JSON")
 credentials-file: ${WORK_DIR}/tunnel.json
 
@@ -1475,6 +1476,9 @@ export_nginx_conf_file() {
     ${PACKAGE_INSTALL[int]} nginx >/dev/null 2>&1
   fi
 
+  local VMESS_NGINX_PATH="${VMESS_WS_PATH:-${UUID_CONFIRM}-vmess}"
+  local VLESS_NGINX_PATH="${VLESS_WS_PATH:-${UUID_CONFIRM}-vless}"
+
   NGINX_CONF="user  root;
 worker_processes  auto;
 
@@ -1536,7 +1540,7 @@ http {
 
   [[ -n "$PORT_VMESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vmess websocket
-    location /${UUID_CONFIRM}-vmess {
+    location /${VMESS_NGINX_PATH} {
       if (\$http_upgrade != \"websocket\") {
          return 404;
       }
@@ -1553,7 +1557,7 @@ http {
 
   [[ -n "$PORT_VLESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
     # 反代 sing-box vless websocket
-    location /${UUID_CONFIRM}-vless {
+    location /${VLESS_NGINX_PATH} {
       if (\$http_upgrade != \"websocket\") {
          return 404;
       }
