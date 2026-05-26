@@ -27,7 +27,6 @@ services:
       # SERVER_IP: # 可选：服务器公网 IPv4/IPv6。脚本默认值：自动检测公网 IP，优先 IPv4；无 IPv4 时用 IPv6。
       # TLS_SERVER: # 可选：SNI/证书域名。脚本默认值：addons.mozilla.org。
       # NODE_NAME_CONFIRM: # 建议固定：全局节点名。脚本默认值：检测到的国家/地区 emoji + 容器 hostname。
-      # NODE_NAME: # 可选：NODE_NAME_CONFIRM 的旧 Docker 别名。
 
       # 全局身份凭据
       # UUID_CONFIRM: # 建议固定：全局 UUID。未填写时每次启动随机生成，会影响 b/c/d/g/h/i/j/k/l/m 协议。
