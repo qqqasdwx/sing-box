@@ -238,7 +238,7 @@ export_list() {
     CLASH2_PROXY_GROUPS_INSERT=("- ${NODE_NAME[11]} ${NODE_TAG[0]}" "- ${NODE_NAME[12]} ${NODE_TAG[1]}" "- ${NODE_NAME[13]} ${NODE_TAG[2]}" "- ${NODE_NAME[14]} ${NODE_TAG[3]}" "- ${NODE_NAME[15]} ${NODE_TAG[4]}" "- ${NODE_NAME[16]} ${NODE_TAG[5]}" "- ${NODE_NAME[17]} ${NODE_TAG[6]}" "- ${NODE_NAME[18]} ${NODE_TAG[7]}" "- ${NODE_NAME[20]} ${NODE_TAG[9]}" "- ${NODE_NAME[21]} ${NODE_TAG[10]}")
 
     CLASH2_YAML=$(cat ${TEMP_DIR}/clash2)
-    for x in ${!CLASH2_PORT[@]}; do
+    for x in "${!CLASH2_PORT[@]}"; do
       [[ ${CLASH2_PORT[x]} =~ [0-9]+ ]] && { CLASH2_YAML=$(sed "/proxy-groups:/i\  ${CLASH2_PROXY_INSERT[x]}" <<< "$CLASH2_YAML"); CLASH2_YAML=$(sed -E "/- name: (♻️ 自动选择|📲 电报消息|💬 OpenAi|📹 油管视频|🎥 奈飞视频|📺 巴哈姆特|📺 哔哩哔哩|🌍 国外媒体|🌏 国内媒体|📢 谷歌FCM|Ⓜ️ 微软Bing|Ⓜ️ 微软云盘|Ⓜ️ 微软服务|🍎 苹果服务|🎮 游戏平台|🎶 网易音乐|🎯 全球直连)|^rules:$/i\      ${CLASH2_PROXY_GROUPS_INSERT[x]}" <<< "$CLASH2_YAML"); }
     done
     echo "$CLASH2_YAML" > ${WORK_DIR}/subscribe/clash2
@@ -822,7 +822,9 @@ change_protocols() {
 
   # 查找已安装的协议，并遍历其在所有协议列表中的名称，获取协议名后存放在 EXISTED_PROTOCOLS; 没有的协议存放在 NOT_EXISTED_PROTOCOLS
   INSTALLED_PROTOCOLS_LIST=$(awk -F '"' '/"tag":/{print $4}' ${WORK_DIR}/conf/*_inbounds.json | grep -v 'shadowtls-in' | awk '{print $NF}')
-  for f in ${!NODE_TAG[@]}; do [[ $INSTALLED_PROTOCOLS_LIST =~ "${NODE_TAG[f]}" ]] && EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}") || NOT_EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}"); done
+  for f in "${!NODE_TAG[@]}"; do
+    [[ $INSTALLED_PROTOCOLS_LIST =~ ${NODE_TAG[f]} ]] && EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}") || NOT_EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}")
+  done
 
   # 列出已安装协议
   hint "\n $(text 136) (${#EXISTED_PROTOCOLS[@]})"
@@ -840,7 +842,7 @@ change_protocols() {
   done
 
   for k in "${EXISTED_PROTOCOLS[@]}"; do
-    [[ ! "${REMOVE_PROTOCOLS[@]}" =~ "$k" ]] && KEEP_PROTOCOLS+=("$k")
+    array_contains "$k" "${REMOVE_PROTOCOLS[@]}" || KEEP_PROTOCOLS+=("$k")
   done
 
   # 如有未安装的协议，列表显示并选择安装，把增加的协议存在放在 ADD_PROTOCOLS
@@ -890,7 +892,7 @@ change_protocols() {
   fetch_nodes_value
 
   # 用于新节点的配置信息
-  UUID_CONFIRM=$(awk '{print $1}' <<< "${UUID[@]} $TROJAN_PASSWORD")
+  UUID_CONFIRM=$(awk '{print $1}' <<< "${UUID[*]} $TROJAN_PASSWORD")
   for v in "${NODE_NAME[@]}"; do
     [ -n "$v" ] && NODE_NAME_CONFIRM="$v" && break
   done
@@ -898,7 +900,7 @@ change_protocols() {
 
   # 寻找待删除协议的 inbound 文件名
   for o in "${REMOVE_PROTOCOLS[@]}"; do
-    for s in ${!PROTOCOL_LIST[@]}; do
+    for s in "${!PROTOCOL_LIST[@]}"; do
       [ "$o" = "${PROTOCOL_LIST[s]}" ] && REMOVE_FILE+=("${NODE_TAG[s]}_inbounds.json")
     done
   done
@@ -920,15 +922,15 @@ change_protocols() {
 
   # 根据全部协议，找到空余的端口号
   for q in "${!REINSTALL_PROTOCOLS[@]}"; do
-    [[ ! ${KEEP_PORTS[@]} =~ $[START_PORT + q] ]] && ADD_PORTS+=($[START_PORT + q])
+    array_contains "$((START_PORT + q))" "${KEEP_PORTS[@]}" || ADD_PORTS+=("$((START_PORT + q))")
   done
 
   # 所有协议的端口号
-  REINSTALL_PORTS=(${KEEP_PORTS[@]} ${ADD_PORTS[@]})
+  REINSTALL_PORTS=("${KEEP_PORTS[@]}" "${ADD_PORTS[@]}")
 
   CHECK_PROTOCOLS=b
   # 获取 Reality 端口
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_XTLS_REALITY=${REINSTALL_PORTS[POSITION]}
     NEED_PRIVATE_KEY='need_private_key'
@@ -938,7 +940,7 @@ change_protocols() {
 
   # 获取 Hysteria2 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_HYSTERIA2=${REINSTALL_PORTS[POSITION]}
     if [[ " ${ADD_PROTOCOLS[*]} " =~ " ${PROTOCOL_LIST[1]} " ]] && [ -z "$IS_HY2_REALM" ]; then
@@ -951,7 +953,7 @@ change_protocols() {
 
   # 获取 Tuic V5 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_TUIC=${REINSTALL_PORTS[POSITION]}
   else
@@ -960,14 +962,14 @@ change_protocols() {
 
   # 获取 ShadowTLS 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_SHADOWTLS=${REINSTALL_PORTS[POSITION]}
   fi
 
   # 获取 Shadowsocks 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_SHADOWSOCKS=${REINSTALL_PORTS[POSITION]}
   else
@@ -976,7 +978,7 @@ change_protocols() {
 
   # 获取 Trojan 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_TROJAN=${REINSTALL_PORTS[POSITION]}
   else
@@ -995,7 +997,7 @@ change_protocols() {
 
   # 获取 vmess + ws 配置信息
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     local DOMAIN_ERROR_TIME=5
     if [[ "$ARGO_READY" != 'argo_ready' || "$ORIGIN_READY" != 'origin_ready' ]]; then
       if [ "$ARGO_ORIGIN_RULES_STATUS" = 'is_origin' ]; then
@@ -1030,7 +1032,7 @@ change_protocols() {
 
   # 获取 vless + ws + tls 配置信息
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     local DOMAIN_ERROR_TIME=5
     if [[ "$ARGO_READY" != 'argo_ready' || "$ORIGIN_READY" != 'origin_ready' ]]; then
       if [ "$ARGO_ORIGIN_RULES_STATUS" = 'is_origin' ]; then
@@ -1094,7 +1096,7 @@ change_protocols() {
 
   # 获取 H2 + Reality 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_H2_REALITY=${REINSTALL_PORTS[POSITION]}
     NEED_PRIVATE_KEY='need_private_key'
@@ -1104,7 +1106,7 @@ change_protocols() {
 
   # 获取 gRPC + Reality 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_GRPC_REALITY=${REINSTALL_PORTS[POSITION]}
     NEED_PRIVATE_KEY='need_private_key'
@@ -1124,7 +1126,7 @@ change_protocols() {
 
   # 获取 anytls 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_ANYTLS=${REINSTALL_PORTS[POSITION]}
   else
@@ -1133,7 +1135,7 @@ change_protocols() {
 
   # 获取 naive 端口
   CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ "$CHECK_PROTOCOLS" ]]; then
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
     PORT_NAIVE=${REINSTALL_PORTS[POSITION]}
   else

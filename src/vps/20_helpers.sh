@@ -27,11 +27,10 @@ text() {
 # sing-box 协议分类：Reality 类 (b/j/k)、Hysteria2(c)、WS 类 (h/i)
 calc_install_steps() {
   local _total=5  # 固定步骤：协议选择、起始端口、VPS IP、UUID、节点名
-  local HAS_REALITY=false HAS_WS=false HAS_HY2=false
+  local HAS_REALITY=false HAS_WS=false
   for _P in "${INSTALL_PROTOCOLS[@]}"; do
     [[ "$_P" =~ ^[bjk]$ ]] && HAS_REALITY=true
     [[ "$_P" =~ ^[hi]$ ]] && HAS_WS=true
-    [[ "$_P" == 'c' ]] && HAS_HY2=true
   done
   [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]] && (( _total++ ))  # nginx 端口
   $HAS_REALITY && (( _total++ ))                # Reality 私钥
@@ -64,6 +63,38 @@ apply_custom_node_names() {
   [ -n "${NODE_NAME_GRPC_REALITY:-}" ] && NODE_NAME[20]=$NODE_NAME_GRPC_REALITY
   [ -n "${NODE_NAME_ANYTLS:-}" ] && NODE_NAME[21]=$NODE_NAME_ANYTLS
   [ -n "${NODE_NAME_NAIVE:-}" ] && NODE_NAME[22]=$NODE_NAME_NAIVE
+}
+
+array_contains() {
+  local _needle=$1 _item
+  shift
+  for _item in "$@"; do
+    [ "$_item" = "$_needle" ] && return 0
+  done
+  return 1
+}
+
+array_contains_any() {
+  local -n _haystack=$1
+  shift
+  local _needle
+  for _needle in "$@"; do
+    array_contains "$_needle" "${_haystack[@]}" && return 0
+  done
+  return 1
+}
+
+parameter_present() {
+  local _needle=${1^^} _item
+  shift
+  for _item in "$@"; do
+    [ "${_item^^}" = "$_needle" ] && return 0
+  done
+  return 1
+}
+
+first_matching_file() {
+  compgen -G "$1" | sed -n '1p'
 }
 
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
@@ -665,7 +696,7 @@ input_nginx_port() {
   local PORT_NGINX_DEFAULT=$(shuf -i ${MIN_PORT}-${MAX_PORT} -n 1)
   [[ "$IS_FAST_INSTALL" = 'is_fast_install' && -z "$PORT_NGINX" ]] && PORT_NGINX="$PORT_NGINX_DEFAULT"
   while true; do
-    [[ "$PORT_ERROR_TIME" > 1 && "$PORT_ERROR_TIME" < 6 ]] && unset IN_USED PORT_NGINX
+    [[ "$PORT_ERROR_TIME" -gt 1 && "$PORT_ERROR_TIME" -lt 6 ]] && unset IN_USED PORT_NGINX
     (( PORT_ERROR_TIME-- )) || true
     if [ "$PORT_ERROR_TIME" = 0 ]; then
       error "\n $(text 3) \n"

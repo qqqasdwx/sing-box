@@ -499,7 +499,7 @@ check_system_ip() {
   [ "$L" = 'C' ] && local IS_CHINESE='?lang=zh-CN'
   local DEFAULT_LOCAL_INTERFACE4=$(ip -4 route show default | awk '/default/ {for (i=0; i<NF; i++) if ($i=="dev") {print $(i+1); exit}}')
   local DEFAULT_LOCAL_INTERFACE6=$(ip -6 route show default | awk '/default/ {for (i=0; i<NF; i++) if ($i=="dev") {print $(i+1); exit}}')
-  if [ -n ""${DEFAULT_LOCAL_INTERFACE4}${DEFAULT_LOCAL_INTERFACE6}"" ]; then
+  if [ -n "${DEFAULT_LOCAL_INTERFACE4}${DEFAULT_LOCAL_INTERFACE6}" ]; then
     local DEFAULT_LOCAL_IP4=$(ip -4 addr show $DEFAULT_LOCAL_INTERFACE4 | sed -n 's#.*inet \([^/]\+\)/[0-9]\+.*global.*#\1#gp')
     local DEFAULT_LOCAL_IP6=$(ip -6 addr show $DEFAULT_LOCAL_INTERFACE6 | sed -n 's#.*inet6 \([^/]\+\)/[0-9]\+.*global.*#\1#gp')
     [ -n "$DEFAULT_LOCAL_IP4" ] && local BIND_ADDRESS4="--bind-address=$DEFAULT_LOCAL_IP4"
@@ -670,14 +670,14 @@ sing-box_variables() {
   [ "$(check_chatgpt $(grep -oE '[46]' <<< "$STRATEGY"))" = 'unlock' ] && CHATGPT_OUT=direct
 
   # 如果选择有 b j k 这些 reality 协议，自定义 reality 公私钥，如果没有则自动生成
-  if [ "$NONINTERACTIVE_INSTALL" != 'noninteractive_install' ] && [[ "${INSTALL_PROTOCOLS[@]}" =~ 'b'|'j'|'k' ]]; then
+  if [ "$NONINTERACTIVE_INSTALL" != 'noninteractive_install' ] && array_contains_any INSTALL_PROTOCOLS b j k; then
     (( STEP_NUM++ )) || true
     input_reality_key
   fi
 
   # 如选择有 c. hysteria2 时，先选择 Realm / WARP，再选择是否使用端口跳跃。
   # 这三项属于 Hysteria2 子选项，不计入安装总步骤，也不显示步骤编号。
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ 'c' ]]; then
+  if array_contains c "${INSTALL_PROTOCOLS[@]}"; then
     input_hy2_realm
     local _SAVED_TOTAL_STEPS="$TOTAL_STEPS"
     TOTAL_STEPS=''
@@ -686,7 +686,7 @@ sing-box_variables() {
   fi
 
   # 如选择有 h. vmess + ws 或 i. vless + ws 时，先检测是否有支持的 http 端口可用，如有则要求输入域名和 cdn
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ 'h' ]]; then
+  if array_contains h "${INSTALL_PROTOCOLS[@]}"; then
     if [ "$IS_ARGO" = 'is_argo' ]; then
       if [ "$ARGO_READY" != 'argo_ready' ]; then
         (( STEP_NUM++ )) || true
@@ -702,7 +702,7 @@ sing-box_variables() {
     fi
   fi
 
-  if [[ "${INSTALL_PROTOCOLS[@]}" =~ 'i' ]]; then
+  if array_contains i "${INSTALL_PROTOCOLS[@]}"; then
     if [ "$IS_ARGO" = 'is_argo' ]; then
       if [ "$ARGO_READY" != 'argo_ready' ]; then
         (( STEP_NUM++ )) || true

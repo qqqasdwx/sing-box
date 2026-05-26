@@ -35,10 +35,10 @@ check_brutal
 ALL_PARAMETER=($(sed -E 's/(-c|-e|-f|-C|-E|-F) //; s/=([^"])/ \1/g; s/sudo cloudflared service install //' <<< $*))
 # KV 参数安装：只要指定 --CHOOSE_PROTOCOLS，就认为用户要无交互安装。
 # 其余参数允许缺省，脚本会按交互模式默认值自动补齐。
-[[ "${ALL_PARAMETER[@]^^}" == *"--CHOOSE_PROTOCOLS"* ]] && NONINTERACTIVE_INSTALL=noninteractive_install
+parameter_present --CHOOSE_PROTOCOLS "${ALL_PARAMETER[@]}" && NONINTERACTIVE_INSTALL=noninteractive_install
 
 # 传参处理，无交互快速安装参数
-for z in ${!ALL_PARAMETER[@]}; do
+for z in "${!ALL_PARAMETER[@]}"; do
   case "${ALL_PARAMETER[z]^^}" in
     -K|-L )
       ((z++))
