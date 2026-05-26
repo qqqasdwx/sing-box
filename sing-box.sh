@@ -335,6 +335,16 @@ E[147]="Hysteria2 Realm is useful for China-back routing or machines without pub
 C[147]="Hysteria2 Realm 适用于回国或者没有公网入口的机器；有公网入口时不建议使用。是否启用？[y/N]:"
 E[148]="WARP-assisted hole punching is useful in strict NAT environments. When direct hole punching fails, Cloudflare WARP can provide a CF egress path to improve success. Enable it? [y/N]:"
 C[148]="WARP 辅助打洞（适用于 NAT 严格环境）：当 NAT 类型较严格（如对称 NAT）导致直连打洞失败时，可借助 Cloudflare WARP 获取一个 CF 出口 IP 作为中转，提升打洞成功率。是否启用？[y/N]:"
+E[149]="All protocol ports from a new starting port"
+C[149]="按新的起始端口重排所有协议端口"
+E[150]="Please select the protocol port to modify:"
+C[150]="请选择要修改的协议端口:"
+E[151]="Please enter new port for \${_name} (current: \${_old_port}, press Enter to skip):"
+C[151]="请输入 \${_name} 的新端口 (当前: \${_old_port}，回车跳过):"
+E[152]="Port \${_new_port} conflicts with \${_conflict_name}."
+C[152]="端口 \${_new_port} 与 \${_conflict_name} 冲突。"
+E[153]="Port \${_new_port} is already in use."
+C[153]="端口 \${_new_port} 正在被占用。"
 # 自定义字体彩色，read 函数
 warning() { echo -e "\033[31m\033[01m$*\033[0m"; }  # 红色
 error() { echo -e "\033[31m\033[01m$*\033[0m" && exit 1; } # 红色
@@ -419,6 +429,132 @@ array_contains_any() {
     array_contains "$_needle" "${_haystack[@]}" && return 0
   done
   return 1
+}
+
+normalize_install_protocols() {
+  local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _ord _protocol
+  _max_code=$(asc "$_max_ord")
+  INSTALL_PROTOCOLS=()
+
+  if [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-${_max_code}] ]]; then
+    for ((_ord=98; _ord<=_max_ord; _ord++)); do
+      INSTALL_PROTOCOLS+=("$(asc "$_ord")")
+    done
+  else
+    while IFS= read -r _protocol; do
+      INSTALL_PROTOCOLS+=("$_protocol")
+    done < <(grep -o . <<< "${CHOOSE_PROTOCOLS,,}" | sed "/[^b-${_max_code}]/d" | awk '!seen[$0]++')
+  fi
+}
+
+protocol_port_var() {
+  case "$1" in
+    b ) printf '%s' PORT_XTLS_REALITY ;;
+    c ) printf '%s' PORT_HYSTERIA2 ;;
+    d ) printf '%s' PORT_TUIC ;;
+    e ) printf '%s' PORT_SHADOWTLS ;;
+    f ) printf '%s' PORT_SHADOWSOCKS ;;
+    g ) printf '%s' PORT_TROJAN ;;
+    h ) printf '%s' PORT_VMESS_WS ;;
+    i ) printf '%s' PORT_VLESS_WS ;;
+    j ) printf '%s' PORT_H2_REALITY ;;
+    k ) printf '%s' PORT_GRPC_REALITY ;;
+    l ) printf '%s' PORT_ANYTLS ;;
+    m ) printf '%s' PORT_NAIVE ;;
+  esac
+}
+
+protocol_name_by_code() {
+  local _idx=$(( $(asc "$1") - 98 ))
+  printf '%s' "${PROTOCOL_LIST[_idx]}"
+}
+
+valid_listen_port() {
+  [[ "$1" =~ ^[1-9][0-9]{1,4}$ && "$1" -ge "$MIN_PORT" && "$1" -le "$MAX_PORT" ]]
+}
+
+resolve_protocol_ports() {
+  local _pos _code _var _port _default _idx _name
+  local _ports=() _names=()
+
+  for _pos in "${!INSTALL_PROTOCOLS[@]}"; do
+    _code=${INSTALL_PROTOCOLS[_pos]}
+    _var=$(protocol_port_var "$_code")
+    [ -z "$_var" ] && continue
+
+    _port=${!_var:-}
+    if [ -z "$_port" ]; then
+      _default=$(( START_PORT + _pos ))
+      printf -v "$_var" '%s' "$_default"
+      _port=$_default
+    fi
+
+    _name=$(protocol_name_by_code "$_code")
+    valid_listen_port "$_port" || error " ${_var} (${_name}) must be ${MIN_PORT}-${MAX_PORT}. "
+
+    for _idx in "${!_ports[@]}"; do
+      if [ "${_ports[_idx]}" = "$_port" ]; then
+        error " ${_var} (${_name}) conflicts with ${_names[_idx]} on port ${_port}. "
+      fi
+    done
+
+    _ports+=("$_port")
+    _names+=("${_var} (${_name})")
+  done
+}
+
+protocol_port_in_use() {
+  local _target=$1 _code _var
+  for _code in "${INSTALL_PROTOCOLS[@]}"; do
+    _var=$(protocol_port_var "$_code")
+    [ -n "$_var" ] && [ "${!_var:-}" = "$_target" ] && return 0
+  done
+  return 1
+}
+
+default_service_port() {
+  local _port=$(( START_PORT + ${#INSTALL_PROTOCOLS[@]} ))
+  while protocol_port_in_use "$_port"; do
+    _port=$(( _port + 1 ))
+  done
+  printf '%s' "$_port"
+}
+
+validate_nginx_port() {
+  [ -z "$PORT_NGINX" ] && return
+  valid_listen_port "$PORT_NGINX" || error " PORT_NGINX must be ${MIN_PORT}-${MAX_PORT}. "
+  protocol_port_in_use "$PORT_NGINX" && error " PORT_NGINX conflicts with a selected protocol port. "
+}
+
+load_installed_protocol_ports() {
+  INSTALLED_PORT_CODES=()
+  INSTALLED_PORT_NAMES=()
+  INSTALLED_PORT_TAGS=()
+  INSTALLED_PORT_FILES=()
+  INSTALLED_PORT_VALUES=()
+
+  local _idx _code _file _port
+  for _idx in "${!NODE_TAG[@]}"; do
+    _file=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[_idx]}_inbounds.json")
+    [ -s "$_file" ] || continue
+    _port=$(awk -F ':' '/"listen_port"[[:space:]]*:/ {gsub(/[[:space:],]/, "", $2); print $2; exit}' "$_file")
+    [ -n "$_port" ] || continue
+    _code=$(asc $((_idx + 98)))
+    INSTALLED_PORT_CODES+=("$_code")
+    INSTALLED_PORT_NAMES+=("${PROTOCOL_LIST[_idx]}")
+    INSTALLED_PORT_TAGS+=("${NODE_TAG[_idx]}")
+    INSTALLED_PORT_FILES+=("$_file")
+    INSTALLED_PORT_VALUES+=("$_port")
+  done
+}
+
+format_installed_protocol_ports() {
+  load_installed_protocol_ports
+  local _i _out=''
+  for _i in "${!INSTALLED_PORT_VALUES[@]}"; do
+    _out+="${_out:+, }${INSTALLED_PORT_TAGS[_i]}:${INSTALLED_PORT_VALUES[_i]}"
+  done
+  printf '%s' "$_out"
 }
 
 parameter_present() {
@@ -638,12 +774,9 @@ change_config() {
   ls ${WORK_DIR}/conf/*reality_inbounds.json >/dev/null 2>&1 && local SNI_NOW=$(awk 'match($0, /"server_name"[[:space:]]*:[[:space:]]*"[^"]+"/){gsub(/.*: *"/,""); gsub(/".*/,""); print; exit}' ${WORK_DIR}/conf/*reality_inbounds.json) && MENU_IDX+=(129) && MENU_KEY+=(sni) && MENU_VAL+=("$SNI_NOW")
 
   # 监听端口
-  local PORTS_NOW=$(awk -F ':|,' '/"listen_port"/{print $2}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null)
+  local PORTS_NOW=$(format_installed_protocol_ports)
   if [ -n "$PORTS_NOW" ]; then
-    local PORTS_NOW_START=$(awk 'NR == 1 { min = $0 } { if ($0 < min) min = $0 } END {print min}' <<< "$PORTS_NOW")
-    local PORTS_NOW_COUNT=$(awk 'END { print NR }' <<< "$PORTS_NOW")
-    local PORTS_NOW_END=$((PORTS_NOW_START + PORTS_NOW_COUNT - 1))
-    MENU_IDX+=(30) && MENU_KEY+=(ports) && MENU_VAL+=("${PORTS_NOW_START} - ${PORTS_NOW_END}")
+    MENU_IDX+=(30) && MENU_KEY+=(ports) && MENU_VAL+=("${PORTS_NOW}")
   fi
 
   # 节点名
@@ -1042,7 +1175,15 @@ input_nginx_port() {
     fi
     PORT_NGINX=${PORT_NGINX:-"$PORT_NGINX_DEFAULT"}
     if [[ "$PORT_NGINX" =~ ^[1-9][0-9]{1,4}$ && "$PORT_NGINX" -ge "$MIN_PORT" && "$PORT_NGINX" -le "$MAX_PORT" ]]; then
-      ss -nltup | grep -q ":$PORT_NGINX" && warning "\n $(text 44) \n" || break
+      if protocol_port_in_use "$PORT_NGINX"; then
+        [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && error " PORT_NGINX conflicts with a selected protocol port. "
+        warning "\n $(text 44) \n"
+      elif ss -nltup | grep -q ":$PORT_NGINX"; then
+        [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && error " PORT_NGINX is already in use. "
+        warning "\n $(text 44) \n"
+      else
+        break
+      fi
     fi
   done
 }
@@ -1928,7 +2069,6 @@ sing-box_variables() {
   fi
 
   # 选择安装的协议，由于选项 a 为全部协议，所以选项数不是从 a 开始，而是从 b 开始，处理输入：把大写全部变为小写，把不符合的选项去掉，把重复的选项合并
-  MAX_CHOOSE_PROTOCOLS=$(asc $(( CONSECUTIVE_PORTS+96+1 )))
   (( STEP_NUM++ )) || true
   if [ -z "$CHOOSE_PROTOCOLS" ]; then
     hint "\n (${STEP_NUM}/${TOTAL_STEPS:-?}) $(text 49) "
@@ -1939,7 +2079,7 @@ sing-box_variables() {
   fi
 
   # 对选择协议的输入处理逻辑：先把所有的大写转为小写，并把所有没有去选项剔除掉，最后按输入的次序排序。如果选项为 a(all) 和其他选项并存，将会忽略 a，如 abc 则会处理为 bc
-  [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-$MAX_CHOOSE_PROTOCOLS] ]] && INSTALL_PROTOCOLS=($(eval echo {b..$MAX_CHOOSE_PROTOCOLS})) || INSTALL_PROTOCOLS=($(grep -o . <<< "$CHOOSE_PROTOCOLS" | sed "/[^b-$MAX_CHOOSE_PROTOCOLS]/d" | awk '!seen[$0]++'))
+  normalize_install_protocols
 
   # 协议已确定，按实际选择重新计算总步骤数
   calc_install_steps
@@ -1953,11 +2093,14 @@ sing-box_variables() {
     done
     input_start_port ${#INSTALL_PROTOCOLS[@]}
   fi
+  resolve_protocol_ports
 
   # 输出模式选择，输入用于订阅的 Nginx 服务端口号， 后台根据选择安装依赖
   if [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]]; then
     (( STEP_NUM++ )) || true
+    [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' && -z "$PORT_NGINX" ]] && PORT_NGINX=$(default_service_port)
     input_nginx_port
+    validate_nginx_port
   fi
 
   # 输入服务器 IP,默认为检测到的服务器 IP，如果全部为空，则提示并退出脚本
@@ -4831,15 +4974,116 @@ EOF
 
 # 更换各协议的监听端口
 change_start_port() {
-  OLD_PORTS=$(awk -F ':|,' '/listen_port/{print $2}' ${WORK_DIR}/conf/*)
-  OLD_START_PORT=$(awk 'NR == 1 { min = $0 } { if ($0 < min) min = $0; count++ } END {print min}' <<< "$OLD_PORTS")
-  OLD_CONSECUTIVE_PORTS=$(awk 'END { print NR }' <<< "$OLD_PORTS")
-  input_start_port $OLD_CONSECUTIVE_PORTS
+  load_installed_protocol_ports
+  [ "${#INSTALLED_PORT_VALUES[@]}" = 0 ] && error " $(text 110) "
+
+  local OLD_PORTS=("${INSTALLED_PORT_VALUES[@]}")
+  local NEW_PORTS=("${INSTALLED_PORT_VALUES[@]}")
+  local SELECT_PORT PORT_ERROR_TIME _i _j _name _old_port _new_port _conflict_name _default_start
+
+  hint "\n $(text 150)\n"
+  hint " 1. $(text 149)"
+  for _i in "${!INSTALLED_PORT_VALUES[@]}"; do
+    hint " $(( _i + 2 )). ${INSTALLED_PORT_NAMES[_i]} (${INSTALLED_PORT_TAGS[_i]})  ${INSTALLED_PORT_VALUES[_i]}"
+  done
+  hint ""
+  reading " $(text 24) " SELECT_PORT
+
+  if ! [[ "$SELECT_PORT" =~ ^[0-9]+$ ]] || [ "$SELECT_PORT" -lt 1 ] || [ "$SELECT_PORT" -gt "$((${#INSTALLED_PORT_VALUES[@]} + 1))" ]; then
+    info " $(text 135) "
+    return
+  fi
+
+  if [ "$SELECT_PORT" = 1 ]; then
+    _default_start=$(awk 'NR == 1 { min = $0 } { if ($0 < min) min = $0 } END {print min}' <<< "$(printf '%s\n' "${OLD_PORTS[@]}")")
+    local _saved_start_port_default="$START_PORT_DEFAULT"
+    START_PORT_DEFAULT="$_default_start"
+    PORT_ERROR_TIME=6
+    unset START_PORT
+    while true; do
+      (( PORT_ERROR_TIME-- )) || true
+      [ "$PORT_ERROR_TIME" = 0 ] && START_PORT_DEFAULT="$_saved_start_port_default" && error "\n $(text 3) \n"
+      local NUM=${#INSTALLED_PORT_VALUES[@]}
+      reading "\n $(text 11) " START_PORT
+      START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
+      if valid_listen_port "$START_PORT"; then
+        for _i in "${!NEW_PORTS[@]}"; do
+          NEW_PORTS[_i]=$((START_PORT + _i))
+        done
+        break
+      fi
+      warning "\n $(text 36) \n"
+    done
+    START_PORT_DEFAULT="$_saved_start_port_default"
+  else
+    _i=$((SELECT_PORT - 2))
+    _name="${INSTALLED_PORT_NAMES[_i]} (${INSTALLED_PORT_TAGS[_i]})"
+    _old_port="${INSTALLED_PORT_VALUES[_i]}"
+    reading " $(text 151) " _new_port
+    [ -z "$_new_port" ] && info " $(text 135) " && return
+    valid_listen_port "$_new_port" || error " $(text 36) "
+    NEW_PORTS[_i]="$_new_port"
+  fi
+
+  for _i in "${!NEW_PORTS[@]}"; do
+    valid_listen_port "${NEW_PORTS[_i]}" || error " ${INSTALLED_PORT_NAMES[_i]} (${INSTALLED_PORT_TAGS[_i]}) port must be ${MIN_PORT}-${MAX_PORT}. "
+    if [ -s "${WORK_DIR}/nginx.conf" ]; then
+      local _nginx_port
+      _nginx_port=$(awk '/listen/{print $2; exit}' "${WORK_DIR}/nginx.conf")
+      if [ -n "$_nginx_port" ] && [ "${NEW_PORTS[_i]}" = "$_nginx_port" ]; then
+        _new_port="${NEW_PORTS[_i]}"
+        _conflict_name=nginx
+        error " $(text 152) "
+      fi
+    fi
+    for _j in "${!NEW_PORTS[@]}"; do
+      [ "$_i" = "$_j" ] && continue
+      if [ "${NEW_PORTS[_i]}" = "${NEW_PORTS[_j]}" ]; then
+        _new_port="${NEW_PORTS[_i]}"
+        _conflict_name="${INSTALLED_PORT_NAMES[_j]} (${INSTALLED_PORT_TAGS[_j]})"
+        error " $(text 152) "
+      fi
+    done
+    if ! array_contains "${NEW_PORTS[_i]}" "${OLD_PORTS[@]}" && ss -nltup | grep -q ":${NEW_PORTS[_i]}"; then
+      _new_port="${NEW_PORTS[_i]}"
+      error " $(text 153) "
+    fi
+  done
+
+  local CHANGED=false
+  for _i in "${!NEW_PORTS[@]}"; do
+    [ "${NEW_PORTS[_i]}" != "${OLD_PORTS[_i]}" ] && CHANGED=true && break
+  done
+  [ "$CHANGED" != true ] && info " $(text 135) " && return
+
+  check_port_hopping_nat
+  local OLD_HOPPING_START="$PORT_HOPPING_START" OLD_HOPPING_END="$PORT_HOPPING_END"
+  local CHANGE_HY2=false
+  for _i in "${!INSTALLED_PORT_CODES[@]}"; do
+    [ "${INSTALLED_PORT_CODES[_i]}" = c ] && [ "${NEW_PORTS[_i]}" != "${OLD_PORTS[_i]}" ] && CHANGE_HY2=true
+  done
+  [ "$CHANGE_HY2" = true ] && [ -n "$OLD_HOPPING_START" ] && [ -n "$OLD_HOPPING_END" ] && del_port_hopping_nat
+
   cmd_systemctl disable sing-box
-  for ((a=0; a<$OLD_CONSECUTIVE_PORTS; a++)) do
-    [ -s ${WORK_DIR}/conf/${CONF_FILES[a]} ] && sed -i "s/\(.*listen_port.*:\)$((OLD_START_PORT+a))/\1$((START_PORT+a))/" ${WORK_DIR}/conf/*
+  for _i in "${!NEW_PORTS[@]}"; do
+    [ "${NEW_PORTS[_i]}" = "${OLD_PORTS[_i]}" ] && continue
+    awk -v new_port="${NEW_PORTS[_i]}" '
+      BEGIN { changed=0 }
+      !changed && /"listen_port"[[:space:]]*:/ {
+        sub(/"listen_port"[[:space:]]*:[[:space:]]*[0-9]+/, "\"listen_port\":" new_port)
+        changed=1
+      }
+      { print }
+    ' "${INSTALLED_PORT_FILES[_i]}" > "${INSTALLED_PORT_FILES[_i]}.tmp" &&
+      mv "${INSTALLED_PORT_FILES[_i]}.tmp" "${INSTALLED_PORT_FILES[_i]}"
   done
   fetch_nodes_value
+  if [ "$CHANGE_HY2" = true ] && [ -n "$OLD_HOPPING_START" ] && [ -n "$OLD_HOPPING_END" ] && [ -n "$PORT_HYSTERIA2" ]; then
+    PORT_HOPPING_START="$OLD_HOPPING_START"
+    PORT_HOPPING_END="$OLD_HOPPING_END"
+    HY2_PORT_HOPPING_RANGE="${OLD_HOPPING_START}:${OLD_HOPPING_END}"
+    add_port_hopping_nat "$PORT_HOPPING_START" "$PORT_HOPPING_END" "$PORT_HYSTERIA2" >/dev/null 2>&1 || true
+  fi
   [ -n "$PORT_NGINX" ] && UUID_CONFIRM=$(sed -n 's#.*location[ ]\+\/\(.*\)-v[ml]ess.*#\1#gp' /etc/sing-box/nginx.conf | sed -n '1p') && export_nginx_conf_file
   cmd_systemctl enable sing-box
   [ -n "$ARGO_DOMAIN" ] && export_argo_json_file
@@ -5178,6 +5422,7 @@ change_protocols() {
   else
     unset PORT_NAIVE
   fi
+  validate_nginx_port
 
   # 停止 sing-box 服务
   cmd_systemctl disable sing-box
@@ -5567,6 +5812,42 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --PORT_NGINX )
       ((z++)); PORT_NGINX=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_XTLS_REALITY )
+      ((z++)); PORT_XTLS_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_HYSTERIA2 )
+      ((z++)); PORT_HYSTERIA2=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_TUIC )
+      ((z++)); PORT_TUIC=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_SHADOWTLS )
+      ((z++)); PORT_SHADOWTLS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_SHADOWSOCKS )
+      ((z++)); PORT_SHADOWSOCKS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_TROJAN )
+      ((z++)); PORT_TROJAN=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_VMESS_WS )
+      ((z++)); PORT_VMESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_VLESS_WS )
+      ((z++)); PORT_VLESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_H2_REALITY )
+      ((z++)); PORT_H2_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_GRPC_REALITY )
+      ((z++)); PORT_GRPC_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_ANYTLS )
+      ((z++)); PORT_ANYTLS=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_NAIVE )
+      ((z++)); PORT_NAIVE=${ALL_PARAMETER[z]}
       ;;
     --SERVER_IP )
       ((z++)); SERVER_IP=${ALL_PARAMETER[z]}
