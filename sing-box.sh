@@ -477,6 +477,14 @@ resolve_protocol_ports() {
   local _pos _code _var _port _default _idx _name
   local _ports=() _names=()
 
+  for _idx in "${!PROTOCOL_LIST[@]}"; do
+    _code=$(asc $((_idx + 98)))
+    if ! array_contains "$_code" "${INSTALL_PROTOCOLS[@]}"; then
+      _var=$(protocol_port_var "$_code")
+      [ -n "$_var" ] && unset "$_var"
+    fi
+  done
+
   for _pos in "${!INSTALL_PROTOCOLS[@]}"; do
     _code=${INSTALL_PROTOCOLS[_pos]}
     _var=$(protocol_port_var "$_code")
