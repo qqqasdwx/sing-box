@@ -17,10 +17,11 @@ services:
       # 建议必填：部署前明确选择，不依赖 Docker 默认值。
       # 协议代码：a=全部；b=VLESS Reality；c=Hysteria2；d=Tuic V5；e=ShadowTLS；f=Shadowsocks；
       # g=Trojan；h=VMess WebSocket；i=VLESS WebSocket TLS；j=H2 Reality；k=gRPC Reality；l=AnyTLS；m=NaiveProxy。
+      # 脚本默认值：不填写 CHOOSE_PROTOCOLS 且不启用单协议开关时为 a，即全部协议。
       # 示例 bcf = VLESS Reality + Hysteria2 + Shadowsocks。设置 CHOOSE_PROTOCOLS 后会忽略下面的单协议开关。
       CHOOSE_PROTOCOLS: "bcf"
-      SUBSCRIBE: "true" # 建议必填：是否启用订阅；true/false。
-      ARGO: "false" # 建议必填：是否启用 Argo；true/false。true 且认证留空时使用临时隧道。
+      SUBSCRIBE: "true" # 建议必填：是否启用订阅；true/false。脚本默认值：true。
+      ARGO: "false" # 建议必填：是否启用 Argo；true/false。脚本默认值：true，且认证留空时使用临时隧道。
 
       # 条件必填：只有触发对应条件时取消注释并填写。
       # ARGO_DOMAIN: # ARGO=true 且使用固定 Argo 域名时填写，例如 sb.example.com；临时隧道不填。
@@ -29,15 +30,17 @@ services:
       # VLESS_HOST_DOMAIN: # 选择 i=VLESS WebSocket TLS 且 ARGO=false 时必填。
 
       # 基础可选项：需要覆盖默认值时再取消注释；不填写就不要传入容器。
-      # LANGUAGE: # 可选：c=中文，e=英文；默认 c。
-      # START_PORT: # 可选：第一个协议端口；默认 8881。
-      # PORT_NGINX: # 可选：订阅/Argo 的 nginx 端口；默认 START_PORT + 已选协议数量。
-      # SERVER_IP: # 可选：服务器公网 IPv4/IPv6；不填自动检测。
-      # CDN: # 可选：WS 节点的 CDN 域名；默认使用脚本内置值。
-      # CDN_PORT: # 可选：WS CDN 端口；VMess 默认 80，VLESS 默认 443。
-      # TLS_SERVER: # 可选：SNI/证书域名；默认 addons.mozilla.org。
+      # LANGUAGE: # 可选：c=中文，e=英文。脚本默认值：c。
+      # START_PORT: # 可选：第一个协议端口。脚本默认值：8881。
+      # PORT_NGINX: # 可选：订阅/Argo 的 nginx 端口。脚本默认值：启用订阅或 Argo 时为 START_PORT + 已选协议数量。
+      # SERVER_IP: # 可选：服务器公网 IPv4/IPv6。脚本默认值：自动检测公网 IP，优先 IPv4；无 IPv4 时用 IPv6；Cloudflare 环境优先选择非 Cloudflare 地址。
+      # CDN: # 可选：WS 节点的 CDN 域名。脚本默认值：skk.moe。
+      # CDN_PORT: # 可选：WS CDN 端口。脚本默认值：VMess WS 为 80，VLESS WS TLS 为 443。
+      # TLS_SERVER: # 可选：SNI/证书域名。脚本默认值：addons.mozilla.org。
+      # ARGO_METRICS_PORT: # 可选：临时 Argo 隧道 metrics 端口。脚本默认值：从 PORT_NGINX + 1 开始选择空闲本地端口。
 
       # 单协议开关：可选，仅在 CHOOSE_PROTOCOLS 不填写时生效；取值 true/false。
+      # 这些开关的脚本默认值都是 false；全部不填时会回退到 CHOOSE_PROTOCOLS=a，即全部协议。
       # XTLS_REALITY: # b=VLESS Reality。
       # HYSTERIA2: # c=Hysteria2。
       # TUIC: # d=Tuic V5。
@@ -52,12 +55,12 @@ services:
       # NAIVE: # m=NaiveProxy。
 
       # 身份与密钥：可选，不填写会自动生成；建议固定后备份。
-      # UUID_CONFIRM: # UUID；可用顶部临时容器命令生成。
+      # UUID_CONFIRM: # UUID。脚本默认值：随机 UUID；可用顶部临时容器命令提前生成并固定。
       # UUID: # UUID_CONFIRM 的旧 Docker 别名。
-      # REALITY_PRIVATE: # Reality 私钥；选择 b/j/k 协议时可用顶部 sing-box 命令生成。
+      # REALITY_PRIVATE: # Reality 私钥。脚本默认值：用 sing-box generate reality-keypair 自动生成；选择 b/j/k 协议时可用顶部命令提前生成并固定。
 
       # 节点名称：可选；优先级为单协议名称 > 全局名称 > hostname。
-      # NODE_NAME_CONFIRM: # 全局节点名。
+      # NODE_NAME_CONFIRM: # 全局节点名。脚本默认值：检测到的国家/地区 emoji + 容器 hostname。
       # NODE_NAME: # NODE_NAME_CONFIRM 的旧 Docker 别名。
       # NODE_NAME_XTLS_REALITY: # VLESS Reality 节点名。
       # NODE_NAME_HYSTERIA2: # Hysteria2 节点名。
@@ -78,17 +81,17 @@ services:
       # REALM: # HY2_REALM 的旧别名。
       # HY2_WARP: # true/false；启用 WARP 辅助 Realm，并隐含 HY2_REALM=true。
       # REALM_WARP: # HY2_WARP 的旧别名。
-      # HY2_REALM_ID: # Realm ID；不填使用 Hysteria2 UUID。
-      # HY2_UP: # 导出的客户端上行 Mbps；默认 200。
-      # HY2_DOWN: # 导出的客户端下行 Mbps；默认 1000。
+      # HY2_REALM_ID: # Realm ID。脚本默认值：Hysteria2 的 UUID。
+      # HY2_UP: # 导出的客户端上行 Mbps。脚本默认值：200。
+      # HY2_DOWN: # 导出的客户端下行 Mbps。脚本默认值：1000。
 
       # 协议密码与路径：可选；不填写会自动生成或使用默认值。
-      # TUIC_PASSWORD: # Tuic 密码；默认 UUID_CONFIRM。
-      # TUIC_CONGESTION_CONTROL: # Tuic 拥塞控制；默认 bbr。
-      # SHADOWTLS_PASSWORD: # ShadowTLS 底层 Shadowsocks 密码。
-      # SHADOWTLS_METHOD: # ShadowTLS 底层 Shadowsocks 方法；默认 2022-blake3-aes-128-gcm。
-      # SHADOWSOCKS_PASSWORD: # Shadowsocks 密码。
-      # SHADOWSOCKS_METHOD: # Shadowsocks 方法；默认 2022-blake3-aes-128-gcm。
-      # TROJAN_PASSWORD: # Trojan 密码；默认 UUID_CONFIRM。
-      # VMESS_WS_PATH: # VMess WS 路径；默认 <uuid>-vmess。
-      # VLESS_WS_PATH: # VLESS WS 路径；默认 <uuid>-vless。
+      # TUIC_PASSWORD: # Tuic 密码。脚本默认值：UUID_CONFIRM。
+      # TUIC_CONGESTION_CONTROL: # Tuic 拥塞控制。脚本默认值：bbr。
+      # SHADOWTLS_PASSWORD: # ShadowTLS 底层 Shadowsocks 密码。脚本默认值：随机 openssl rand -base64 16；同时启用 Shadowsocks 时两者共用。
+      # SHADOWTLS_METHOD: # ShadowTLS 底层 Shadowsocks 方法。脚本默认值：2022-blake3-aes-128-gcm。
+      # SHADOWSOCKS_PASSWORD: # Shadowsocks 密码。脚本默认值：随机 openssl rand -base64 16；同时启用 ShadowTLS 时两者共用。
+      # SHADOWSOCKS_METHOD: # Shadowsocks 方法。脚本默认值：2022-blake3-aes-128-gcm。
+      # TROJAN_PASSWORD: # Trojan 密码。脚本默认值：UUID_CONFIRM。
+      # VMESS_WS_PATH: # VMess WS 路径。脚本默认值：<VMess UUID>-vmess。
+      # VLESS_WS_PATH: # VLESS WS 路径。脚本默认值：<VLESS UUID>-vless。
