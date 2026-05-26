@@ -51,7 +51,6 @@ services:
       # 身份与密钥：可选，不填写会自动生成；建议固定后备份。
       # UUID_CONFIRM: # UUID。脚本默认值：随机 UUID；可用下方临时容器命令提前生成并固定。
       #   生成命令：docker run --rm ghcr.io/qqqasdwx/sing-box:latest sh -lc 'cat /proc/sys/kernel/random/uuid'
-      # UUID: # UUID_CONFIRM 的旧 Docker 别名。
       # REALITY_PRIVATE: # Reality 私钥。脚本默认值：用 sing-box generate reality-keypair 自动生成；选择 b/j/k 协议时可用下方命令提前生成并固定。
       #   生成命令：docker run --rm ghcr.io/sagernet/sing-box:latest generate reality-keypair | awk '/PrivateKey/{print $NF}'
 
