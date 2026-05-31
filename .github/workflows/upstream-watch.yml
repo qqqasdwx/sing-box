@@ -16,6 +16,7 @@ jobs:
       UPSTREAM_REPO: fscarmen/sing-box
       UPSTREAM_BRANCH: main
       TRACKING_BRANCH: upstream-main
+      TARGET_REPO: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout
@@ -47,7 +48,7 @@ jobs:
 
           title="Upstream update available: ${UPSTREAM_REPO}@${upstream_short}"
           existing_issue="$(
-            gh issue list --state open --limit 100 --json number,title |
+            gh issue list --repo "$TARGET_REPO" --state open --limit 100 --json number,title |
               jq -r --arg title "$title" '.[] | select(.title == $title) | .number' |
               sed -n '1p'
           )"
@@ -78,4 +79,4 @@ jobs:
             echo "3. After review, update \`${TRACKING_BRANCH}\` to the upstream commit."
           } > "$body"
 
-          gh issue create --title "$title" --body-file "$body"
+          gh issue create --repo "$TARGET_REPO" --title "$title" --body-file "$body"
