@@ -2,6 +2,12 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-05-31
+
+- 移植上游 v1.3.14：`sb -d` 支持管理自定义 `warp-ep` 出站路由规则，可按 `domain_suffix` 或 `rule_set` 将流量分流到 WARP endpoint。
+- Docker 与 VPS 运行依赖补充 `curl`，用于校验远程 `.srs` rule_set 是否存在。
+- 更新上游跟踪基线到 `fscarmen/sing-box@5644e6bebbf4f6da2e28e68e5cbb8cba2d64b865`。
+
 ## 2026-05-26
 
 - 支持按协议自定义监听端口；未设置的协议继续按 `START_PORT` 和 `CHOOSE_PROTOCOLS` 顺序使用默认递增端口，`sb -d` 面板也可按协议修改端口。

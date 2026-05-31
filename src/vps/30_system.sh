@@ -777,8 +777,8 @@ check_dependencies() {
   fi
 
   # 2. 基础通用依赖（不含防火墙，防火墙仅端口跳跃时按需安装）
-  DEPS_CHECK+=("wget" "tar" "ss"  "ip"        "bash" "openssl" "ping")
-  DEPS_INSTALL+=("wget" "tar" "iproute2" "iproute2" "bash" "openssl" "iputils-ping")
+  DEPS_CHECK+=("wget" "curl" "tar" "ss"  "ip"        "bash" "openssl" "ping")
+  DEPS_INSTALL+=("wget" "curl" "tar" "iproute2" "iproute2" "bash" "openssl" "iputils-ping")
 
   [ "$SYSTEM" != 'Alpine' ] && DEPS_CHECK+=("systemctl") && DEPS_INSTALL+=("systemctl")
 

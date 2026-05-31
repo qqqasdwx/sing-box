@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.13 (2026.05.18)'
+VERSION='v1.3.14 (2026.05.29)'
 
 # Github 反代加速代理
 GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
@@ -36,4 +36,3 @@ trap cleanup_temp EXIT
 trap 'cleanup_temp; printf "\n"; exit 1' INT QUIT TERM
 
 mkdir -p "$TEMP_DIR"
-

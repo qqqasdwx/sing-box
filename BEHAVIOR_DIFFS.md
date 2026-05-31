@@ -35,5 +35,5 @@
 | Docker Quick Tunnel metrics | metrics 监听在 `0.0.0.0:$METRICS_PORT`。 | metrics 监听在 `127.0.0.1:$METRICS_PORT`。 | metrics 端口只用于容器内部读取临时隧道域名，不需要对外暴露。 |
 | Docker 更新 | 上游会备份旧 sing-box 二进制；如果新进程启动失败，则回滚旧二进制。 | 保留同样的安全行为，但通过杀掉 s6 管理的进程，让 s6 拉起新进程并检查是否恢复。 | 保留更新失败回滚能力，同时符合容器内 supervisor 的运行方式。 |
 | Docker 端口跳跃 | 上游 Docker 不管理宿主机 Hysteria2 端口跳跃 NAT。 | Docker 接受共享的 `HY2_PORT_HOPPING_RANGE` 设置，但只提示；宿主机 UDP 转发需要在容器外配置。 | 容器不应该直接修改宿主机防火墙或 NAT 状态。 |
-| 运行时依赖 | Alpine 镜像只安装 `wget nginx bash openssl`。 | 额外安装 `ca-certificates tar iproute2 iputils procps coreutils xxd`。 | 共享 VPS 模块需要这些工具完成下载、IP 检测、进程检查和 Reality 密钥处理。 |
+| 运行时依赖 | Alpine 镜像只安装 `wget nginx bash openssl`。 | 额外安装 `curl ca-certificates tar iproute2 iputils procps coreutils xxd`。 | 共享 VPS 模块需要这些工具完成下载、IP 检测、进程检查、Reality 密钥处理和远程 rule_set 校验。 |
 | 上游跟踪 | 上游采用 fork/mirror 风格的同步 workflow。 | 本仓库用 `upstream-main` 只镜像上游供 review；`Upstream watch` 在上游有新提交时创建 issue。 | 本仓库已作为独立下游维护，不再按直接 fork 同步流程工作。 |
