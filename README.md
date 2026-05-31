@@ -71,6 +71,8 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
 
 节点名称优先级：单协议节点名 > 全局 `NODE_NAME_CONFIRM` > 默认主机名。支持的单协议变量包括 `NODE_NAME_XTLS_REALITY`、`NODE_NAME_HYSTERIA2`、`NODE_NAME_TUIC`、`NODE_NAME_SHADOWTLS`、`NODE_NAME_SHADOWSOCKS`、`NODE_NAME_TROJAN`、`NODE_NAME_VMESS_WS`、`NODE_NAME_VLESS_WS`、`NODE_NAME_H2_REALITY`、`NODE_NAME_GRPC_REALITY`、`NODE_NAME_ANYTLS`、`NODE_NAME_NAIVE`。
 
+已安装后，`sb -d` 还可以管理自定义 `warp-ep` 出站路由规则。规则写入 `/etc/sing-box/conf/08_custom_route.json`，支持按 `domain_suffix` 或远程 `.srs` `rule_set` 将匹配流量分流到 WARP endpoint。
+
 ## Docker 使用
 
 Docker 镜像：
