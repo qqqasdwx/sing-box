@@ -69,6 +69,7 @@ docker_prepare_env() {
   UUID_CONFIRM=${UUID_CONFIRM:-"$UUID"}
   NODE_NAME_CONFIRM=${NODE_NAME_CONFIRM:-"$NODE_NAME"}
   apply_custom_node_names
+  normalize_log_level
   TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
 
   docker_false "$SUBSCRIBE" && IS_SUB=no_sub || IS_SUB=is_sub

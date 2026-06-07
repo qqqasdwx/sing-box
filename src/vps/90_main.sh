@@ -106,6 +106,9 @@ for z in "${!ALL_PARAMETER[@]}"; do
     --START_PORT )
       ((z++)); START_PORT=${ALL_PARAMETER[z]}
       ;;
+    --LOG_LEVEL )
+      ((z++)); LOG_LEVEL=${ALL_PARAMETER[z]}
+      ;;
     --PORT_NGINX )
       ((z++)); PORT_NGINX=${ALL_PARAMETER[z]}
       ;;
@@ -228,6 +231,7 @@ for z in "${!ALL_PARAMETER[@]}"; do
 done
 
 apply_custom_node_names
+normalize_log_level
 
 check_arch
 check_dependencies

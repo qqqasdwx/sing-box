@@ -65,6 +65,15 @@ apply_custom_node_names() {
   [ -n "${NODE_NAME_NAIVE:-}" ] && NODE_NAME[22]=$NODE_NAME_NAIVE
 }
 
+normalize_log_level() {
+  LOG_LEVEL=${LOG_LEVEL:-"$LOG_LEVEL_DEFAULT"}
+  LOG_LEVEL=${LOG_LEVEL,,}
+  case "$LOG_LEVEL" in
+    trace|debug|info|warn|error|fatal|panic ) ;;
+    * ) error " LOG_LEVEL must be one of: trace, debug, info, warn, error, fatal, panic. " ;;
+  esac
+}
+
 array_contains() {
   local _needle=$1 _item
   shift

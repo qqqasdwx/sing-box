@@ -24,6 +24,7 @@ services:
       # 全局基础项
       # LANGUAGE: "" # 可选：c=中文，e=英文。脚本默认值：c。
       # START_PORT: "8881" # 可选：第一个默认协议端口。脚本默认值：8881；未单独指定的协议按 CHOOSE_PROTOCOLS 顺序递增。
+      # LOG_LEVEL: "error" # 可选：sing-box 服务端日志级别。支持 trace/debug/info/warn/error/fatal/panic，脚本默认值：error。
       # PORT_NGINX: "" # 可选：订阅/Argo 的 nginx 端口。脚本默认值：启用订阅或 Argo 时，从 START_PORT + 已选协议数量开始，并避开已选协议端口。
       # SERVER_IP: "" # 可选：服务器公网 IPv4/IPv6。脚本默认值：自动检测公网 IP，优先 IPv4；无 IPv4 时用 IPv6。
       # TLS_SERVER: "" # 可选：SNI/证书域名。脚本默认值：addons.mozilla.org。
