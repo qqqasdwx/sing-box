@@ -74,6 +74,25 @@ normalize_log_level() {
   esac
 }
 
+normalize_ntp_config() {
+  NTP_ENABLED=${NTP_ENABLED:-"$NTP_ENABLED_DEFAULT"}
+  NTP_ENABLED=${NTP_ENABLED,,}
+  case "$NTP_ENABLED" in
+    true|1|y|yes|on ) NTP_ENABLED=true ;;
+    false|0|n|no|off ) NTP_ENABLED=false ;;
+    * ) error " NTP_ENABLED must be true or false. " ;;
+  esac
+
+  NTP_SERVER=${NTP_SERVER:-"$NTP_SERVER_DEFAULT"}
+  [[ "$NTP_SERVER" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$ ]] || error " NTP_SERVER contains invalid characters. "
+
+  NTP_SERVER_PORT=${NTP_SERVER_PORT:-"$NTP_SERVER_PORT_DEFAULT"}
+  [[ "$NTP_SERVER_PORT" =~ ^[1-9][0-9]{0,4}$ && "$NTP_SERVER_PORT" -le 65535 ]] || error " NTP_SERVER_PORT must be 1-65535. "
+
+  NTP_INTERVAL=${NTP_INTERVAL:-"$NTP_INTERVAL_DEFAULT"}
+  [[ "$NTP_INTERVAL" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]] || error " NTP_INTERVAL must be a duration like 30m, 60m, or 1h. "
+}
+
 array_contains() {
   local _needle=$1 _item
   shift

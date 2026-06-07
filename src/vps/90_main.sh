@@ -109,6 +109,18 @@ for z in "${!ALL_PARAMETER[@]}"; do
     --LOG_LEVEL )
       ((z++)); LOG_LEVEL=${ALL_PARAMETER[z]}
       ;;
+    --NTP_ENABLED )
+      ((z++)); NTP_ENABLED=${ALL_PARAMETER[z]}
+      ;;
+    --NTP_SERVER )
+      ((z++)); NTP_SERVER=${ALL_PARAMETER[z]}
+      ;;
+    --NTP_SERVER_PORT )
+      ((z++)); NTP_SERVER_PORT=${ALL_PARAMETER[z]}
+      ;;
+    --NTP_INTERVAL )
+      ((z++)); NTP_INTERVAL=${ALL_PARAMETER[z]}
+      ;;
     --PORT_NGINX )
       ((z++)); PORT_NGINX=${ALL_PARAMETER[z]}
       ;;
@@ -232,6 +244,7 @@ done
 
 apply_custom_node_names
 normalize_log_level
+normalize_ntp_config
 
 check_arch
 check_dependencies

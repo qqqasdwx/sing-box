@@ -144,10 +144,10 @@ EOF
     cat > ${WORK_DIR}/conf/06_ntp.json << EOF
 {
     "ntp": {
-        "enabled": true,
-        "server": "time.apple.com",
-        "server_port": 123,
-        "interval": "60m"
+        "enabled": ${NTP_ENABLED},
+        "server": "${NTP_SERVER}",
+        "server_port": ${NTP_SERVER_PORT},
+        "interval": "${NTP_INTERVAL}"
     }
 }
 EOF

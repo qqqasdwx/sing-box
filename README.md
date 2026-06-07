@@ -59,6 +59,8 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
   --CHOOSE_PROTOCOLS bcf \
   --START_PORT 8881 \
   --LOG_LEVEL warn \
+  --NTP_SERVER pool.ntp.org \
+  --NTP_INTERVAL 30m \
   --PORT_HYSTERIA2 443 \
   --SERVER_IP 203.0.113.10 \
   --SUBSCRIBE=true \
@@ -66,7 +68,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
   --NODE_NAME_HYSTERIA2 sing-box-hy2
 ```
 
-协议选择：`a` 为全部；`b` VLESS Reality；`c` Hysteria2；`d` Tuic；`e` ShadowTLS；`f` Shadowsocks；`g` Trojan；`h` VMess WS；`i` VLESS WS TLS；`j` H2 Reality；`k` gRPC Reality；`l` AnyTLS；`m` NaiveProxy。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，支持 `trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`，默认 `error`。
+协议选择：`a` 为全部；`b` VLESS Reality；`c` Hysteria2；`d` Tuic；`e` ShadowTLS；`f` Shadowsocks；`g` Trojan；`h` VMess WS；`i` VLESS WS TLS；`j` H2 Reality；`k` gRPC Reality；`l` AnyTLS；`m` NaiveProxy。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，支持 `trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`，默认 `error`。`NTP_ENABLED`、`NTP_SERVER`、`NTP_SERVER_PORT`、`NTP_INTERVAL` 可配置 sing-box 内建 NTP 客户端，默认 `true / time.apple.com / 123 / 60m`。
 
 协议端口可以逐个覆盖：`PORT_XTLS_REALITY`、`PORT_HYSTERIA2`、`PORT_TUIC`、`PORT_SHADOWTLS`、`PORT_SHADOWSOCKS`、`PORT_TROJAN`、`PORT_VMESS_WS`、`PORT_VLESS_WS`、`PORT_H2_REALITY`、`PORT_GRPC_REALITY`、`PORT_ANYTLS`、`PORT_NAIVE`。未填写的协议继续按 `START_PORT` 和 `CHOOSE_PROTOCOLS` 顺序递增，重复端口会直接报错。除 WebSocket 协议外，这些端口会作为客户端连接端口导出；`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 是源站监听端口，Argo 下是本机内部回源端口，Origin Rules 下是 Cloudflare 回源端口，客户端连接端口由 `CDN_PORT` 决定（默认 VMess WS 为 80，VLESS WS TLS 为 443）。已安装后也可以通过 `sb -d` 的监听端口面板逐个修改。
 
@@ -92,6 +94,8 @@ docker run -d --name sing-box --network host --restart unless-stopped \
   -e CHOOSE_PROTOCOLS=bcf \
   -e START_PORT=8881 \
   -e LOG_LEVEL=warn \
+  -e NTP_SERVER=pool.ntp.org \
+  -e NTP_INTERVAL=30m \
   -e SUBSCRIBE=true \
   -e NODE_NAME_CONFIRM=sing-box \
   -e NODE_NAME_HYSTERIA2=sing-box-hy2 \
@@ -112,7 +116,7 @@ docker run -d --name sing-box --network host --restart unless-stopped \
   ghcr.io/qqqasdwx/sing-box:latest
 ```
 
-`START_PORT` 是默认协议端口基准。每个协议都可以用对应 `PORT_*` 单独覆盖；未覆盖的协议按选择顺序从 `START_PORT` 递增。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，默认 `error`。`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 通常保持为空，让脚本自动分配即可；用户侧连接端口看 `CDN_PORT`。`SERVER_IP` 可选；Docker 启动时留空会自动检测公网 IPv4/IPv6。启用订阅或 Argo 时，`PORT_NGINX` 是 nginx 回源端口；未指定时会从 `START_PORT + 已选协议数量` 开始选择，并避开已选协议端口。
+`START_PORT` 是默认协议端口基准。每个协议都可以用对应 `PORT_*` 单独覆盖；未覆盖的协议按选择顺序从 `START_PORT` 递增。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，默认 `error`。`NTP_ENABLED`、`NTP_SERVER`、`NTP_SERVER_PORT`、`NTP_INTERVAL` 可配置 sing-box 内建 NTP 客户端，默认 `true / time.apple.com / 123 / 60m`。`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 通常保持为空，让脚本自动分配即可；用户侧连接端口看 `CDN_PORT`。`SERVER_IP` 可选；Docker 启动时留空会自动检测公网 IPv4/IPv6。启用订阅或 Argo 时，`PORT_NGINX` 是 nginx 回源端口；未指定时会从 `START_PORT + 已选协议数量` 开始选择，并避开已选协议端口。
 
 ## Nekobox 设置 ShadowTLS 方法
 

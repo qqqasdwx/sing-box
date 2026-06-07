@@ -12,6 +12,10 @@ FIREWALL_STATE_DIR="${WORK_DIR}/firewall"
 SERVICE_FIREWALL_STATE_FILE="${FIREWALL_STATE_DIR}/service_ports.list"
 START_PORT_DEFAULT='8881'
 LOG_LEVEL_DEFAULT='error'
+NTP_ENABLED_DEFAULT='true'
+NTP_SERVER_DEFAULT='time.apple.com'
+NTP_SERVER_PORT_DEFAULT='123'
+NTP_INTERVAL_DEFAULT='60m'
 MIN_PORT=100
 MAX_PORT=65520
 MIN_HOPPING_PORT=10000
@@ -446,6 +450,25 @@ normalize_log_level() {
     trace|debug|info|warn|error|fatal|panic ) ;;
     * ) error " LOG_LEVEL must be one of: trace, debug, info, warn, error, fatal, panic. " ;;
   esac
+}
+
+normalize_ntp_config() {
+  NTP_ENABLED=${NTP_ENABLED:-"$NTP_ENABLED_DEFAULT"}
+  NTP_ENABLED=${NTP_ENABLED,,}
+  case "$NTP_ENABLED" in
+    true|1|y|yes|on ) NTP_ENABLED=true ;;
+    false|0|n|no|off ) NTP_ENABLED=false ;;
+    * ) error " NTP_ENABLED must be true or false. " ;;
+  esac
+
+  NTP_SERVER=${NTP_SERVER:-"$NTP_SERVER_DEFAULT"}
+  [[ "$NTP_SERVER" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$ ]] || error " NTP_SERVER contains invalid characters. "
+
+  NTP_SERVER_PORT=${NTP_SERVER_PORT:-"$NTP_SERVER_PORT_DEFAULT"}
+  [[ "$NTP_SERVER_PORT" =~ ^[1-9][0-9]{0,4}$ && "$NTP_SERVER_PORT" -le 65535 ]] || error " NTP_SERVER_PORT must be 1-65535. "
+
+  NTP_INTERVAL=${NTP_INTERVAL:-"$NTP_INTERVAL_DEFAULT"}
+  [[ "$NTP_INTERVAL" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]] || error " NTP_INTERVAL must be a duration like 30m, 60m, or 1h. "
 }
 
 array_contains() {
@@ -3656,10 +3679,10 @@ EOF
     cat > ${WORK_DIR}/conf/06_ntp.json << EOF
 {
     "ntp": {
-        "enabled": true,
-        "server": "time.apple.com",
-        "server_port": 123,
-        "interval": "60m"
+        "enabled": ${NTP_ENABLED},
+        "server": "${NTP_SERVER}",
+        "server_port": ${NTP_SERVER_PORT},
+        "interval": "${NTP_INTERVAL}"
     }
 }
 EOF
@@ -7066,6 +7089,7 @@ docker_prepare_env() {
   NODE_NAME_CONFIRM=${NODE_NAME_CONFIRM:-"$NODE_NAME"}
   apply_custom_node_names
   normalize_log_level
+  normalize_ntp_config
   TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
 
   docker_false "$SUBSCRIBE" && IS_SUB=no_sub || IS_SUB=is_sub

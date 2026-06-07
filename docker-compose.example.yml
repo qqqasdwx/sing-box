@@ -25,6 +25,10 @@ services:
       # LANGUAGE: "" # 可选：c=中文，e=英文。脚本默认值：c。
       # START_PORT: "8881" # 可选：第一个默认协议端口。脚本默认值：8881；未单独指定的协议按 CHOOSE_PROTOCOLS 顺序递增。
       # LOG_LEVEL: "error" # 可选：sing-box 服务端日志级别。支持 trace/debug/info/warn/error/fatal/panic，脚本默认值：error。
+      # NTP_ENABLED: "true" # 可选：是否启用 sing-box 内建 NTP 客户端。脚本默认值：true。
+      # NTP_SERVER: "time.apple.com" # 可选：NTP 服务器。脚本默认值：time.apple.com。
+      # NTP_SERVER_PORT: "123" # 可选：NTP 服务器端口。脚本默认值：123。
+      # NTP_INTERVAL: "60m" # 可选：NTP 同步间隔，格式如 30m/60m/1h。脚本默认值：60m。
       # PORT_NGINX: "" # 可选：订阅/Argo 的 nginx 端口。脚本默认值：启用订阅或 Argo 时，从 START_PORT + 已选协议数量开始，并避开已选协议端口。
       # SERVER_IP: "" # 可选：服务器公网 IPv4/IPv6。脚本默认值：自动检测公网 IP，优先 IPv4；无 IPv4 时用 IPv6。
       # TLS_SERVER: "" # 可选：SNI/证书域名。脚本默认值：addons.mozilla.org。

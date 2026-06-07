@@ -70,6 +70,7 @@ docker_prepare_env() {
   NODE_NAME_CONFIRM=${NODE_NAME_CONFIRM:-"$NODE_NAME"}
   apply_custom_node_names
   normalize_log_level
+  normalize_ntp_config
   TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
 
   docker_false "$SUBSCRIBE" && IS_SUB=no_sub || IS_SUB=is_sub
