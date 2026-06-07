@@ -12,6 +12,7 @@ WORK_DIR='/etc/sing-box'
 FIREWALL_STATE_DIR="${WORK_DIR}/firewall"
 SERVICE_FIREWALL_STATE_FILE="${FIREWALL_STATE_DIR}/service_ports.list"
 START_PORT_DEFAULT='8881'
+LOG_LEVEL_DEFAULT='error'
 MIN_PORT=100
 MAX_PORT=65520
 MIN_HOPPING_PORT=10000
@@ -437,6 +438,15 @@ apply_custom_node_names() {
   [ -n "${NODE_NAME_GRPC_REALITY:-}" ] && NODE_NAME[20]=$NODE_NAME_GRPC_REALITY
   [ -n "${NODE_NAME_ANYTLS:-}" ] && NODE_NAME[21]=$NODE_NAME_ANYTLS
   [ -n "${NODE_NAME_NAIVE:-}" ] && NODE_NAME[22]=$NODE_NAME_NAIVE
+}
+
+normalize_log_level() {
+  LOG_LEVEL=${LOG_LEVEL:-"$LOG_LEVEL_DEFAULT"}
+  LOG_LEVEL=${LOG_LEVEL,,}
+  case "$LOG_LEVEL" in
+    trace|debug|info|warn|error|fatal|panic ) ;;
+    * ) error " LOG_LEVEL must be one of: trace, debug, info, warn, error, fatal, panic. " ;;
+  esac
 }
 
 array_contains() {
@@ -3518,7 +3528,7 @@ sing-box_json() {
 {
     "log":{
         "disabled":false,
-        "level":"error",
+        "level":"${LOG_LEVEL}",
         "output":"${WORK_DIR}/logs/box.log",
         "timestamp":true
     }
@@ -7093,6 +7103,9 @@ for z in "${!ALL_PARAMETER[@]}"; do
     --START_PORT )
       ((z++)); START_PORT=${ALL_PARAMETER[z]}
       ;;
+    --LOG_LEVEL )
+      ((z++)); LOG_LEVEL=${ALL_PARAMETER[z]}
+      ;;
     --PORT_NGINX )
       ((z++)); PORT_NGINX=${ALL_PARAMETER[z]}
       ;;
@@ -7215,6 +7228,7 @@ for z in "${!ALL_PARAMETER[@]}"; do
 done
 
 apply_custom_node_names
+normalize_log_level
 
 check_arch
 check_dependencies
