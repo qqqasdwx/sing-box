@@ -118,9 +118,9 @@ docker run -d --name sing-box --network host --restart unless-stopped \
 
 `START_PORT` 是默认协议端口基准。每个协议都可以用对应 `PORT_*` 单独覆盖；未覆盖的协议按选择顺序从 `START_PORT` 递增。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，默认 `error`。`NTP_ENABLED`、`NTP_SERVER`、`NTP_SERVER_PORT`、`NTP_INTERVAL` 可配置 sing-box 内建 NTP 客户端，默认 `true / time.apple.com / 123 / 60m`。`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 通常保持为空，让脚本自动分配即可；用户侧连接端口看 `CDN_PORT`。`SERVER_IP` 可选；Docker 启动时留空会自动检测公网 IPv4/IPv6。启用订阅或 Argo 时，`PORT_NGINX` 是 nginx 回源端口；未指定时会从 `START_PORT + 已选协议数量` 开始选择，并避开已选协议端口。
 
-## Nekobox 设置 ShadowTLS 方法
+## Throne 设置 ShadowTLS 方法
 
-脚本会输出两条 Neko 链接。把两条链接导入 Nekobox 后，手动创建链式代理，并按 `ShadowTLS -> Shadowsocks` 的顺序选择这两个节点；顺序反了会导致连接失败。
+脚本会输出两条 Throne 链接。把两条链接导入 Throne 后，手动创建链式代理，并按 `ShadowTLS -> Shadowsocks` 的顺序选择这两个节点；顺序反了会导致连接失败。
 
 ## 开发维护
 

@@ -93,6 +93,21 @@ normalize_ntp_config() {
   [[ "$NTP_INTERVAL" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]] || error " NTP_INTERVAL must be a duration like 30m, 60m, or 1h. "
 }
 
+input_uuid() {
+  UUID_DEFAULT=$(cat /proc/sys/kernel/random/uuid)
+  [[ "$IS_FAST_INSTALL" = 'is_fast_install' || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
+  if [ -z "$UUID_CONFIRM" ]; then
+    (( STEP_NUM++ )) || true
+    reading "\n ${TOTAL_STEPS:+(${STEP_NUM}/${TOTAL_STEPS}) }$(text 12) " UUID_CONFIRM
+  fi
+  local UUID_ERROR_TIME=5
+  until [[ -z "$UUID_CONFIRM" || "${UUID_CONFIRM,,}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; do
+    (( UUID_ERROR_TIME-- )) || true
+    [ "$UUID_ERROR_TIME" = 0 ] && error "\n $(text 3) \n" || reading "\n $(text 4) \n" UUID_CONFIRM
+  done
+  UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
+}
+
 array_contains() {
   local _needle=$1 _item
   shift

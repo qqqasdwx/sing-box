@@ -2,6 +2,14 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-06-07
+
+- 移植上游 `803cfa7`：修复 `sb -d` 修改端口后从 `nginx.conf` 提取 UUID 时误匹配 `/auto`、`/auto2` 的问题。
+- 移植上游 `2ca9504`：订阅输出从 Neko/Nekobox 迁移到 Throne，移除多处客户端链接中的不安全 TLS 参数，并改进 V2rayN Trojan 输出。
+- 支持 `LOG_LEVEL` 配置 sing-box 服务端日志级别。
+- 支持 `NTP_ENABLED`、`NTP_SERVER`、`NTP_SERVER_PORT`、`NTP_INTERVAL` 配置 sing-box 内建 NTP 客户端。
+- 更新上游跟踪基线到 `fscarmen/sing-box@2ca9504654e0bfc2fd6270d386a919e8f14800ab`。
+
 ## 2026-05-31
 
 - 移植上游 v1.3.14：`sb -d` 支持管理自定义 `warp-ep` 出站路由规则，可按 `domain_suffix` 或 `rule_set` 将流量分流到 WARP endpoint。

@@ -726,19 +726,8 @@ sing-box_variables() {
     input_cdn
   fi
 
-  # 输入 UUID ，错误超过 5 次将会退出
-  UUID_DEFAULT=$(cat /proc/sys/kernel/random/uuid)
-  [[ "$IS_FAST_INSTALL" = 'is_fast_install' || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
-  if [ -z "$UUID_CONFIRM" ]; then
-    (( STEP_NUM++ )) || true
-    reading "\n (${STEP_NUM}/${TOTAL_STEPS}) $(text 12) " UUID_CONFIRM
-  fi
-  local UUID_ERROR_TIME=5
-  until [[ -z "$UUID_CONFIRM" || "${UUID_CONFIRM,,}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; do
-    (( UUID_ERROR_TIME-- )) || true
-    [ "$UUID_ERROR_TIME" = 0 ] && error "\n $(text 3) \n" || reading "\n $(text 4) \n" UUID_CONFIRM
-  done
-  UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
+  # 确认 UUID
+  input_uuid
 
   # 输入节点名，以系统的 hostname 作为默认
   local EMOJI="${EMOJI4:-$EMOJI6}"
@@ -1496,7 +1485,7 @@ http {
     default                    /;               # 默认路径
     ~*v2rayN                   /v2rayn;         # 匹配 V2rayN 客户端
     ~*clash                    /clash;          # 匹配 Clash 客户端
-    ~*Neko|Throne              /neko;           # 匹配 Neko / Throne 客户端
+    ~*Throne|Neko              /throne;         # 匹配 Throne / Neko 客户端
     ~*ShadowRocket             /shadowrocket;   # 匹配 ShadowRocket 客户端
     ~*SFM|SFI|SFA              /sing-box;       # 匹配 Sing-box 官方客户端
 #   ~*Chrome|Firefox|Mozilla   /;               # 添加更多的分流规则
@@ -1505,7 +1494,7 @@ http {
     default                    /;               # 默认路径
     ~*v2rayN                   /v2rayn;         # 匹配 V2rayN 客户端
     ~*clash                    /clash2;         # 匹配 Clash 客户端
-    ~*Neko|Throne              /neko;           # 匹配 Neko 客户端
+    ~*Throne|Neko              /throne;         # 匹配 Throne / Neko 客户端
     ~*ShadowRocket             /shadowrocket;   # 匹配 ShadowRocket 客户端
     ~*SFM|SFI|SFA              /sing-box;       # 匹配 Sing-box 官方客户端
 #   ~*Chrome|Firefox|Mozilla   /;               # 添加更多的分流规则

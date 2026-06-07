@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.14 (2026.05.29)'
+VERSION='v1.3.14 (2026.06.02)'
 
 # Github 反代加速代理
 GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
