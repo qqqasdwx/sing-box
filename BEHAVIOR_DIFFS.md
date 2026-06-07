@@ -1,8 +1,8 @@
 # 与上游的行为差异
 
-本次 review 基线，日期：2026-05-25。
+本次 review 基线，日期：2026-06-07。
 
-- 上游：`fscarmen/sing-box@a683f289eabee672c6fb512292e4b255e1ab1be6`
+- 上游：`fscarmen/sing-box@2ca9504654e0bfc2fd6270d386a919e8f14800ab`
 - 下游：`qqqasdwx/sing-box@main`
 
 本次 review 时未发现新的上游提交。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
@@ -11,8 +11,9 @@
 
 - VPS 安装脚本刻意尽量保持与上游一致。目前观察到的差异主要是仓库归属链接、`force_version` 来源，以及生成的 `sb` 快捷命令地址。
 - Docker 行为刻意与上游不同：本仓库的 Docker 入口复用 VPS 的协议生成逻辑，而不是继续维护一份独立手写实现。
-- 本次 review 发现并修复了两个迁移问题：
-  - README 重写后，脚本输出中的 ShadowTLS 帮助链接指向了不存在的锚点。现在已恢复 `Nekobox 设置 ShadowTLS 方法` 小节，并修正脚本链接。
+- 本次 review 已移植上游 `803cfa7` 与 `2ca9504`，包括 `nginx.conf` UUID 提取修复、Throne 订阅输出、客户端订阅 TLS 安全参数调整和 V2rayN Trojan 输出改进。
+- 早前 review 发现并修复了两个迁移问题：
+  - README 重写后，脚本输出中的 ShadowTLS 帮助链接曾指向不存在的锚点；当前已随上游迁移到 Throne 小节。
   - Docker `init.sh -v` 更新 sing-box 时丢失了上游的失败回滚保护。现在会备份旧二进制，通过 s6 重启检查新进程；如果新进程没有恢复，会还原旧二进制。
 
 ## 刻意保留的差异

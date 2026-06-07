@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.14 (2026.05.29)'
+VERSION='v1.3.14 (2026.06.02)'
 
 # Github 反代加速代理
 GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
@@ -137,8 +137,8 @@ E[46]="Warp / warp-go was detected to be running. Please enter the correct serve
 C[46]="检测到 warp / warp-go 正在运行，请输入确认的服务器 IP:"
 E[47]="No server ip, script exits. Feedback:[https://github.com/qqqasdwx/sing-box/issues]"
 C[47]="没有 server ip，脚本退出，问题反馈:[https://github.com/qqqasdwx/sing-box/issues]"
-E[48]="ShadowTLS - Copy the above two Neko links and manually set up the chained proxies in order. Tutorial: https://github.com/qqqasdwx/sing-box/blob/release/README.md#nekobox-%E8%AE%BE%E7%BD%AE-shadowtls-%E6%96%B9%E6%B3%95"
-C[48]="ShadowTLS - 复制上面两条 Neko links 进去，并按顺序手动设置链式代理，详细教程: https://github.com/qqqasdwx/sing-box/blob/release/README.md#nekobox-%E8%AE%BE%E7%BD%AE-shadowtls-%E6%96%B9%E6%B3%95"
+E[48]="ShadowTLS - Copy the above two Throne links and manually set up the chained proxies in order. Tutorial: https://github.com/qqqasdwx/sing-box/blob/release/README.md#throne-%E8%AE%BE%E7%BD%AE-shadowtls-%E6%96%B9%E6%B3%95"
+C[48]="ShadowTLS - 复制上面两条 Throne links 进去，并按顺序手动设置链式代理，详细教程: https://github.com/qqqasdwx/sing-box/blob/release/README.md#throne-%E8%AE%BE%E7%BD%AE-shadowtls-%E6%96%B9%E6%B3%95"
 E[49]="Select more protocols to install (e.g. hgbd). The order of the port numbers of the protocols is related to the ordering of the multiple choices:\n a. all (default)"
 C[49]="多选需要安装协议(比如 hgbd)，协议的端口号次序与多选的排序有关:\n a. all (默认)"
 E[50]="Please enter the \$TYPE domain name:"
@@ -470,6 +470,21 @@ normalize_ntp_config() {
 
   NTP_INTERVAL=${NTP_INTERVAL:-"$NTP_INTERVAL_DEFAULT"}
   [[ "$NTP_INTERVAL" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]] || error " NTP_INTERVAL must be a duration like 30m, 60m, or 1h. "
+}
+
+input_uuid() {
+  UUID_DEFAULT=$(cat /proc/sys/kernel/random/uuid)
+  [[ "$IS_FAST_INSTALL" = 'is_fast_install' || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
+  if [ -z "$UUID_CONFIRM" ]; then
+    (( STEP_NUM++ )) || true
+    reading "\n ${TOTAL_STEPS:+(${STEP_NUM}/${TOTAL_STEPS}) }$(text 12) " UUID_CONFIRM
+  fi
+  local UUID_ERROR_TIME=5
+  until [[ -z "$UUID_CONFIRM" || "${UUID_CONFIRM,,}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; do
+    (( UUID_ERROR_TIME-- )) || true
+    [ "$UUID_ERROR_TIME" = 0 ] && error "\n $(text 3) \n" || reading "\n $(text 4) \n" UUID_CONFIRM
+  done
+  UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
 }
 
 array_contains() {
@@ -2661,19 +2676,8 @@ sing-box_variables() {
     input_cdn
   fi
 
-  # 输入 UUID ，错误超过 5 次将会退出
-  UUID_DEFAULT=$(cat /proc/sys/kernel/random/uuid)
-  [[ "$IS_FAST_INSTALL" = 'is_fast_install' || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
-  if [ -z "$UUID_CONFIRM" ]; then
-    (( STEP_NUM++ )) || true
-    reading "\n (${STEP_NUM}/${TOTAL_STEPS}) $(text 12) " UUID_CONFIRM
-  fi
-  local UUID_ERROR_TIME=5
-  until [[ -z "$UUID_CONFIRM" || "${UUID_CONFIRM,,}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]]; do
-    (( UUID_ERROR_TIME-- )) || true
-    [ "$UUID_ERROR_TIME" = 0 ] && error "\n $(text 3) \n" || reading "\n $(text 4) \n" UUID_CONFIRM
-  done
-  UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
+  # 确认 UUID
+  input_uuid
 
   # 输入节点名，以系统的 hostname 作为默认
   local EMOJI="${EMOJI4:-$EMOJI6}"
@@ -3431,7 +3435,7 @@ http {
     default                    /;               # 默认路径
     ~*v2rayN                   /v2rayn;         # 匹配 V2rayN 客户端
     ~*clash                    /clash;          # 匹配 Clash 客户端
-    ~*Neko|Throne              /neko;           # 匹配 Neko / Throne 客户端
+    ~*Throne|Neko              /throne;         # 匹配 Throne / Neko 客户端
     ~*ShadowRocket             /shadowrocket;   # 匹配 ShadowRocket 客户端
     ~*SFM|SFI|SFA              /sing-box;       # 匹配 Sing-box 官方客户端
 #   ~*Chrome|Firefox|Mozilla   /;               # 添加更多的分流规则
@@ -3440,7 +3444,7 @@ http {
     default                    /;               # 默认路径
     ~*v2rayN                   /v2rayn;         # 匹配 V2rayN 客户端
     ~*clash                    /clash2;         # 匹配 Clash 客户端
-    ~*Neko|Throne              /neko;           # 匹配 Neko 客户端
+    ~*Throne|Neko              /throne;         # 匹配 Throne / Neko 客户端
     ~*ShadowRocket             /shadowrocket;   # 匹配 ShadowRocket 客户端
     ~*SFM|SFI|SFA              /sing-box;       # 匹配 Sing-box 官方客户端
 #   ~*Chrome|Firefox|Mozilla   /;               # 添加更多的分流规则
@@ -5038,7 +5042,7 @@ ss://$(echo -n "${SHADOWSOCKS_METHOD}:${SHADOWSOCKS_PASSWORD}@${SERVER_IP_1}:$PO
 
   [ -n "$PORT_TROJAN" ] && local V2RAYN_SUBSCRIBE+="
 ----------------------------
-trojan://$TROJAN_PASSWORD@${SERVER_IP_1}:$PORT_TROJAN?security=tls&insecure=1&allowInsecure=1&pcs=${SELF_SIGNED_FINGERPRINT_SHA256//:/}&type=tcp&headerType=none#${NODE_NAME[16]// /%20}%20${NODE_TAG[5]}"
+v2rayn://trojan/$(echo -n "{\"ConfigType\":6,\"ConfigVersion\":4,\"Remarks\":\"${NODE_NAME[16]} ${NODE_TAG[5]}\",\"Address\":\"${SERVER_IP}\",\"Port\":${PORT_TROJAN},\"Password\":\"${TROJAN_PASSWORD}\",\"Network\":\"raw\",\"StreamSecurity\":\"tls\",\"AllowInsecure\":\"false\",\"Sni\":\"${TLS_SERVER}\",\"Cert\":\"${CERT_URL_2}\"}" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
 
   if [ -n "$PORT_VMESS_WS" ]; then
     local VMESS_CDN_PORT=${CDN_PORT[17]:-80}
@@ -5106,7 +5110,7 @@ v2rayn://naive/$(echo -n "{\"ConfigType\":12,\"CoreType\":24,\"ConfigVersion\":4
 vless://${UUID[11]}@${SERVER_IP_1}:${PORT_XTLS_REALITY}?security=reality&sni=${TLS_SERVER}&fp=firefox&pbk=${REALITY_PUBLIC[11]}&type=tcp${VISION_FLOW}&encryption=none#${NODE_NAME[11]// /%20}%20${NODE_TAG[0]}"
 
   if [ -n "$PORT_HYSTERIA2" ]; then
-    local THRONE_PARAMS="allowInsecure=true&alpn&security=tls&sni=${TLS_SERVER}&upmbps=${HY2_UP}&downmbps=${HY2_DOWN}&security=tls&tls_certificate=${CERT_URL_1}"
+    local THRONE_PARAMS="allowInsecure=false&alpn&security=tls&sni=${TLS_SERVER}&upmbps=${HY2_UP}&downmbps=${HY2_DOWN}&security=tls&tls_certificate=${CERT_URL_1}"
     if [[ -n "$PORT_HOPPING_START" && -n "$PORT_HOPPING_END" ]]; then
       THRONE_PARAMS+="&mport=${PORT_HOPPING_START}-${PORT_HOPPING_END}&hop_interval=30s"
     fi
@@ -5117,12 +5121,12 @@ hysteria2://${UUID[12]}@${SERVER_IP_1}:${PORT_HYSTERIA2}?${THRONE_PARAMS}#${NODE
 
   [ -n "$PORT_TUIC" ] && local THRONE_SUBSCRIBE+="
 ----------------------------
-tuic://${TUIC_PASSWORD}:${UUID[13]}@${SERVER_IP_1}:${PORT_TUIC}?congestion_control=$TUIC_CONGESTION_CONTROL&alpn=h3&sni=${TLS_SERVER}&udp_relay_mode=native&allow_insecure=1&security=tls&tls_certificate=${CERT_URL_1}#${NODE_NAME[13]// /%20}%20${NODE_TAG[2]}"
+tuic://${TUIC_PASSWORD}:${UUID[13]}@${SERVER_IP_1}:${PORT_TUIC}?congestion_control=$TUIC_CONGESTION_CONTROL&alpn=h3&sni=${TLS_SERVER}&udp_relay_mode=native&allow_insecure=0&security=tls&tls_certificate=${CERT_URL_1}#${NODE_NAME[13]// /%20}%20${NODE_TAG[2]}"
   [ -n "$PORT_SHADOWTLS" ] && local THRONE_SUBSCRIBE+="
 ----------------------------
-nekoray://custom#$(echo -n "{\"_v\":0,\"addr\":\"127.0.0.1\",\"cmd\":[\"\"],\"core\":\"internal\",\"cs\":\"{\n    \\\"password\\\": \\\"${UUID[14]}\\\",\n    \\\"server\\\": \\\"${SERVER_IP_1}\\\",\n    \\\"server_port\\\": ${PORT_SHADOWTLS},\n    \\\"tag\\\": \\\"shadowtls-out\\\",\n    \\\"tls\\\": {\n        \\\"enabled\\\": true,\n        \\\"server_name\\\": \\\"${TLS_SERVER}\\\"\n    },\n    \\\"type\\\": \\\"shadowtls\\\",\n    \\\"version\\\": 3\n}\n\",\"mapping_port\":0,\"name\":\"1-tls-not-use\",\"port\":1080,\"socks_port\":0}" | base64 -w0)
+shadowtls://:${UUID[14]}@${SERVER_IP_1}:${PORT_SHADOWTLS}?version=3&security=tls&sni=${TLS_SERVER}&fp=chrome#1-tls-not-use
 
-nekoray://shadowsocks#$(echo -n "{\"_v\":0,\"method\":\"$SHADOWTLS_METHOD\",\"name\":\"2-ss-not-use\",\"pass\":\"$SHADOWTLS_PASSWORD\",\"port\":0,\"stream\":{\"ed_len\":0,\"insecure\":false,\"mux_s\":0,\"net\":\"tcp\"},\"uot\":0}" | base64 -w0)"
+ss://${SHADOWTLS_METHOD}:${SHADOWTLS_PASSWORD}@127.0.0.1:0#2-ss-not-use"
 
   [ -n "$PORT_SHADOWSOCKS" ] && local THRONE_SUBSCRIBE+="
 ----------------------------
@@ -5130,7 +5134,7 @@ ss://$(echo -n "${SHADOWSOCKS_METHOD}:${SHADOWSOCKS_PASSWORD}" | base64 -w0)@${S
 
   [ -n "$PORT_TROJAN" ] && local THRONE_SUBSCRIBE+="
 ----------------------------
-trojan://${TROJAN_PASSWORD}@${SERVER_IP_1}:$PORT_TROJAN?security=tls&sni=${TLS_SERVER}&allowInsecure=1&tls_certificate=${CERT_URL_1}&fp=firefox&type=tcp#${NODE_NAME[16]// /%20}%20${NODE_TAG[5]}"
+trojan://${TROJAN_PASSWORD}@${SERVER_IP_1}:$PORT_TROJAN?security=tls&sni=${TLS_SERVER}&allowInsecure=0&tls_certificate=${CERT_URL_1}&fp=firefox&type=tcp#${NODE_NAME[16]// /%20}%20${NODE_TAG[5]}"
 
   if [ -n "$PORT_VMESS_WS" ]; then
      if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
@@ -5180,7 +5184,7 @@ vless://${UUID[20]}@${SERVER_IP_1}:${PORT_GRPC_REALITY}?security=reality&sni=${T
 
   [ -n "$PORT_ANYTLS" ] && local THRONE_SUBSCRIBE+="
 ----------------------------
-anytls://${UUID[21]}@${SERVER_IP_1}:${PORT_ANYTLS}?idle_session_check_interval=30s&idle_session_timeout=30s&min_idle_session=5&insecure=1&security=tls&sni=${TLS_SERVER}&tls_certificate=${CERT_URL_1}&fp=firefox#${NODE_NAME[21]// /%20}%20${NODE_TAG[10]}"
+anytls://${UUID[21]}@${SERVER_IP_1}:${PORT_ANYTLS}?idle_session_check_interval=30s&idle_session_timeout=30s&min_idle_session=5&insecure=0&security=tls&sni=${TLS_SERVER}&tls_certificate=${CERT_URL_1}&fp=firefox#${NODE_NAME[21]// /%20}%20${NODE_TAG[10]}"
 
   [ -n "$PORT_NAIVE" ] && {
     local THRONE_SUBSCRIBE+="
@@ -5190,7 +5194,7 @@ naive+https://${UUID[22]}:${UUID[22]}@${SERVER_IP_1}:${PORT_NAIVE}?uot=1&securit
 naive+quic://${UUID[22]}:${UUID[22]}@${SERVER_IP_1}:${PORT_NAIVE}?congestion_control=bbr&security=tls&sni=${TLS_SERVER}&tls_certificate=${CERT_200_URL_1}#${NODE_NAME[22]// /%20}%20${NODE_TAG[11]}%20quic"
   }
 
-  echo -n "$THRONE_SUBSCRIBE" | sed -E '/^[ ]*#|^--/d' | sed '/^$/d' | base64 -w0 > ${WORK_DIR}/subscribe/neko
+  echo -n "$THRONE_SUBSCRIBE" | sed -E '/^[ ]*#|^--/d' | sed '/^$/d' | base64 -w0 > ${WORK_DIR}/subscribe/throne
 
   # 生成 Sing-box 订阅文件
   [ -n "$PORT_XTLS_REALITY" ] &&
@@ -5378,7 +5382,7 @@ V2rayN $(text 80):
 $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/v2rayn")
 
 $(hint "Throne $(text 80):
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/neko")
+$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/throne")
 
 $(hint "Clash $(text 80):
 $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/clash
@@ -5554,8 +5558,10 @@ change_start_port() {
     add_port_hopping_nat "$PORT_HOPPING_START" "$PORT_HOPPING_END" "$PORT_HYSTERIA2" >/dev/null 2>&1 || true
   fi
   if [ -n "$PORT_NGINX" ]; then
-    UUID_CONFIRM=$(sed -n 's#.*location ~ \^/\([^/]*\)/auto.*#\1#p' "${WORK_DIR}/nginx.conf" | sed -n '1p')
-    [ -z "$UUID_CONFIRM" ] && UUID_CONFIRM=$(sed -n 's#.*location[ ]\+/\(.*\)-v[ml]ess.*#\1#gp' "${WORK_DIR}/nginx.conf" | sed -n '1p')
+    UUID_CONFIRM=$(sed -nE \
+      -e 's#^[[:space:]]*location[[:space:]]+~?[[:space:]]*\^?/([^/[:space:]]+)/[^[:space:]]*.*#\1#p' \
+      -e 's#^[[:space:]]*location[[:space:]]+/([^/[:space:]]+)-(vmess|vless).*#\1#p' \
+      "${WORK_DIR}/nginx.conf" | sed -n '1p')
     export_nginx_conf_file
   fi
   cmd_systemctl enable sing-box
@@ -5646,7 +5652,13 @@ change_protocols() {
   fetch_nodes_value
 
   # 用于新节点的配置信息
-  UUID_CONFIRM=$(awk '{print $1}' <<< "${UUID[*]} $TROJAN_PASSWORD")
+  if [ "${#UUID[@]}" -gt 0 ]; then
+    UUID_CONFIRM="${UUID[0]}"
+  elif grep -q '.' <<< "${TROJAN_PASSWORD}"; then
+    UUID_CONFIRM="${TROJAN_PASSWORD}"
+  else
+    input_uuid
+  fi
   for v in "${NODE_NAME[@]}"; do
     [ -n "$v" ] && NODE_NAME_CONFIRM="$v" && break
   done
@@ -7013,6 +7025,15 @@ menu() {
 
 check_cdn
 statistics_of_run_times update sing-box.sh 2>/dev/null
+
+# Temporary migration for installs generated before Throne replaced Neko.
+# Remove after 2026-09-30.
+if [ -s "$WORK_DIR/nginx.conf" ] && grep -q 'Neko|Throne' "$WORK_DIR/nginx.conf"; then
+  sed -i 's@~\*Neko|Throne.*@~*Throne|Neko              /throne;         # 匹配 Throne / Neko 客户端@g' "$WORK_DIR/nginx.conf"
+  [ -s "$WORK_DIR/subscribe/neko" ] && rm -f "$WORK_DIR/subscribe/neko"
+  declare -F cmd_systemctl >/dev/null 2>&1 && cmd_systemctl restart sing-box
+  export_list >/dev/null 2>&1
+fi
 
 # 传参
 [[ "${*^^}" =~ '-E'|'-K' ]] && L=E
