@@ -929,6 +929,10 @@ apply_config_file_options() {
   # shellcheck source=/dev/null
   . "$CONFIG_FILE"
 
+  if config_file_has_var REALITY_PRIVATE && [ -z "${REALITY_PRIVATE[0]-}" ]; then
+    unset REALITY_PRIVATE REALITY_PUBLIC
+  fi
+
   if config_file_has_var LANGUAGE; then
     L=${LANGUAGE^^}
     [[ "$L" =~ ^E ]] && L=E || L=C
@@ -1010,6 +1014,99 @@ first_nonempty_array_value() {
   for _value in "${_array[@]}"; do
     [ -n "$_value" ] && printf '%s' "$_value" && return
   done
+  return 0
+}
+
+valid_reality_private_format() {
+  [[ "$1" =~ ^[A-Za-z0-9_-]{43}$ ]]
+}
+
+reality_public_from_private() {
+  local _private_key=$1 _b64 _mod _priv_len _prefix_hex _priv_hex
+  [ -n "$_private_key" ] || return 1
+  valid_reality_private_format "$_private_key" || return 1
+
+  if command -v xxd >/dev/null 2>&1; then
+    _b64=$(printf '%s' "$_private_key" | tr '_-' '/+')
+    _mod=$(( ${#_b64} % 4 ))
+    [ "$_mod" -eq 2 ] && _b64="${_b64}=="
+    [ "$_mod" -eq 3 ] && _b64="${_b64}="
+    [ "$_mod" -eq 1 ] && return 1
+
+    printf '%s' "$_b64" | base64 -d > "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || return 1
+    _priv_len=$(stat -c%s "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || stat -f%z "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null)
+    [ "$_priv_len" = 32 ] || return 1
+
+    _prefix_hex="302e020100300506032b656e04220420"
+    _priv_hex=$(xxd -p -c 256 "${TEMP_DIR}/_X25519_PRIV_RAW" | tr -d '\n')
+    printf '%s%s' "$_prefix_hex" "$_priv_hex" | xxd -r -p > "${TEMP_DIR}/_X25519_PRIV_DER"
+    openssl pkcs8 -inform DER -in "${TEMP_DIR}/_X25519_PRIV_DER" -nocrypt -out "${TEMP_DIR}/_X25519_PRIV_PEM" 2>/dev/null || return 1
+    openssl pkey -in "${TEMP_DIR}/_X25519_PRIV_PEM" -pubout -outform DER > "${TEMP_DIR}/_X25519_PUB_DER" 2>/dev/null || return 1
+    tail -c 32 "${TEMP_DIR}/_X25519_PUB_DER" > "${TEMP_DIR}/_X25519_PUB_RAW"
+    base64 -w0 "${TEMP_DIR}/_X25519_PUB_RAW" | tr '+/' '-_' | sed -E 's/=+$//'
+  else
+    wget --no-check-certificate -qO- --tries=3 --timeout=2 "https://realitykey.cloudflare.now.cc/?privateKey=${_private_key}" | awk -F '"' '/publicKey/{print $4}'
+  fi
+}
+
+generate_reality_keypair() {
+  local _binary=${1:-${DIR:-$WORK_DIR}/sing-box} _keypair
+  [ -x "$_binary" ] || _binary="${TEMP_DIR}/sing-box"
+  [ -x "$_binary" ] || _binary="${WORK_DIR}/sing-box"
+  [ -x "$_binary" ] || return 1
+
+  _keypair=$("$_binary" generate reality-keypair) || return 1
+  REALITY_PRIVATE=$(awk '/PrivateKey/{print $NF}' <<< "$_keypair")
+  REALITY_PUBLIC=$(awk '/PublicKey/{print $NF}' <<< "$_keypair")
+  [ -n "$REALITY_PRIVATE" ] && [ -n "$REALITY_PUBLIC" ]
+}
+
+normalize_reality_keypair() {
+  local _private _public _derived_public _binary=${1:-${DIR:-$WORK_DIR}/sing-box}
+
+  _private=$(first_nonempty_array_value REALITY_PRIVATE)
+  _public=$(first_nonempty_array_value REALITY_PUBLIC)
+
+  if [ -z "$_private" ] && [ -z "$_public" ]; then
+    if ! generate_reality_keypair "$_binary"; then
+      if [ "$L" = 'C' ]; then
+        failure_error " 生成 Reality 密钥失败，脚本退出。 " "Command: $_binary generate reality-keypair"
+      else
+        failure_error " Failed to generate Reality keypair, script exits. " "Command: $_binary generate reality-keypair"
+      fi
+    fi
+    _private=$REALITY_PRIVATE
+  fi
+
+  if [ -z "$_private" ]; then
+    if [ "$L" = 'C' ]; then
+      failure_error " Reality 配置无效，脚本退出。 " "REALITY_PRIVATE is required when REALITY_PUBLIC is set."
+    else
+      failure_error " Reality configuration is invalid, script exits. " "REALITY_PRIVATE is required when REALITY_PUBLIC is set."
+    fi
+  fi
+
+  if ! valid_reality_private_format "$_private"; then
+    if [ "$L" = 'C' ]; then
+      failure_error " Reality 配置无效，脚本退出。 " "REALITY_PRIVATE must be a 43-character base64url X25519 private key."
+    else
+      failure_error " Reality configuration is invalid, script exits. " "REALITY_PRIVATE must be a 43-character base64url X25519 private key."
+    fi
+  fi
+
+  _derived_public=$(reality_public_from_private "$_private")
+  if [ -z "$_derived_public" ]; then
+    if [ "$L" = 'C' ]; then
+      failure_error " Reality 配置无效，脚本退出。 " "REALITY_PRIVATE is invalid or cannot be converted to a Reality public key."
+    else
+      failure_error " Reality configuration is invalid, script exits. " "REALITY_PRIVATE is invalid or cannot be converted to a Reality public key."
+    fi
+  fi
+
+  _public=$_derived_public
+  unset REALITY_PRIVATE REALITY_PUBLIC
+  REALITY_PRIVATE=$_private
+  REALITY_PUBLIC=$_public
 }
 
 installed_argo_auth() {
@@ -1101,7 +1198,9 @@ config_node_name() {
 }
 
 config_reality_private() {
-  shell_quote "${REALITY_PRIVATE[11]:-${REALITY_PRIVATE[19]:-${REALITY_PRIVATE[20]:-${REALITY_PRIVATE:-}}}}"
+  local _value
+  _value=$(first_nonempty_array_value REALITY_PRIVATE)
+  shell_quote "$_value"
 }
 
 config_argo_auth() {
@@ -2463,7 +2562,7 @@ input_reality_key() {
   [ -z "$REALITY_PRIVATE" ] && unset REALITY_PRIVATE && return
 
   local PRIVATEKEY_ERROR_TIME=5
-  until [[ "$REALITY_PRIVATE" =~ ^[A-Za-z0-9_-]{43}$ || -z "$REALITY_PRIVATE" ]]; do
+  until valid_reality_private_format "$REALITY_PRIVATE" || [ -z "$REALITY_PRIVATE" ]; do
     (( PRIVATEKEY_ERROR_TIME-- )) || true
     [ "$PRIVATEKEY_ERROR_TIME" = 0 ] && unset REALITY_PRIVATE && hint "\n $(text 113) \n" && break
     warning "\n $(text 114) "
@@ -4426,61 +4525,8 @@ EOF
 EOF
   fi
 
-  # 生成 Reality 公私钥，第一次安装的时候，如有指定的私钥，则使用该私钥及生成对应的公钥；如没有指定私钥则使用新生成的；添加协议的时，使用相应数组里的第一个非空值，如全空则像第一次安装那样使用新生成的
-  generate_reality_keypair() {
-    [ "$1" = 'convert_error' ] && hint " $(text 116) "
-    REALITY_KEYPAIR=$($DIR/sing-box generate reality-keypair) && REALITY_PRIVATE=$(awk '/PrivateKey/{print $NF}' <<< "$REALITY_KEYPAIR") && REALITY_PUBLIC=$(awk '/PublicKey/{print $NF}' <<< "$REALITY_KEYPAIR")
-  }
-
-  if [[ "${#REALITY_PRIVATE}" = 43 && "${#REALITY_PUBLIC}" = 0 ]]; then
-    if command -v xxd >/dev/null 2>&1; then
-      until [ -n "$REALITY_PUBLIC" ]; do
-        # convert base64url -> base64 (standard), add padding
-        local B64=$(printf '%s' "$REALITY_PRIVATE" | tr '_-' '/+')
-        local MOD=$(( ${#B64} % 4 ))
-        if [ $MOD -eq 2 ]; then
-          B64="${B64}=="
-        elif [ $MOD -eq 3 ]; then
-          B64="${B64}="
-        elif [ $MOD -eq 1 ]; then
-          generate_reality_keypair convert_error
-          continue
-        fi
-
-        # decode to raw 32 bytes
-        echo "$B64" | base64 -d > $TEMP_DIR/_X25519_PRIV_RAW || { generate_reality_keypair convert_error; continue; }
-
-        local PRIV_LEN=$(stat -c%s $TEMP_DIR/_X25519_PRIV_RAW 2>/dev/null || stat -f%z $TEMP_DIR/_X25519_PRIV_RAW)
-        [ "$PRIV_LEN" -ne 32 ] && { generate_reality_keypair convert_error; continue; }
-
-        # DER prefix for PKCS#8 private key with OID 1.3.101.110 (X25519)
-        # Hex: 30 2e 02 01 00 30 05 06 03 2b 65 6e 04 22 04 20
-        local PREFIX_HEX="302e020100300506032b656e04220420"
-
-        # append raw private key hex and create DER
-        local PRIV_HEX=$(xxd -p -c 256 $TEMP_DIR/_X25519_PRIV_RAW | tr -d '\n')
-        printf "%s%s" "$PREFIX_HEX" "$PRIV_HEX" | xxd -r -p > $TEMP_DIR/_X25519_PRIV_DER
-
-        # convert DER PKCS8 -> PEM private key
-        openssl pkcs8 -inform DER -in $TEMP_DIR/_X25519_PRIV_DER -nocrypt -out $TEMP_DIR/_X25519_PRIV_PEM 2>/dev/null
-
-        # extract public key in DER
-        openssl pkey -in $TEMP_DIR/_X25519_PRIV_PEM -pubout -outform DER > $TEMP_DIR/_X25519_PUB_DER 2>/dev/null
-
-        # last 32 bytes are the raw public key
-        tail -c 32 $TEMP_DIR/_X25519_PUB_DER > $TEMP_DIR/_X25519_PUB_RAW
-
-        # encode to base64url (no padding)
-        REALITY_PUBLIC=$(base64 -w0 $TEMP_DIR/_X25519_PUB_RAW | tr '+/' '-_' | sed -E 's/=+$//')
-      done
-    else
-      REALITY_PUBLIC=$(wget --no-check-certificate -qO- --tries=3 --timeout=2 https://realitykey.cloudflare.now.cc/?privateKey=$REALITY_PRIVATE | awk -F '"' '/publicKey/{print $4}')
-    fi
-  elif [[ "${#REALITY_PRIVATE[@]}" = 0 && "${#REALITY_PUBLIC[@]}" = 0 ]]; then
-    generate_reality_keypair new_keypair
-  else
-    REALITY_PRIVATE=$(awk '{print $1}' <<< "${REALITY_PRIVATE[@]}") && REALITY_PUBLIC=$(awk '{print $1}' <<< "${REALITY_PUBLIC[@]}")
-  fi
+  # 生成或规范化 Reality 公私钥，避免空数组元素或无效私钥写入 sing-box 配置。
+  array_contains_any INSTALL_PROTOCOLS b j k && normalize_reality_keypair "$DIR/sing-box"
 
   # 获取自签名证书的域名
   TLS_SERVER=$(openssl x509 -noout -ext subjectAltName -in ${WORK_DIR}/cert/cert.pem 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
@@ -6926,34 +6972,6 @@ valid_uuid_or_error() {
   [[ "${1,,}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]] || error " $(text 4) "
 }
 
-reality_public_from_private() {
-  local PRIVATE_KEY=$1 B64 MOD PRIV_LEN PREFIX_HEX PRIV_HEX
-  [ -n "$PRIVATE_KEY" ] || return 1
-  [[ "$PRIVATE_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || return 1
-
-  if command -v xxd >/dev/null 2>&1; then
-    B64=$(printf '%s' "$PRIVATE_KEY" | tr '_-' '/+')
-    MOD=$(( ${#B64} % 4 ))
-    [ "$MOD" -eq 2 ] && B64="${B64}=="
-    [ "$MOD" -eq 3 ] && B64="${B64}="
-    [ "$MOD" -eq 1 ] && return 1
-
-    echo "$B64" | base64 -d > "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || return 1
-    PRIV_LEN=$(stat -c%s "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || stat -f%z "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null)
-    [ "$PRIV_LEN" = 32 ] || return 1
-
-    PREFIX_HEX="302e020100300506032b656e04220420"
-    PRIV_HEX=$(xxd -p -c 256 "${TEMP_DIR}/_X25519_PRIV_RAW" | tr -d '\n')
-    printf "%s%s" "$PREFIX_HEX" "$PRIV_HEX" | xxd -r -p > "${TEMP_DIR}/_X25519_PRIV_DER"
-    openssl pkcs8 -inform DER -in "${TEMP_DIR}/_X25519_PRIV_DER" -nocrypt -out "${TEMP_DIR}/_X25519_PRIV_PEM" 2>/dev/null || return 1
-    openssl pkey -in "${TEMP_DIR}/_X25519_PRIV_PEM" -pubout -outform DER > "${TEMP_DIR}/_X25519_PUB_DER" 2>/dev/null || return 1
-    tail -c 32 "${TEMP_DIR}/_X25519_PUB_DER" > "${TEMP_DIR}/_X25519_PUB_RAW"
-    base64 -w0 "${TEMP_DIR}/_X25519_PUB_RAW" | tr '+/' '-_' | sed -E 's/=+$//'
-  else
-    wget --no-check-certificate -qO- --tries=3 --timeout=2 "https://realitykey.cloudflare.now.cc/?privateKey=${PRIVATE_KEY}" | awk -F '"' '/publicKey/{print $4}'
-  fi
-}
-
 protocol_primary_secret() {
   local CODE=$1 NODE_IDX
   NODE_IDX=$(protocol_node_index_by_code "$CODE")
@@ -7040,7 +7058,7 @@ protocol_edit_reality_key() {
     NEW_PRIVATE=$(awk '/PrivateKey/{print $NF}' <<< "$KEYPAIR")
     NEW_PUBLIC=$(awk '/PublicKey/{print $NF}' <<< "$KEYPAIR")
   else
-    [[ "$NEW_PRIVATE" =~ ^[A-Za-z0-9_-]{43}$ ]] || error " $(text 101) "
+    valid_reality_private_format "$NEW_PRIVATE" || error " $(text 101) "
     NEW_PUBLIC=$(reality_public_from_private "$NEW_PRIVATE")
     [ -n "$NEW_PUBLIC" ] || error " $(text 116) "
   fi
