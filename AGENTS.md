@@ -44,6 +44,8 @@ jq . /etc/sing-box/conf/00_log.json
 
 Recent commits use concise prefixes such as `fix:`, `feat:`, and versioned release subjects like `v1.3.13 feat: ...`. Keep subjects scoped to one change.
 
+Do not push commits or monitor GitHub Actions unless the user explicitly asks to push. It is acceptable to make local edits and, when requested, local commits first; wait for a clear push instruction before running `git push`.
+
 Pull requests should include the problem, changed install/runtime path, tested OS or architecture, commands run, and relevant logs or config snippets. Do not include real UUIDs, Argo tokens, Cloudflare API credentials, private keys, or production server IPs.
 
 ## Security & Configuration Tips
