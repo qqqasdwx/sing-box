@@ -694,6 +694,72 @@ normalize_ntp_config() {
   [[ "$NTP_INTERVAL" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]] || error " NTP_INTERVAL must be a duration like 30m, 60m, or 1h. "
 }
 
+collapse_repeated_value() {
+  local _value=$1 _len=${#1} _part _repeat _i
+  [ -n "$_value" ] || return 0
+
+  for ((_i=1; _i<=_len/2; _i++)); do
+    (( _len % _i == 0 )) || continue
+    _part=${_value:0:_i}
+    [[ "$_part" == *.* ]] || continue
+    _repeat=''
+    while [ ${#_repeat} -lt "$_len" ]; do
+      _repeat+=$_part
+    done
+    if [ "$_repeat" = "$_value" ]; then
+      printf '%s' "$_part"
+      return 0
+    fi
+  done
+
+  printf '%s' "$_value"
+}
+
+normalize_domain_value() {
+  local _value=$1
+  _value=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:space:]]//g; s/:[[:space:]]*$//' <<< "$_value")
+  _value=$(collapse_repeated_value "$_value")
+  printf '%s' "$_value"
+}
+
+normalize_ws_domains() {
+  [ -n "${ARGO_DOMAIN+x}" ] && ARGO_DOMAIN=$(normalize_domain_value "$ARGO_DOMAIN")
+  [ -n "${VMESS_HOST_DOMAIN+x}" ] && VMESS_HOST_DOMAIN=$(normalize_domain_value "$VMESS_HOST_DOMAIN")
+  [ -n "${VLESS_HOST_DOMAIN+x}" ] && VLESS_HOST_DOMAIN=$(normalize_domain_value "$VLESS_HOST_DOMAIN")
+  return 0
+}
+
+normalize_ws_domain_mode() {
+  normalize_ws_domains
+
+  if [ "${IS_ARGO:-}" = 'is_argo' ]; then
+    if [ -z "$ARGO_DOMAIN" ] && [ -n "${ARGO_AUTH:-}" ]; then
+      ARGO_DOMAIN=${VLESS_HOST_DOMAIN:-${VMESS_HOST_DOMAIN:-}}
+    fi
+    unset VMESS_HOST_DOMAIN VLESS_HOST_DOMAIN
+  elif [ "${IS_ARGO:-}" = 'no_argo' ]; then
+    VMESS_HOST_DOMAIN=${VMESS_HOST_DOMAIN:-${ARGO_DOMAIN:-}}
+    VLESS_HOST_DOMAIN=${VLESS_HOST_DOMAIN:-${ARGO_DOMAIN:-}}
+    unset ARGO_DOMAIN
+  fi
+  return 0
+}
+
+ws_host_for() {
+  case "$1" in
+    h|vmess )
+      [ "${IS_ARGO:-}" = 'is_argo' ] && printf '%s' "${ARGO_DOMAIN:-}" || printf '%s' "${VMESS_HOST_DOMAIN:-}"
+      ;;
+    i|vless )
+      [ "${IS_ARGO:-}" = 'is_argo' ] && printf '%s' "${ARGO_DOMAIN:-}" || printf '%s' "${VLESS_HOST_DOMAIN:-}"
+      ;;
+  esac
+}
+
+ws_uses_argo() {
+  [ "${IS_ARGO:-}" = 'is_argo' ]
+}
+
 input_uuid() {
   UUID_DEFAULT=$(cat /proc/sys/kernel/random/uuid)
   [[ "$IS_FAST_INSTALL" = 'is_fast_install' || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
@@ -969,6 +1035,7 @@ apply_config_file_options() {
   fi
 
   TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
+  normalize_ws_domain_mode
 }
 
 set_protocol_switch() {
@@ -1141,6 +1208,7 @@ prepare_config_update_defaults() {
   [ -s "${WORK_DIR}/subscribe/qr" ] && IS_SUB=is_sub
 
   fetch_nodes_value
+  normalize_ws_domain_mode
 
   [ -n "$_selection" ] && CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-$_selection}
   UUID_CONFIRM=${UUID_CONFIRM:-"$(first_nonempty_array_value UUID)"}
@@ -1204,6 +1272,11 @@ config_reality_private() {
 }
 
 config_argo_auth() {
+  if [ "${IS_ARGO:-}" != 'is_argo' ]; then
+    shell_quote ''
+    return
+  fi
+
   if [ -n "$ARGO_JSON" ]; then
     shell_quote "$ARGO_JSON"
   elif [ -n "$ARGO_TOKEN" ]; then
@@ -1212,6 +1285,18 @@ config_argo_auth() {
     shell_quote "${ARGO_AUTH:-}"
   else
     shell_quote ''
+  fi
+}
+
+config_argo_domain() {
+  [ "${IS_ARGO:-}" = 'is_argo' ] && shell_quote "${ARGO_DOMAIN:-}" || shell_quote ''
+}
+
+config_ws_host_domain() {
+  if [ "${IS_ARGO:-}" = 'is_argo' ]; then
+    shell_quote ''
+  else
+    shell_quote "$(ws_host_for "$1")"
   fi
 }
 
@@ -1280,7 +1365,7 @@ UUID_CONFIRM=$(config_value UUID_CONFIRM)
 
 SUBSCRIBE=$(config_bool SUBSCRIBE)
 ARGO=$(config_bool ARGO)
-ARGO_DOMAIN=$(config_value ARGO_DOMAIN)
+ARGO_DOMAIN=$(config_argo_domain)
 ARGO_AUTH=$(config_argo_auth)
 CDN=$(shell_quote "${CDN[17]:-${CDN[18]:-${CDN:-${CDN_DOMAIN[0]}}}}")
 CDN_PORT=$(shell_quote "${CDN_PORT[17]:-${CDN_PORT[18]:-${CDN_PORT:-}}}")
@@ -1354,7 +1439,7 @@ TROJAN_PASSWORD=$(config_value TROJAN_PASSWORD)
 VMESS_WS=$(config_bool VMESS_WS)
 PORT_VMESS_WS=$(config_value PORT_VMESS_WS)
 NODE_NAME_VMESS_WS=$(config_node_name 17)
-VMESS_HOST_DOMAIN=$(config_value VMESS_HOST_DOMAIN)
+VMESS_HOST_DOMAIN=$(config_ws_host_domain h)
 VMESS_WS_PATH=$(config_value VMESS_WS_PATH)
 
 
@@ -1363,7 +1448,7 @@ VMESS_WS_PATH=$(config_value VMESS_WS_PATH)
 VLESS_WS=$(config_bool VLESS_WS)
 PORT_VLESS_WS=$(config_value PORT_VLESS_WS)
 NODE_NAME_VLESS_WS=$(config_node_name 18)
-VLESS_HOST_DOMAIN=$(config_value VLESS_HOST_DOMAIN)
+VLESS_HOST_DOMAIN=$(config_ws_host_domain i)
 VLESS_WS_PATH=$(config_value VLESS_WS_PATH)
 
 
@@ -1407,7 +1492,39 @@ EOF
 }
 
 first_matching_file() {
-  compgen -G "$1" | sed -n '1p'
+  local _matches
+  _matches=$(compgen -G "$1" || true)
+  sed -n '1p' <<< "$_matches"
+}
+
+json_string_value() {
+  local _key=$1
+  awk -v key="\"${_key}\"" '
+    index($0, key) {
+      value=$0
+      sub(".*" key "[[:space:]]*:[[:space:]]*\"", "", value)
+      if (value != $0) {
+        sub("\".*", "", value)
+        print value
+        exit
+      }
+    }
+  '
+}
+
+json_number_value() {
+  local _key=$1
+  awk -v key="\"${_key}\"" '
+    index($0, key) {
+      value=$0
+      sub(".*" key "[[:space:]]*:[[:space:]]*", "", value)
+      if (value != $0) {
+        sub("[^0-9].*", "", value)
+        print value
+        exit
+      }
+    }
+  '
 }
 
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
@@ -4527,6 +4644,7 @@ EOF
 
   # 生成或规范化 Reality 公私钥，避免空数组元素或无效私钥写入 sing-box 配置。
   array_contains_any INSTALL_PROTOCOLS b j k && normalize_reality_keypair "$DIR/sing-box"
+  normalize_ws_domain_mode
 
   # 获取自签名证书的域名
   TLS_SERVER=$(openssl x509 -noout -ext subjectAltName -in ${WORK_DIR}/cert/cert.pem 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
@@ -4800,9 +4918,11 @@ EOF
   if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_VMESS_WS" ] && PORT_VMESS_WS=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[17]=${NODE_NAME[17]:-"$NODE_NAME_CONFIRM"} && UUID[17]=${UUID[17]:-"$UUID_CONFIRM"} && WS_SERVER_IP[17]=${WS_SERVER_IP[17]:-"$SERVER_IP"} && CDN[17]=${CDN[17]:-"$CDN"} && CDN_PORT[17]=${CDN_PORT[17]:-${CDN_PORT:-80}} && VMESS_WS_PATH=${VMESS_WS_PATH:-"${UUID[17]}-vmess"}
+    local VMESS_WS_HOST
+    VMESS_WS_HOST=$(ws_host_for h)
     cat > ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json << EOF
 //  "WS_SERVER_IP_SHOW": "${WS_SERVER_IP[17]}"
-//  "VMESS_HOST_DOMAIN": "${VMESS_HOST_DOMAIN}${ARGO_DOMAIN}"
+//  "VMESS_HOST_DOMAIN": "${VMESS_WS_HOST}"
 //  "CDN": "${CDN[17]}"
 //  "CDN_PORT": "${CDN_PORT[17]}"
 {
@@ -4846,6 +4966,8 @@ EOF
   if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_VLESS_WS" ] && PORT_VLESS_WS=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[18]=${NODE_NAME[18]:-"$NODE_NAME_CONFIRM"} && UUID[18]=${UUID[18]:-"$UUID_CONFIRM"} && WS_SERVER_IP[18]=${WS_SERVER_IP[18]:-"$SERVER_IP"} && CDN[18]=${CDN[18]:-"$CDN"} && CDN_PORT[18]=${CDN_PORT[18]:-${CDN_PORT:-443}} && VLESS_WS_PATH=${VLESS_WS_PATH:-"${UUID[18]}-vless"}
+    local VLESS_WS_HOST
+    VLESS_WS_HOST=$(ws_host_for i)
     cat > ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json << EOF
 //  "WS_SERVER_IP_SHOW": "${WS_SERVER_IP[18]}"
 //  "CDN": "${CDN[18]}"
@@ -4873,7 +4995,7 @@ EOF
             },
             "tls":{
                 "enabled":true,
-                "server_name":"${VLESS_HOST_DOMAIN}${ARGO_DOMAIN}",
+                "server_name":"${VLESS_WS_HOST}",
                 "min_version":"1.3",
                 "max_version":"1.3",
                 "certificate_path":"${WORK_DIR}/cert/cert.pem",
@@ -5318,17 +5440,19 @@ fetch_nodes_value() {
   if [ -s "$NODE_CONF" ]; then
     JSON=$(cat "$NODE_CONF")
     NODE_NAME[17]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[6]}.*/\1/p" <<< "$JSON")
-    PORT_VMESS_WS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
-    UUID[17]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
-    VMESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
-    WS_SERVER_IP[17]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
-    CDN[17]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
-    CDN_PORT[17]=$(awk  -F '"' '/"CDN_PORT"/{print $4}' <<< "$JSON")
-    if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
-      ARGO_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON")
+    PORT_VMESS_WS=$(json_number_value listen_port <<< "$JSON")
+    UUID[17]=$(json_string_value uuid <<< "$JSON")
+    VMESS_WS_PATH=$(json_string_value path <<< "$JSON")
+    VMESS_WS_PATH=${VMESS_WS_PATH#/}
+    WS_SERVER_IP[17]=$(json_string_value WS_SERVER_IP_SHOW <<< "$JSON")
+    CDN[17]=$(json_string_value CDN <<< "$JSON")
+    CDN_PORT[17]=$(json_string_value CDN_PORT <<< "$JSON")
+    if [ -n "${ARGO_DAEMON_FILE:-}" ] && [ -s "$ARGO_DAEMON_FILE" ]; then
+      ARGO_DOMAIN=$(json_string_value VMESS_HOST_DOMAIN <<< "$JSON")
     else
-      VMESS_HOST_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON")
+      VMESS_HOST_DOMAIN=$(json_string_value VMESS_HOST_DOMAIN <<< "$JSON")
     fi
+    normalize_ws_domains
   fi
 
   # 获取 vless + ws + tls key-value
@@ -5336,17 +5460,19 @@ fetch_nodes_value() {
   if [ -s "$NODE_CONF" ]; then
     JSON=$(cat "$NODE_CONF")
     NODE_NAME[18]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[7]}.*/\1/p" <<< "$JSON")
-    PORT_VLESS_WS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
-    UUID[18]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
-    VLESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
-    WS_SERVER_IP[18]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
-    CDN[18]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
-    CDN_PORT[18]=$(awk  -F '"' '/"CDN_PORT"/{print $4}' <<< "$JSON")
-    if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
-      ARGO_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON")
+    PORT_VLESS_WS=$(json_number_value listen_port <<< "$JSON")
+    UUID[18]=$(json_string_value uuid <<< "$JSON")
+    VLESS_WS_PATH=$(json_string_value path <<< "$JSON")
+    VLESS_WS_PATH=${VLESS_WS_PATH#/}
+    WS_SERVER_IP[18]=$(json_string_value WS_SERVER_IP_SHOW <<< "$JSON")
+    CDN[18]=$(json_string_value CDN <<< "$JSON")
+    CDN_PORT[18]=$(json_string_value CDN_PORT <<< "$JSON")
+    if [ -n "${ARGO_DAEMON_FILE:-}" ] && [ -s "$ARGO_DAEMON_FILE" ]; then
+      ARGO_DOMAIN=$(json_string_value server_name <<< "$JSON")
     else
-      VLESS_HOST_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON")
+      VLESS_HOST_DOMAIN=$(json_string_value server_name <<< "$JSON")
     fi
+    normalize_ws_domains
   fi
 
   # 获取 H2 + Reality key-value
@@ -5388,6 +5514,8 @@ fetch_nodes_value() {
     PORT_NAIVE=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
     UUID[22]=$(awk -F '"' '/"username"/{print $4; exit}' <<< "$JSON")
   fi
+
+  return 0
 }
 
 # 获取 Argo 临时隧道域名
@@ -5408,6 +5536,7 @@ fetch_quicktunnel_domain() {
   done
 
   # 把临时隧道写到 Sing-box 相应的 ws inbounds 文件
+  normalize_ws_domain_mode
   [ -s ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json ] && sed -i "s/VMESS_HOST_DOMAIN.*/VMESS_HOST_DOMAIN\": \"$ARGO_DOMAIN\"/" ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json
   [ -s ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json ] && sed -i "s/\"server_name\":.*/\"server_name\": \"$ARGO_DOMAIN\",/" ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json
 }
@@ -5540,6 +5669,7 @@ install_from_config_update() {
   IS_SUB=${IS_SUB:-'no_sub'}
   IS_ARGO=${IS_ARGO:-'no_argo'}
   [[ "$HY2_PORT_HOPPING_RANGE" =~ ^[0-9]+:[0-9]+$ ]] && IS_HOPPING='is_hopping' || IS_HOPPING=${IS_HOPPING:-'no_hopping'}
+  normalize_ws_domain_mode
 
   sing-box_variables
   hint "\n Updating sing-box from config file ... "
@@ -5718,7 +5848,7 @@ export_list() {
   if [ -n "$PORT_VMESS_WS" ]; then
     local VMESS_CDN_PORT=${CDN_PORT[17]:-80}
     local VMESS_CDN_SERVER=$(format_uri_host "${CDN[17]}")
-    if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+    if ws_uses_argo; then
       local CLASH_VMESS_WS="- {name: \"${NODE_NAME[17]} ${NODE_TAG[6]}\", type: vmess, server: ${VMESS_CDN_SERVER}, port: ${VMESS_CDN_PORT}, uuid: ${UUID[17]}, udp: true, tls: false, alterId: 0, cipher: auto, network: ws, ws-opts: { path: \"/$VMESS_WS_PATH\", headers: {Host: $ARGO_DOMAIN} }, smux: { enabled: true, protocol: 'h2mux', padding: true, max-connections: '8', min-streams: '16', statistic: true, only-tcp: false }, brutal-opts: { enabled: ${IS_BRUTAL}, up: '1000 Mbps', down: '1000 Mbps' } }" &&
       local CLASH_SUBSCRIBE+="
   $CLASH_VMESS_WS
@@ -5740,7 +5870,7 @@ export_list() {
   if [ -n "$PORT_VLESS_WS" ]; then
     local VLESS_CDN_PORT=${CDN_PORT[18]:-443}
     local VLESS_CDN_SERVER=$(format_uri_host "${CDN[18]}")
-     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+     if ws_uses_argo; then
       local CLASH_VLESS_WS="- {name: \"${NODE_NAME[18]} ${NODE_TAG[7]}\", type: vless, server: ${VLESS_CDN_SERVER}, port: ${VLESS_CDN_PORT}, uuid: ${UUID[18]}, udp: true, tls: true, servername: $ARGO_DOMAIN, network: ws, skip-cert-verify: false, ws-opts: { path: \"/$VLESS_WS_PATH\", headers: {Host: $ARGO_DOMAIN}, max-early-data: 2560, early-data-header-name: Sec-WebSocket-Protocol }, smux: { enabled: true, protocol: 'h2mux', padding: true, max-connections: '8', min-streams: '16', statistic: true, only-tcp: false }, brutal-opts: { enabled: ${IS_BRUTAL}, up: '1000 Mbps', down: '1000 Mbps' } }" &&
       local CLASH_SUBSCRIBE+="
   $CLASH_VLESS_WS
@@ -5821,7 +5951,7 @@ trojan://${TROJAN_PASSWORD}@${SERVER_IP_1}:$PORT_TROJAN?peer=${TLS_SERVER}&hpkp=
   if [ -n "$PORT_VMESS_WS" ]; then
     local VMESS_CDN_PORT=${CDN_PORT[17]:-80}
     local VMESS_CDN_HOST=$(format_uri_host "${CDN[17]}")
-     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+     if ws_uses_argo; then
       local SHADOWROCKET_SUBSCRIBE+="
 ----------------------------
 vmess://$(echo -n "auto:${UUID[17]}@${VMESS_CDN_HOST}:${VMESS_CDN_PORT}" | base64 -w0)?remarks=${NODE_NAME[17]// /%20}%20${NODE_TAG[6]}&obfsParam=$ARGO_DOMAIN&path=/$VMESS_WS_PATH&obfs=websocket&alterId=0
@@ -5842,7 +5972,7 @@ vmess://$(echo -n "auto:${UUID[17]}@${VMESS_CDN_HOST}:${VMESS_CDN_PORT}" | base6
   if [ -n "$PORT_VLESS_WS" ]; then
     local VLESS_CDN_PORT=${CDN_PORT[18]:-443}
     local VLESS_CDN_HOST=$(format_uri_host "${CDN[18]}")
-     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+     if ws_uses_argo; then
       local SHADOWROCKET_SUBSCRIBE+="
 ----------------------------
 vless://$(echo -n "auto:${UUID[18]}@${VLESS_CDN_HOST}:${VLESS_CDN_PORT}" | base64 -w0)?remarks=${NODE_NAME[18]// /%20}%20${NODE_TAG[7]}&obfsParam=$ARGO_DOMAIN&path=/$VLESS_WS_PATH?ed=2560&obfs=websocket&tls=1&peer=$ARGO_DOMAIN
@@ -5951,7 +6081,7 @@ v2rayn://trojan/$(echo -n "{\"ConfigType\":6,\"ConfigVersion\":4,\"Remarks\":\"$
   if [ -n "$PORT_VMESS_WS" ]; then
     local VMESS_CDN_PORT=${CDN_PORT[17]:-80}
     local VMESS_CDN_HOST=$(format_uri_host "${CDN[17]}")
-     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+     if ws_uses_argo; then
       local V2RAYN_SUBSCRIBE+="
 ----------------------------
 vmess://$(echo -n "{ \"v\": \"2\", \"ps\": \"${NODE_NAME[17]} ${NODE_TAG[6]}\", \"add\": \"${VMESS_CDN_HOST}\", \"port\": \"${VMESS_CDN_PORT}\", \"id\": \"${UUID[17]}\", \"aid\": \"0\", \"scy\": \"none\", \"net\": \"ws\", \"type\": \"auto\", \"host\": \"$ARGO_DOMAIN\", \"path\": \"/$VMESS_WS_PATH\", \"tls\": \"\", \"sni\": \"\", \"alpn\": \"\" }" | base64 -w0)"
@@ -5971,7 +6101,7 @@ vmess://$(echo -n "{ \"v\": \"2\", \"ps\": \"${NODE_NAME[17]} ${NODE_TAG[6]}\", 
   if [ -n "$PORT_VLESS_WS" ]; then
     local VLESS_CDN_PORT=${CDN_PORT[18]:-443}
     local VLESS_CDN_HOST=$(format_uri_host "${CDN[18]}")
-     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+     if ws_uses_argo; then
       local V2RAYN_SUBSCRIBE+="
 ----------------------------
 vless://${UUID[18]}@${VLESS_CDN_HOST}:${VLESS_CDN_PORT}?encryption=none&security=tls&sni=$ARGO_DOMAIN&type=ws&host=$ARGO_DOMAIN&path=%2F$VLESS_WS_PATH%3Fed%3D2560#${NODE_NAME[18]// /%20}%20${NODE_TAG[7]}"
@@ -6041,7 +6171,7 @@ ss://$(echo -n "${SHADOWSOCKS_METHOD}:${SHADOWSOCKS_PASSWORD}" | base64 -w0)@${S
 trojan://${TROJAN_PASSWORD}@${SERVER_IP_1}:$PORT_TROJAN?security=tls&sni=${TLS_SERVER}&allowInsecure=0&tls_certificate=${CERT_URL_1}&fp=firefox&type=tcp#${NODE_NAME[16]// /%20}%20${NODE_TAG[5]}"
 
   if [ -n "$PORT_VMESS_WS" ]; then
-     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+     if ws_uses_argo; then
       THRONE_SUBSCRIBE+="
 ----------------------------
 vmess://$(echo -n "{\"add\":\"${CDN[17]}\",\"aid\":\"0\",\"host\":\"$ARGO_DOMAIN\",\"id\":\"${UUID[17]}\",\"net\":\"ws\",\"path\":\"/$VMESS_WS_PATH\",\"port\":\"80\",\"ps\":\"${NODE_NAME[17]} ${NODE_TAG[6]}\",\"scy\":\"auto\",\"sni\":\"\",\"tls\":\"\",\"type\":\"\",\"v\":\"2\"}" | base64 -w0)"
@@ -6061,7 +6191,7 @@ vmess://$(echo -n "{\"add\":\"${CDN[17]}\",\"aid\":\"0\",\"host\":\"$VMESS_HOST_
   if [ -n "$PORT_VLESS_WS" ]; then
     local VLESS_CDN_PORT=${CDN_PORT[18]:-443}
     local VLESS_CDN_HOST=$(format_uri_host "${CDN[18]}")
-     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+     if ws_uses_argo; then
       local THRONE_SUBSCRIBE+="
 ----------------------------
 vless://${UUID[18]}@${VLESS_CDN_HOST}:${VLESS_CDN_PORT}?security=tls&sni=$ARGO_DOMAIN&type=ws&path=/$VLESS_WS_PATH?ed%3D2560&host=$ARGO_DOMAIN&encryption=none#${NODE_NAME[18]// /%20}%20${NODE_TAG[7]}"
@@ -6140,7 +6270,7 @@ naive+quic://${UUID[22]}:${UUID[22]}@${SERVER_IP_1}:${PORT_NAIVE}?congestion_con
   if [ -n "$PORT_VMESS_WS" ]; then
     local VMESS_CDN_PORT=${CDN_PORT[17]:-80}
     local VMESS_CDN_HOST=$(format_uri_host "${CDN[17]}")
-     if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+     if ws_uses_argo; then
       local OUTBOUND_REPLACE+=" { \"type\": \"vmess\", \"tag\": \"${NODE_NAME[17]} ${NODE_TAG[6]}\", \"server\":\"${VMESS_CDN_HOST}\", \"server_port\":${VMESS_CDN_PORT}, \"uuid\": \"${UUID[17]}\", \"security\": \"auto\", \"transport\": { \"type\":\"ws\", \"path\":\"/$VMESS_WS_PATH\", \"headers\": { \"Host\": \"$ARGO_DOMAIN\" } }, \"multiplex\": { \"enabled\":true, \"protocol\":\"h2mux\", \"max_streams\":16, \"padding\": true, \"brutal\":{ \"enabled\":${IS_BRUTAL}, \"up_mbps\":1000, \"down_mbps\":1000 } } },"
       [ "$ARGO_TYPE" = 'is_token_argo' ] && [ -z "$PROMPT" ] && local PROMPT="
   # $(text 94)"
@@ -6158,7 +6288,7 @@ naive+quic://${UUID[22]}:${UUID[22]}@${SERVER_IP_1}:${PORT_NAIVE}?congestion_con
   if [ -n "$PORT_VLESS_WS" ]; then
     local VLESS_CDN_PORT=${CDN_PORT[18]:-443}
     local VLESS_CDN_HOST=$(format_uri_host "${CDN[18]}")
-    if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]] || [[ "$IS_ARGO" = 'is_argo' && "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]]; then
+    if ws_uses_argo; then
       local OUTBOUND_REPLACE+=" { \"type\": \"vless\", \"tag\": \"${NODE_NAME[18]} ${NODE_TAG[7]}\", \"server\":\"${VLESS_CDN_HOST}\", \"server_port\":${VLESS_CDN_PORT}, \"uuid\": \"${UUID[18]}\", \"tls\": { \"enabled\":true, \"server_name\":\"$ARGO_DOMAIN\", \"insecure\": false, \"utls\": { \"enabled\":true, \"fingerprint\":\"firefox\" } }, \"transport\": { \"type\":\"ws\", \"path\":\"/$VLESS_WS_PATH\", \"headers\": { \"Host\": \"$ARGO_DOMAIN\" }, \"max_early_data\":2560, \"early_data_header_name\":\"Sec-WebSocket-Protocol\" }, \"multiplex\": { \"enabled\":true, \"protocol\":\"h2mux\", \"max_streams\":16, \"padding\": true, \"brutal\":{ \"enabled\":${IS_BRUTAL}, \"up_mbps\":1000, \"down_mbps\":1000 } } },"
       [ "$ARGO_TYPE" = 'is_token_argo' ] && [ -z "$PROMPT" ] && local PROMPT="
   # $(text 94)"
@@ -7989,6 +8119,7 @@ docker_prepare_env() {
 
   docker_false "$SUBSCRIBE" && IS_SUB=no_sub || IS_SUB=is_sub
   docker_false "$ARGO" && IS_ARGO=no_argo || IS_ARGO=is_argo
+  normalize_ws_domain_mode
 
   docker_bool "$HY2_REALM" && IS_HY2_REALM=is_hy2_realm
   docker_bool "$REALM" && IS_HY2_REALM=is_hy2_realm
