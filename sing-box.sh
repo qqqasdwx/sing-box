@@ -2853,7 +2853,7 @@ check_install() {
 
 # 为了适配 alpine，定义 cmd_systemctl 的函数
 cmd_systemctl() {
-  local _action=$1 _service=${2:-systemctl} _log_file _rc=0
+  local _action=$1 _service=${2:-systemctl} _log_file _rc=0 _runlevel_rc=0
   _log_file=$(service_command_log_file "$_service" "$_action")
   : > "$_log_file" 2>/dev/null || true
 
@@ -2883,7 +2883,16 @@ cmd_systemctl() {
       disable )
         rc-service "$2" stop >> "$_log_file" 2>&1
         _rc=$?
-        rc-update del "$2" default >> "$_log_file" 2>&1 || _rc=$?
+        if [ "$_rc" -ne 0 ] && [ -e "/etc/init.d/$2" ] && rc-service "$2" status 2>&1 | grep -q 'status: stopped'; then
+          _rc=0
+        fi
+        rc-update del "$2" default >> "$_log_file" 2>&1
+        _runlevel_rc=$?
+        if [ "$_runlevel_rc" -ne 0 ] && ! rc-update show default 2>/dev/null | awk -v service="$2" '$1 == service { found=1 } END { exit !found }'; then
+          _runlevel_rc=0
+        fi
+        [ "$_rc" -eq 0 ] || return "$_rc"
+        [ "$_runlevel_rc" -eq 0 ] || return "$_runlevel_rc"
         return "$_rc"
         ;;
       restart )
