@@ -1,6 +1,12 @@
 # 安装 sing-box 全家桶
 install_sing-box() {
   sing-box_variables
+  hint "\n $(text 2) "
+  wait
+  "$TEMP_DIR/sing-box" version >/dev/null 2>&1 || error "\n $(text 42) \n"
+  "$TEMP_DIR/jq" --version >/dev/null 2>&1 || error "\n jq download failed. \n"
+  [ "$IS_ARGO" != 'is_argo' ] || "$TEMP_DIR/cloudflared" -v >/dev/null 2>&1 || error "\n cloudflared download failed. \n"
+
   if [ -n "$PORT_NGINX" ] && ! command -v nginx >/dev/null 2>&1; then
     info "\n $(text 7) nginx \n"
     ${PACKAGE_UPDATE[int]} >/dev/null 2>&1
@@ -10,17 +16,16 @@ install_sing-box() {
   [ ! -d ${WORK_DIR}/logs ] && mkdir -p ${WORK_DIR}/logs
   [ ! -d ${TEMP_DIR} ] && mkdir -p $TEMP_DIR
   ssl_certificate $TLS_SERVER_DEFAULT
-  hint "\n $(text 2) " && wait
   sing-box_json
   echo "${L^^}" > ${WORK_DIR}/language
-  cp $TEMP_DIR/sing-box $TEMP_DIR/jq ${WORK_DIR}
-  [ -x $TEMP_DIR/qrencode ] && cp $TEMP_DIR/qrencode ${WORK_DIR}
+  cp "$TEMP_DIR/sing-box" "$TEMP_DIR/jq" "$WORK_DIR"
+  [ -x "$TEMP_DIR/qrencode" ] && cp "$TEMP_DIR/qrencode" "$WORK_DIR"
 
   # 生成 sing-box systemd 配置文件
   sing-box_systemd
 
   # 生成 Argo systemd 配置文件，并复制 cloudflared 可执行二进制文件
-  cp $TEMP_DIR/cloudflared ${WORK_DIR}
+  [ "$IS_ARGO" = 'is_argo' ] && cp "$TEMP_DIR/cloudflared" "$WORK_DIR"
   [ -n "$ARGO_RUNS" ] && argo_systemd
 
   # 如果是 Json Argo，把配置文件复制到工作目录
@@ -1519,11 +1524,11 @@ protocol_edit_primary_secret() {
   if [ "$CODE" = h ]; then
     OLD_PATH="${OLD_VAL}-vmess"
     NEW_PATH="${NEW_VAL}-vmess"
-    grep -q "\"path\":\"/${OLD_PATH}\"" "$FILE" && literal_replace_file "$FILE" "$OLD_PATH" "$NEW_PATH"
+    grep -Fq "\"path\":\"/${OLD_PATH}\"" "$FILE" && literal_replace_file "$FILE" "$OLD_PATH" "$NEW_PATH"
   elif [ "$CODE" = i ]; then
     OLD_PATH="${OLD_VAL}-vless"
     NEW_PATH="${NEW_VAL}-vless"
-    grep -q "\"path\":\"/${OLD_PATH}\"" "$FILE" && literal_replace_file "$FILE" "$OLD_PATH" "$NEW_PATH"
+    grep -Fq "\"path\":\"/${OLD_PATH}\"" "$FILE" && literal_replace_file "$FILE" "$OLD_PATH" "$NEW_PATH"
   fi
 
   protocol_restart_export

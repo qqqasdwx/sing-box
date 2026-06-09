@@ -27,6 +27,37 @@ check_brutal() {
   [ "$IS_BRUTAL" = 'false' ] && command -v modprobe >/dev/null 2>&1 && modprobe brutal 2>/dev/null && IS_BRUTAL=true
 }
 
+download_file() {
+  local URL=$1
+  local OUTPUT=$2
+  local DIRECT_URL=${3:-$URL}
+
+  rm -f "$OUTPUT"
+  wget --no-check-certificate --continue -qO "$OUTPUT" "$URL" 2>/dev/null ||
+  { [ "$DIRECT_URL" != "$URL" ] && wget --no-check-certificate --continue -qO "$OUTPUT" "$DIRECT_URL" 2>/dev/null; }
+}
+
+download_sing_box_binary() {
+  local ONLINE
+  ONLINE=$(get_sing_box_version)
+  local ARCHIVE="sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz"
+  local SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
+  local SB_BIN="$SB_DIR/sing-box"
+  local URL="${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/$ARCHIVE"
+  local DIRECT_URL="https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/$ARCHIVE"
+
+  rm -rf "$SB_DIR" "$TEMP_DIR/sing-box"
+  wget --no-check-certificate --continue -qO- "$URL" 2>/dev/null | tar xz -C "$TEMP_DIR" 2>/dev/null ||
+  wget --no-check-certificate --continue -qO- "$DIRECT_URL" 2>/dev/null | tar xz -C "$TEMP_DIR" 2>/dev/null
+  [ -s "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
+
+  if ! "$TEMP_DIR/sing-box" version >/dev/null 2>&1; then
+    rm -rf "$SB_DIR" "$TEMP_DIR/sing-box"
+    wget --no-check-certificate --continue -qO- "$DIRECT_URL" 2>/dev/null | tar xz -C "$TEMP_DIR" 2>/dev/null
+    [ -s "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
+  fi
+}
+
 # 查安装及运行状态，下标0: sing-box，下标1: argo，下标2: nginx；状态码: 26 未安装， 27 已安装未运行， 28 运行中
 check_install() {
   local PS_LIST=$(ps -eo pid,args | grep -E "$WORK_DIR.*([s]ing-box|[c]loudflared|[n]ginx)" | sed 's/^[ ]\+//g')
@@ -104,37 +135,29 @@ check_install() {
 
   # 并发下载订阅模板 (clash, clash2, sing-box-template)，在新安装和更换协议时会用到
   {
-    wget --no-check-certificate --continue -qO $TEMP_DIR/clash ${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash 2>/dev/null &
-    wget --no-check-certificate --continue -qO $TEMP_DIR/clash2 ${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash2 2>/dev/null &
-    wget --no-check-certificate --continue -qO $TEMP_DIR/sing-box-template ${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box 2>/dev/null &
+    download_file "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash" "$TEMP_DIR/clash" "${SUBSCRIBE_TEMPLATE}/clash" &
+    download_file "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash2" "$TEMP_DIR/clash2" "${SUBSCRIBE_TEMPLATE}/clash2" &
+    download_file "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box" "$TEMP_DIR/sing-box-template" "${SUBSCRIBE_TEMPLATE}/sing-box" &
     wait
   } &
 
   # 如果有需要，后台静默下载 sing-box
   if [ "${STATUS[0]}" = "$(text 26)" ] && [ ! -s ${WORK_DIR}/sing-box ]; then
     # 任务 1: 下载 sing-box
-    {
-      local ONLINE=$(get_sing_box_version)
-      local SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
-      local SB_BIN="$SB_DIR/sing-box"
-      wget --no-check-certificate --continue \
-        ${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz \
-        -qO- | tar xz -C $TEMP_DIR 2>/dev/null
-      [ -s "$SB_BIN" ] && [ -x "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
-    } &
+    download_sing_box_binary &
 
     # 任务 2: 下载 jq
     {
-      wget --no-check-certificate --continue -qO $TEMP_DIR/jq \
-        ${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH 2>/dev/null \
-        && chmod +x $TEMP_DIR/jq
+      download_file "${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" && chmod +x "$TEMP_DIR/jq"
+      "$TEMP_DIR/jq" --version >/dev/null 2>&1 || {
+        download_file "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq"
+        chmod +x "$TEMP_DIR/jq" 2>/dev/null || true
+      }
     } &
 
     # 任务 3: 下载 qrencode
     {
-      wget --no-check-certificate --continue -qO $TEMP_DIR/qrencode \
-        ${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH 2>/dev/null \
-        && chmod +x $TEMP_DIR/qrencode
+      download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" && chmod +x "$TEMP_DIR/qrencode"
     } &
 
   elif [ "${STATUS[0]}" != "$(text 26)" ]; then
@@ -182,7 +205,11 @@ check_install() {
   # 如果有需要，后台静默下载 cloudflared
   if [[ "${STATUS[1]}" = "$(text 26)" || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && [ ! -s ${WORK_DIR}/cloudflared ]; then
     {
-      wget --no-check-certificate -qO $TEMP_DIR/cloudflared ${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH >/dev/null 2>&1 && chmod +x $TEMP_DIR/cloudflared >/dev/null 2>&1
+      download_file "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" && chmod +x "$TEMP_DIR/cloudflared"
+      "$TEMP_DIR/cloudflared" -v >/dev/null 2>&1 || {
+        download_file "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared"
+        chmod +x "$TEMP_DIR/cloudflared" 2>/dev/null || true
+      }
     }&
   elif [ "${STATUS[1]}" != "$(text 26)" ]; then
     # 查 Argo 进程号，运行时长和内存占用

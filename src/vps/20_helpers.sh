@@ -771,7 +771,7 @@ create_argo_tunnel() {
   # 检查是否存在同名 Tunnel
   while true; do
     unset TUNNEL_CHECK EXISTING_TUNNEL_ID EXISTING_TUNNEL_STATUS
-    local TUNNEL_CHECK=$(grep '\"name\":\"'$TUNNEL_NAME'\"' <<< "$TUNNEL_LIST_SPLIT")
+    local TUNNEL_CHECK=$(grep -F "\"name\":\"$TUNNEL_NAME\"" <<< "$TUNNEL_LIST_SPLIT")
     if [[ "$TUNNEL_CHECK" =~ \"id\":\"([^\"]+)\".*\"status\":\"([^\"]+)\" ]]; then
       local EXISTING_TUNNEL_ID=${BASH_REMATCH[1]} EXISTING_TUNNEL_STATUS=${BASH_REMATCH[2]}
       # 处理状态显示的本地化
@@ -783,7 +783,7 @@ create_argo_tunnel() {
         reading "\n $(text 87) " ARGO_DOMAIN
 
         # 用户直接回车，使用临时域名，退出当前流程
-        ! grep -q '\.' <<< "$ARGO_DOMAIN" && return 5
+        ! grep -q '[.]' <<< "$ARGO_DOMAIN" && return 5
 
         # 更新TUNNEL_NAME和ROOT_DOMAIN，循环会自动检查新名称
         TUNNEL_NAME=${ARGO_DOMAIN%%.*}
