@@ -21,6 +21,7 @@ Generated runtime files are not stored here. The VPS installer writes under `/et
 - `tools/bundle.sh --check` verifies generated root scripts match `src/`.
 - `tools/prepare-release.sh /tmp/sing-box-release` creates a local release tree.
 - `shellcheck sing-box.sh docker_init.sh` runs static analysis; use it before larger script changes when available.
+  ShellCheck can saturate this VM's CPU or memory and may freeze the machine on large generated scripts. When running it, prefer targeted files or small batches and monitor system resources while it runs.
 - `docker build -t sing-box:local .` builds a local test image from `Dockerfile`.
 - `docker run --rm --network host -e START_PORT=8800 -e SERVER_IP=127.0.0.1 sing-box:local` smoke-tests container startup. Add variables such as `-e XTLS_REALITY=true` when testing configs.
 
@@ -45,6 +46,8 @@ jq . /etc/sing-box/conf/00_log.json
 Recent commits use concise prefixes such as `fix:`, `feat:`, and versioned release subjects like `v1.3.13 feat: ...`. Keep subjects scoped to one change.
 
 Do not push commits or monitor GitHub Actions unless the user explicitly asks to push. It is acceptable to make local edits and, when requested, local commits first; wait for a clear push instruction before running `git push`.
+
+When monitoring GitHub Actions for this project, explicitly target the repository `qqqasdwx/sing-box`, for example `gh run list --repo qqqasdwx/sing-box` or `gh run watch <run-id> --repo qqqasdwx/sing-box`. Do not rely on `gh` default repository inference, because this checkout also has an `upstream` remote and commands may otherwise query `fscarmen/sing-box`.
 
 Pull requests should include the problem, changed install/runtime path, tested OS or architecture, commands run, and relevant logs or config snippets. Do not include real UUIDs, Argo tokens, Cloudflare API credentials, private keys, or production server IPs.
 
