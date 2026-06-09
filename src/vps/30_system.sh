@@ -142,13 +142,21 @@ check_install() {
   } &
 
   # 如果有需要，后台静默下载 sing-box
-  if [ "${STATUS[0]}" = "$(text 26)" ] && [ ! -s ${WORK_DIR}/sing-box ]; then
+  if [[ "${STATUS[0]}" = "$(text 26)" || "$CONFIG_UPDATE_INSTALL" = 'config_update_install' ]] && [ ! -s "$TEMP_DIR/sing-box" ]; then
     # 任务 1: 下载 sing-box
-    download_sing_box_binary &
+    if [ -s "${WORK_DIR}/sing-box" ]; then
+      cp "${WORK_DIR}/sing-box" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
+    else
+      download_sing_box_binary &
+    fi
 
     # 任务 2: 下载 jq
     {
-      download_file "${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" && chmod +x "$TEMP_DIR/jq"
+      if [ -s "${WORK_DIR}/jq" ]; then
+        cp "${WORK_DIR}/jq" "$TEMP_DIR/jq" && chmod +x "$TEMP_DIR/jq"
+      else
+        download_file "${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" && chmod +x "$TEMP_DIR/jq"
+      fi
       "$TEMP_DIR/jq" --version >/dev/null 2>&1 || {
         download_file "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq"
         chmod +x "$TEMP_DIR/jq" 2>/dev/null || true
@@ -157,7 +165,11 @@ check_install() {
 
     # 任务 3: 下载 qrencode
     {
-      download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" && chmod +x "$TEMP_DIR/qrencode"
+      if [ -s "${WORK_DIR}/qrencode" ]; then
+        cp "${WORK_DIR}/qrencode" "$TEMP_DIR/qrencode" && chmod +x "$TEMP_DIR/qrencode"
+      else
+        download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" && chmod +x "$TEMP_DIR/qrencode"
+      fi
     } &
 
   elif [ "${STATUS[0]}" != "$(text 26)" ]; then

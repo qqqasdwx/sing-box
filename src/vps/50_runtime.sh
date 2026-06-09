@@ -73,6 +73,133 @@ install_sing-box() {
   fi
 }
 
+prepare_config_update_assets() {
+  if [ ! -x "$TEMP_DIR/sing-box" ]; then
+    if [ -x "${WORK_DIR}/sing-box" ]; then
+      cp "${WORK_DIR}/sing-box" "$TEMP_DIR/sing-box"
+      chmod +x "$TEMP_DIR/sing-box"
+    else
+      download_sing_box_binary
+    fi
+  fi
+
+  if [ ! -x "$TEMP_DIR/jq" ]; then
+    if [ -x "${WORK_DIR}/jq" ]; then
+      cp "${WORK_DIR}/jq" "$TEMP_DIR/jq"
+      chmod +x "$TEMP_DIR/jq"
+    else
+      download_file "${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH"
+      chmod +x "$TEMP_DIR/jq" 2>/dev/null || true
+    fi
+  fi
+
+  if [ ! -x "$TEMP_DIR/qrencode" ]; then
+    if [ -x "${WORK_DIR}/qrencode" ]; then
+      cp "${WORK_DIR}/qrencode" "$TEMP_DIR/qrencode"
+      chmod +x "$TEMP_DIR/qrencode"
+    else
+      download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH"
+      chmod +x "$TEMP_DIR/qrencode" 2>/dev/null || true
+    fi
+  fi
+
+  if [ "$IS_ARGO" = 'is_argo' ] && [ ! -x "$TEMP_DIR/cloudflared" ]; then
+    if [ -x "${WORK_DIR}/cloudflared" ]; then
+      cp "${WORK_DIR}/cloudflared" "$TEMP_DIR/cloudflared"
+      chmod +x "$TEMP_DIR/cloudflared"
+    else
+      download_file "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH"
+      chmod +x "$TEMP_DIR/cloudflared" 2>/dev/null || true
+    fi
+  fi
+}
+
+install_from_config_update() {
+  CONFIG_UPDATE_INSTALL=config_update_install
+  prepare_config_update_defaults
+  apply_config_file_options
+  apply_custom_node_names
+  normalize_log_level
+  normalize_ntp_config
+
+  # 预设默认值，允许 config.conf 只覆盖部分字段。
+  resolve_protocol_switch_mode
+  CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
+  START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
+  CDN=${CDN:-"${CDN_DOMAIN[0]}"}
+  IS_SUB=${IS_SUB:-'no_sub'}
+  IS_ARGO=${IS_ARGO:-'no_argo'}
+  [[ "$HY2_PORT_HOPPING_RANGE" =~ ^[0-9]+:[0-9]+$ ]] && IS_HOPPING='is_hopping' || IS_HOPPING=${IS_HOPPING:-'no_hopping'}
+
+  sing-box_variables
+  hint "\n Updating sing-box from config file ... "
+  wait
+  check_cdn
+  prepare_config_update_assets
+  "$TEMP_DIR/sing-box" version >/dev/null 2>&1 || error "\n $(text 42) \n"
+  "$TEMP_DIR/jq" --version >/dev/null 2>&1 || error "\n jq download failed. \n"
+  [ "$IS_ARGO" != 'is_argo' ] || "$TEMP_DIR/cloudflared" -v >/dev/null 2>&1 || error "\n cloudflared download failed. \n"
+
+  if [ -n "$PORT_NGINX" ] && ! command -v nginx >/dev/null 2>&1; then
+    info "\n $(text 7) nginx \n"
+    ${PACKAGE_UPDATE[int]} >/dev/null 2>&1
+    ${PACKAGE_INSTALL[int]} nginx >/dev/null 2>&1
+    cmd_systemctl disable nginx
+  fi
+
+  cmd_systemctl disable argo >/dev/null 2>&1 || true
+  cmd_systemctl disable sing-box >/dev/null 2>&1 || true
+
+  if [ -d "${WORK_DIR}/conf" ]; then
+    mkdir -p "${WORK_DIR}/backup"
+    tar -czf "${WORK_DIR}/backup/conf.$(date +%Y%m%d%H%M%S).tar.gz" -C "$WORK_DIR" conf subscribe list nginx.conf 2>/dev/null || true
+  fi
+
+  [ -s "${WORK_DIR}/conf/08_custom_route.json" ] && cp "${WORK_DIR}/conf/08_custom_route.json" "$TEMP_DIR/08_custom_route.json"
+  rm -f "${WORK_DIR}"/conf/[0-9][0-9]_*.json "${WORK_DIR}"/conf/[1-2][0-9]_*.json "${WORK_DIR}"/subscribe/* "${WORK_DIR}/list" "${WORK_DIR}/nginx.conf"
+  [ -s "$TEMP_DIR/08_custom_route.json" ] && cp "$TEMP_DIR/08_custom_route.json" "${WORK_DIR}/conf/08_custom_route.json"
+  if [ "$IS_ARGO" != 'is_argo' ]; then
+    rm -f "$ARGO_DAEMON_FILE" "${WORK_DIR}/tunnel.json" "${WORK_DIR}/tunnel.yml"
+    [ "$SYSTEM" = 'Alpine' ] || systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+
+  ssl_certificate "$TLS_SERVER_DEFAULT"
+  sing-box_json
+  echo "${L^^}" > "${WORK_DIR}/language"
+  cp "$TEMP_DIR/sing-box" "$TEMP_DIR/jq" "$WORK_DIR"
+  [ -x "$TEMP_DIR/qrencode" ] && cp "$TEMP_DIR/qrencode" "$WORK_DIR"
+
+  sing-box_systemd
+  [ "$IS_ARGO" = 'is_argo' ] && cp "$TEMP_DIR/cloudflared" "$WORK_DIR"
+  [ -n "$ARGO_RUNS" ] && argo_systemd
+  [ -n "$ARGO_JSON" ] && cp $TEMP_DIR/tunnel.* ${WORK_DIR}
+  [ -n "$PORT_NGINX" ] && export_nginx_conf_file
+
+  cmd_systemctl enable sing-box
+  sleep 2
+  sync_firewall_rules
+
+  if cmd_systemctl status sing-box &>/dev/null; then
+    STATUS[0]=$(text 28)
+    info "\n Sing-box $(text 28) $(text 37) \n"
+  else
+    STATUS[0]=$(text 27)
+    error "\n Sing-box $(text 27) $(text 38) \n"
+  fi
+
+  if [ -s ${ARGO_DAEMON_FILE} ]; then
+    cmd_systemctl enable argo
+    sleep 2
+    if cmd_systemctl status argo &>/dev/null; then
+      STATUS[1]=$(text 28)
+      info "\n Argo $(text 28) $(text 37) \n"
+    else
+      STATUS[1]=$(text 27)
+      error "\n Argo $(text 27) $(text 38) \n"
+    fi
+  fi
+}
+
 export_list() {
   IS_INSTALL=$1
 

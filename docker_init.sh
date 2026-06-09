@@ -687,6 +687,403 @@ parameter_present() {
   return 1
 }
 
+config_file_has_var() {
+  local _var=$1
+  [ -n "$CONFIG_FILE" ] && [ -s "$CONFIG_FILE" ] || return 1
+  awk -v var="$_var" '
+    /^[[:space:]]*#/ { next }
+    $0 ~ "^[[:space:]]*" var "[[:space:]]*=" { found=1; exit }
+    END { exit found ? 0 : 1 }
+  ' "$CONFIG_FILE"
+}
+
+apply_config_file_options() {
+  [ -n "$CONFIG_FILE" ] && [ -s "$CONFIG_FILE" ] || return
+
+  NONINTERACTIVE_INSTALL=noninteractive_install
+  local _config_hy2_hopping_set=false
+  config_file_has_var HY2_PORT_HOPPING_RANGE && _config_hy2_hopping_set=true
+  # shellcheck source=/dev/null
+  . "$CONFIG_FILE"
+
+  if config_file_has_var LANGUAGE; then
+    L=${LANGUAGE^^}
+    [[ "$L" =~ ^E ]] && L=E || L=C
+  fi
+
+  if config_file_has_var ARGO; then
+    bool_enabled "${ARGO:-}" && IS_ARGO=is_argo || IS_ARGO=no_argo
+  fi
+
+  if config_file_has_var SUBSCRIBE; then
+    bool_enabled "${SUBSCRIBE:-}" && IS_SUB=is_sub || IS_SUB=no_sub
+  fi
+
+  if config_file_has_var HY2_REALM || config_file_has_var REALM; then
+    if bool_enabled "${HY2_REALM:-}" || bool_enabled "${REALM:-}"; then
+      IS_HY2_REALM=is_hy2_realm
+    else
+      unset IS_HY2_REALM
+    fi
+  fi
+
+  if config_file_has_var HY2_WARP || config_file_has_var REALM_WARP || config_file_has_var WARP_REALM; then
+    if bool_enabled "${HY2_WARP:-}" || bool_enabled "${REALM_WARP:-}" || bool_enabled "${WARP_REALM:-}"; then
+      IS_HY2_WARP=is_hy2_warp
+      IS_HY2_REALM=is_hy2_realm
+    else
+      unset IS_HY2_WARP
+    fi
+  fi
+
+  if [ "$_config_hy2_hopping_set" = true ] && [ -z "$HY2_PORT_HOPPING_RANGE" ]; then
+    IS_HOPPING=no_hopping
+    unset PORT_HOPPING_START PORT_HOPPING_END
+  fi
+
+  TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
+}
+
+set_protocol_switch() {
+  local _code=$1 _value=$2
+  case "$_code" in
+    b ) XTLS_REALITY=$_value ;;
+    c ) HYSTERIA2=$_value ;;
+    d ) TUIC=$_value ;;
+    e ) SHADOWTLS=$_value ;;
+    f ) SHADOWSOCKS=$_value ;;
+    g ) TROJAN=$_value ;;
+    h ) VMESS_WS=$_value ;;
+    i ) VLESS_WS=$_value ;;
+    j ) H2_REALITY=$_value ;;
+    k ) GRPC_REALITY=$_value ;;
+    l ) ANYTLS=$_value ;;
+    m ) NAIVE=$_value ;;
+  esac
+}
+
+set_protocol_switches_from_selection() {
+  local _selection=$1 _code
+  for _code in b c d e f g h i j k l m; do
+    set_protocol_switch "$_code" false
+  done
+  while IFS= read -r _code; do
+    [ -n "$_code" ] && set_protocol_switch "$_code" true
+  done < <(grep -o . <<< "$_selection")
+}
+
+installed_protocol_selection() {
+  local _idx _file _selection=''
+  for _idx in "${!NODE_TAG[@]}"; do
+    _file=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[_idx]}_inbounds.json")
+    [ -s "$_file" ] && _selection+="$(asc $((_idx + 98)))"
+  done
+  printf '%s' "$_selection"
+}
+
+first_nonempty_array_value() {
+  local -n _array=$1
+  local _value
+  for _value in "${_array[@]}"; do
+    [ -n "$_value" ] && printf '%s' "$_value" && return
+  done
+}
+
+installed_argo_auth() {
+  local _content
+  if [ -s "${WORK_DIR}/tunnel.json" ]; then
+    cat "${WORK_DIR}/tunnel.json"
+    return
+  fi
+
+  [ -s "$ARGO_DAEMON_FILE" ] || return
+  if [ "$SYSTEM" = 'Alpine' ]; then
+    _content=$(grep '^command_args=' "$ARGO_DAEMON_FILE")
+  else
+    _content=$(grep '^ExecStart=' "$ARGO_DAEMON_FILE")
+  fi
+
+  if grep -Fq -- '--token' <<< "$_content"; then
+    sed -n 's/.*--token[[:space:]]\+\([^"[:space:]]\+\).*/\1/p' <<< "$_content"
+  fi
+}
+
+prepare_config_update_defaults() {
+  local _selection _value
+
+  _selection=$(installed_protocol_selection)
+  if [ -n "$_selection" ] && [ -z "$CHOOSE_PROTOCOLS" ] && [ -z "$(protocol_switches_to_selection)" ]; then
+    set_protocol_switches_from_selection "$_selection"
+    CHOOSE_PROTOCOLS=$_selection
+  fi
+
+  [ -s "$ARGO_DAEMON_FILE" ] && IS_ARGO=is_argo
+  [ -s "${WORK_DIR}/subscribe/qr" ] && IS_SUB=is_sub
+
+  fetch_nodes_value
+
+  [ -n "$_selection" ] && CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-$_selection}
+  UUID_CONFIRM=${UUID_CONFIRM:-"$(first_nonempty_array_value UUID)"}
+  UUID_CONFIRM=${UUID_CONFIRM:-"${TROJAN_PASSWORD:-${SHADOWSOCKS_PASSWORD:-${SHADOWTLS_PASSWORD:-}}}"}
+  NODE_NAME_CONFIRM=${NODE_NAME_CONFIRM:-"$(first_nonempty_array_value NODE_NAME)"}
+  TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
+  SERVER_IP=${SERVER_IP:-"$SERVER_IP_DEFAULT"}
+
+  if [ -s "$ARGO_DAEMON_FILE" ]; then
+    _value=$(installed_argo_auth)
+    ARGO_AUTH=${ARGO_AUTH:-$_value}
+  fi
+}
+
+shell_quote() {
+  local _value=${1-}
+  printf "'%s'" "${_value//\'/\'\\\'\'}"
+}
+
+config_value() {
+  local _var=$1 _default=${2-}
+  if [ -n "${!_var+x}" ]; then
+    shell_quote "${!_var}"
+  else
+    shell_quote "$_default"
+  fi
+}
+
+config_bool() {
+  local _var=$1 _enabled=false
+  case "$_var" in
+    XTLS_REALITY ) array_contains b "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    HYSTERIA2 ) array_contains c "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    TUIC ) array_contains d "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    SHADOWTLS ) array_contains e "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    SHADOWSOCKS ) array_contains f "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    TROJAN ) array_contains g "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    VMESS_WS ) array_contains h "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    VLESS_WS ) array_contains i "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    H2_REALITY ) array_contains j "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    GRPC_REALITY ) array_contains k "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    ANYTLS ) array_contains l "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    NAIVE ) array_contains m "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    SUBSCRIBE ) [ "$IS_SUB" = 'is_sub' ] && _enabled=true ;;
+    ARGO ) [ "$IS_ARGO" = 'is_argo' ] && _enabled=true ;;
+    HY2_REALM ) [ "$IS_HY2_REALM" = 'is_hy2_realm' ] && _enabled=true ;;
+    HY2_WARP ) [ "$IS_HY2_WARP" = 'is_hy2_warp' ] && _enabled=true ;;
+  esac
+  shell_quote "$_enabled"
+}
+
+config_node_name() {
+  local _idx=$1
+  shell_quote "${NODE_NAME[_idx]:-${NODE_NAME_CONFIRM:-}}"
+}
+
+config_reality_private() {
+  shell_quote "${REALITY_PRIVATE[11]:-${REALITY_PRIVATE[19]:-${REALITY_PRIVATE[20]:-${REALITY_PRIVATE:-}}}}"
+}
+
+config_argo_auth() {
+  if [ -n "$ARGO_JSON" ]; then
+    shell_quote "$ARGO_JSON"
+  elif [ -n "$ARGO_TOKEN" ]; then
+    shell_quote "$ARGO_TOKEN"
+  elif [ -n "$ARGO_DOMAIN" ]; then
+    shell_quote "${ARGO_AUTH:-}"
+  else
+    shell_quote ''
+  fi
+}
+
+write_config_state_file() {
+  [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ] || return
+  [ -n "$CONFIG_FILE" ] || return
+
+  local _target=$CONFIG_FILE
+  local _dir _base _backup _tmp _selected
+  _dir=$(dirname "$_target")
+  _base=$(basename "$_target")
+  [ -d "$_dir" ] || error " Config directory does not exist: $_dir "
+
+  _backup="${_target}.bak.$(date +%Y%m%d%H%M%S)"
+  [ -e "$_target" ] && cp -p "$_target" "$_backup"
+  _tmp=$(mktemp "${_dir}/.${_base}.tmp.XXXXXX") || error " Cannot create temporary config file. "
+
+  _selected=$(printf '%s' "${INSTALL_PROTOCOLS[*]}" | tr -d ' ')
+
+  cat > "$_tmp" << EOF
+# 使用说明 / Usage:
+# 1. 此文件可作为 -f 的可复用状态文件；安装或更新成功后，脚本会备份并回写实际值。
+#    This file can be reused with -f. After a successful install/update, the script backs it up and writes actual values back.
+# 2. 回写会标准化为本项目模板样式，不保留原文件排版或注释。
+#    The write-back uses this project's template layout and does not preserve custom formatting or comments.
+# 3. 脚本不会修改此文件权限；其中包含 UUID、Reality 私钥、协议密码、Argo 认证等敏感值，请自行保护权限。
+#    The script does not change this file's permissions. It contains sensitive values; protect it yourself.
+# 4. 执行安装或更新 / Run install or update:
+#    bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh) -f ${_base}
+
+# 说明 / Notes:
+# - CHOOSE_PROTOCOLS='switch' 时，会按下方单协议开关生成协议列表；至少启用一个协议。
+#   With CHOOSE_PROTOCOLS='switch', protocols are selected from the per-protocol switches below.
+# - 当前实际协议组合为：${_selected:-none}
+#   Current resolved protocol selection: ${_selected:-none}
+# - 布尔值支持 true/1/y/yes/on；未填写或注释表示 false，除非注释里另有默认值说明。
+#   Boolean true values: true/1/y/yes/on. Commented or empty means false unless documented otherwise.
+
+
+# 全局选择 / Global Selection
+
+CHOOSE_PROTOCOLS='switch'
+
+
+# 全局基础项 / Global Basics
+
+LANGUAGE=$(shell_quote "${L,,}")
+START_PORT=$(config_value START_PORT "$START_PORT_DEFAULT")
+LOG_LEVEL=$(config_value LOG_LEVEL "$LOG_LEVEL_DEFAULT")
+NTP_ENABLED=$(config_value NTP_ENABLED "$NTP_ENABLED_DEFAULT")
+NTP_SERVER=$(config_value NTP_SERVER "$NTP_SERVER_DEFAULT")
+NTP_SERVER_PORT=$(config_value NTP_SERVER_PORT "$NTP_SERVER_PORT_DEFAULT")
+NTP_INTERVAL=$(config_value NTP_INTERVAL "$NTP_INTERVAL_DEFAULT")
+PORT_NGINX=$(config_value PORT_NGINX)
+SERVER_IP=$(config_value SERVER_IP)
+TLS_SERVER=$(shell_quote "${TLS_SERVER:-$TLS_SERVER_DEFAULT}")
+NODE_NAME_CONFIRM=$(config_value NODE_NAME_CONFIRM)
+
+
+# 全局身份凭据 / Global Identity
+
+UUID_CONFIRM=$(config_value UUID_CONFIRM)
+
+
+# 输出模式、Argo 与 WebSocket 共用项 / Output, Argo, and WebSocket Common
+
+SUBSCRIBE=$(config_bool SUBSCRIBE)
+ARGO=$(config_bool ARGO)
+ARGO_DOMAIN=$(config_value ARGO_DOMAIN)
+ARGO_AUTH=$(config_argo_auth)
+CDN=$(shell_quote "${CDN[17]:-${CDN[18]:-${CDN:-${CDN_DOMAIN[0]}}}}")
+CDN_PORT=$(shell_quote "${CDN_PORT[17]:-${CDN_PORT[18]:-${CDN_PORT:-}}}")
+
+
+# Reality 共享项 / Reality Shared Settings (b/j/k)
+
+REALITY_PRIVATE=$(config_reality_private)
+
+
+# b. VLESS Reality
+
+XTLS_REALITY=$(config_bool XTLS_REALITY)
+PORT_XTLS_REALITY=$(config_value PORT_XTLS_REALITY)
+NODE_NAME_XTLS_REALITY=$(config_node_name 11)
+
+
+# c. Hysteria2
+
+HYSTERIA2=$(config_bool HYSTERIA2)
+PORT_HYSTERIA2=$(config_value PORT_HYSTERIA2)
+NODE_NAME_HYSTERIA2=$(config_node_name 12)
+HY2_PORT_HOPPING_RANGE=$(config_value HY2_PORT_HOPPING_RANGE)
+HY2_REALM=$(config_bool HY2_REALM)
+# REALM='false'             # 可选：HY2_REALM 的旧别名；默认 false / Optional. Legacy alias for HY2_REALM. Default: false.
+HY2_WARP=$(config_bool HY2_WARP)
+# REALM_WARP='false'        # 可选：HY2_WARP 的旧别名；默认 false / Optional. Legacy alias for HY2_WARP. Default: false.
+# WARP_REALM='false'        # 可选：HY2_WARP 的旧别名；默认 false / Optional. Legacy alias for HY2_WARP. Default: false.
+HY2_REALM_ID=$(config_value HY2_REALM_ID)
+HY2_UP=$(config_value HY2_UP 200)
+HY2_DOWN=$(config_value HY2_DOWN 1000)
+
+
+# d. Tuic V5
+
+TUIC=$(config_bool TUIC)
+PORT_TUIC=$(config_value PORT_TUIC)
+NODE_NAME_TUIC=$(config_node_name 13)
+TUIC_PASSWORD=$(config_value TUIC_PASSWORD)
+TUIC_CONGESTION_CONTROL=$(config_value TUIC_CONGESTION_CONTROL bbr)
+
+
+# e. ShadowTLS
+
+SHADOWTLS=$(config_bool SHADOWTLS)
+PORT_SHADOWTLS=$(config_value PORT_SHADOWTLS)
+NODE_NAME_SHADOWTLS=$(config_node_name 14)
+SHADOWTLS_PASSWORD=$(config_value SHADOWTLS_PASSWORD)
+SHADOWTLS_METHOD=$(config_value SHADOWTLS_METHOD 2022-blake3-aes-128-gcm)
+
+
+# f. Shadowsocks
+
+SHADOWSOCKS=$(config_bool SHADOWSOCKS)
+PORT_SHADOWSOCKS=$(config_value PORT_SHADOWSOCKS)
+NODE_NAME_SHADOWSOCKS=$(config_node_name 15)
+SHADOWSOCKS_PASSWORD=$(config_value SHADOWSOCKS_PASSWORD)
+SHADOWSOCKS_METHOD=$(config_value SHADOWSOCKS_METHOD 2022-blake3-aes-128-gcm)
+
+
+# g. Trojan
+
+TROJAN=$(config_bool TROJAN)
+PORT_TROJAN=$(config_value PORT_TROJAN)
+NODE_NAME_TROJAN=$(config_node_name 16)
+TROJAN_PASSWORD=$(config_value TROJAN_PASSWORD)
+
+
+# h. VMess WebSocket
+
+VMESS_WS=$(config_bool VMESS_WS)
+PORT_VMESS_WS=$(config_value PORT_VMESS_WS)
+NODE_NAME_VMESS_WS=$(config_node_name 17)
+VMESS_HOST_DOMAIN=$(config_value VMESS_HOST_DOMAIN)
+VMESS_WS_PATH=$(config_value VMESS_WS_PATH)
+
+
+# i. VLESS WebSocket TLS
+
+VLESS_WS=$(config_bool VLESS_WS)
+PORT_VLESS_WS=$(config_value PORT_VLESS_WS)
+NODE_NAME_VLESS_WS=$(config_node_name 18)
+VLESS_HOST_DOMAIN=$(config_value VLESS_HOST_DOMAIN)
+VLESS_WS_PATH=$(config_value VLESS_WS_PATH)
+
+
+# j. H2 Reality
+
+H2_REALITY=$(config_bool H2_REALITY)
+PORT_H2_REALITY=$(config_value PORT_H2_REALITY)
+NODE_NAME_H2_REALITY=$(config_node_name 19)
+
+
+# k. gRPC Reality
+
+GRPC_REALITY=$(config_bool GRPC_REALITY)
+PORT_GRPC_REALITY=$(config_value PORT_GRPC_REALITY)
+NODE_NAME_GRPC_REALITY=$(config_node_name 20)
+
+
+# l. AnyTLS
+
+ANYTLS=$(config_bool ANYTLS)
+PORT_ANYTLS=$(config_value PORT_ANYTLS)
+NODE_NAME_ANYTLS=$(config_node_name 21)
+
+
+# m. NaiveProxy
+
+NAIVE=$(config_bool NAIVE)
+PORT_NAIVE=$(config_value PORT_NAIVE)
+NODE_NAME_NAIVE=$(config_node_name 22)
+EOF
+
+  if [ -e "$_target" ]; then
+    cat "$_tmp" > "$_target" || { rm -f "$_tmp"; error " Failed to write config file: $_target "; }
+    rm -f "$_tmp"
+  else
+    mv "$_tmp" "$_target" || { rm -f "$_tmp"; error " Failed to write config file: $_target "; }
+  fi
+
+  info "\n Config file updated: $_target "
+  [ -e "$_backup" ] && hint " Backup saved: $_backup "
+}
+
 first_matching_file() {
   compgen -G "$1" | sed -n '1p'
 }
@@ -1309,6 +1706,9 @@ input_nginx_port() {
         [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && error " PORT_NGINX conflicts with a selected protocol port. "
         warning "\n $(text 44) \n"
       elif ss -nltup | grep -q ":$PORT_NGINX"; then
+        if [ "$CONFIG_UPDATE_INSTALL" = 'config_update_install' ] && [ -s "${WORK_DIR}/nginx.conf" ] && [ "$PORT_NGINX" = "$(awk '/listen/{print $2; exit}' "${WORK_DIR}/nginx.conf")" ]; then
+          break
+        fi
         [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && error " PORT_NGINX is already in use. "
         warning "\n $(text 44) \n"
       else
@@ -2130,13 +2530,21 @@ check_install() {
   } &
 
   # 如果有需要，后台静默下载 sing-box
-  if [ "${STATUS[0]}" = "$(text 26)" ] && [ ! -s ${WORK_DIR}/sing-box ]; then
+  if [[ "${STATUS[0]}" = "$(text 26)" || "$CONFIG_UPDATE_INSTALL" = 'config_update_install' ]] && [ ! -s "$TEMP_DIR/sing-box" ]; then
     # 任务 1: 下载 sing-box
-    download_sing_box_binary &
+    if [ -s "${WORK_DIR}/sing-box" ]; then
+      cp "${WORK_DIR}/sing-box" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
+    else
+      download_sing_box_binary &
+    fi
 
     # 任务 2: 下载 jq
     {
-      download_file "${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" && chmod +x "$TEMP_DIR/jq"
+      if [ -s "${WORK_DIR}/jq" ]; then
+        cp "${WORK_DIR}/jq" "$TEMP_DIR/jq" && chmod +x "$TEMP_DIR/jq"
+      else
+        download_file "${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" && chmod +x "$TEMP_DIR/jq"
+      fi
       "$TEMP_DIR/jq" --version >/dev/null 2>&1 || {
         download_file "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq"
         chmod +x "$TEMP_DIR/jq" 2>/dev/null || true
@@ -2145,7 +2553,11 @@ check_install() {
 
     # 任务 3: 下载 qrencode
     {
-      download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" && chmod +x "$TEMP_DIR/qrencode"
+      if [ -s "${WORK_DIR}/qrencode" ]; then
+        cp "${WORK_DIR}/qrencode" "$TEMP_DIR/qrencode" && chmod +x "$TEMP_DIR/qrencode"
+      else
+        download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" && chmod +x "$TEMP_DIR/qrencode"
+      fi
     } &
 
   elif [ "${STATUS[0]}" != "$(text 26)" ]; then
@@ -4779,6 +5191,133 @@ install_sing-box() {
       error "\n Argo $(text 27) $(text 38) \n"
       # 如果启动失败，再尝试重启
       cmd_systemctl restart argo
+    fi
+  fi
+}
+
+prepare_config_update_assets() {
+  if [ ! -x "$TEMP_DIR/sing-box" ]; then
+    if [ -x "${WORK_DIR}/sing-box" ]; then
+      cp "${WORK_DIR}/sing-box" "$TEMP_DIR/sing-box"
+      chmod +x "$TEMP_DIR/sing-box"
+    else
+      download_sing_box_binary
+    fi
+  fi
+
+  if [ ! -x "$TEMP_DIR/jq" ]; then
+    if [ -x "${WORK_DIR}/jq" ]; then
+      cp "${WORK_DIR}/jq" "$TEMP_DIR/jq"
+      chmod +x "$TEMP_DIR/jq"
+    else
+      download_file "${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq" "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH"
+      chmod +x "$TEMP_DIR/jq" 2>/dev/null || true
+    fi
+  fi
+
+  if [ ! -x "$TEMP_DIR/qrencode" ]; then
+    if [ -x "${WORK_DIR}/qrencode" ]; then
+      cp "${WORK_DIR}/qrencode" "$TEMP_DIR/qrencode"
+      chmod +x "$TEMP_DIR/qrencode"
+    else
+      download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH"
+      chmod +x "$TEMP_DIR/qrencode" 2>/dev/null || true
+    fi
+  fi
+
+  if [ "$IS_ARGO" = 'is_argo' ] && [ ! -x "$TEMP_DIR/cloudflared" ]; then
+    if [ -x "${WORK_DIR}/cloudflared" ]; then
+      cp "${WORK_DIR}/cloudflared" "$TEMP_DIR/cloudflared"
+      chmod +x "$TEMP_DIR/cloudflared"
+    else
+      download_file "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH"
+      chmod +x "$TEMP_DIR/cloudflared" 2>/dev/null || true
+    fi
+  fi
+}
+
+install_from_config_update() {
+  CONFIG_UPDATE_INSTALL=config_update_install
+  prepare_config_update_defaults
+  apply_config_file_options
+  apply_custom_node_names
+  normalize_log_level
+  normalize_ntp_config
+
+  # 预设默认值，允许 config.conf 只覆盖部分字段。
+  resolve_protocol_switch_mode
+  CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
+  START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
+  CDN=${CDN:-"${CDN_DOMAIN[0]}"}
+  IS_SUB=${IS_SUB:-'no_sub'}
+  IS_ARGO=${IS_ARGO:-'no_argo'}
+  [[ "$HY2_PORT_HOPPING_RANGE" =~ ^[0-9]+:[0-9]+$ ]] && IS_HOPPING='is_hopping' || IS_HOPPING=${IS_HOPPING:-'no_hopping'}
+
+  sing-box_variables
+  hint "\n Updating sing-box from config file ... "
+  wait
+  check_cdn
+  prepare_config_update_assets
+  "$TEMP_DIR/sing-box" version >/dev/null 2>&1 || error "\n $(text 42) \n"
+  "$TEMP_DIR/jq" --version >/dev/null 2>&1 || error "\n jq download failed. \n"
+  [ "$IS_ARGO" != 'is_argo' ] || "$TEMP_DIR/cloudflared" -v >/dev/null 2>&1 || error "\n cloudflared download failed. \n"
+
+  if [ -n "$PORT_NGINX" ] && ! command -v nginx >/dev/null 2>&1; then
+    info "\n $(text 7) nginx \n"
+    ${PACKAGE_UPDATE[int]} >/dev/null 2>&1
+    ${PACKAGE_INSTALL[int]} nginx >/dev/null 2>&1
+    cmd_systemctl disable nginx
+  fi
+
+  cmd_systemctl disable argo >/dev/null 2>&1 || true
+  cmd_systemctl disable sing-box >/dev/null 2>&1 || true
+
+  if [ -d "${WORK_DIR}/conf" ]; then
+    mkdir -p "${WORK_DIR}/backup"
+    tar -czf "${WORK_DIR}/backup/conf.$(date +%Y%m%d%H%M%S).tar.gz" -C "$WORK_DIR" conf subscribe list nginx.conf 2>/dev/null || true
+  fi
+
+  [ -s "${WORK_DIR}/conf/08_custom_route.json" ] && cp "${WORK_DIR}/conf/08_custom_route.json" "$TEMP_DIR/08_custom_route.json"
+  rm -f "${WORK_DIR}"/conf/[0-9][0-9]_*.json "${WORK_DIR}"/conf/[1-2][0-9]_*.json "${WORK_DIR}"/subscribe/* "${WORK_DIR}/list" "${WORK_DIR}/nginx.conf"
+  [ -s "$TEMP_DIR/08_custom_route.json" ] && cp "$TEMP_DIR/08_custom_route.json" "${WORK_DIR}/conf/08_custom_route.json"
+  if [ "$IS_ARGO" != 'is_argo' ]; then
+    rm -f "$ARGO_DAEMON_FILE" "${WORK_DIR}/tunnel.json" "${WORK_DIR}/tunnel.yml"
+    [ "$SYSTEM" = 'Alpine' ] || systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+
+  ssl_certificate "$TLS_SERVER_DEFAULT"
+  sing-box_json
+  echo "${L^^}" > "${WORK_DIR}/language"
+  cp "$TEMP_DIR/sing-box" "$TEMP_DIR/jq" "$WORK_DIR"
+  [ -x "$TEMP_DIR/qrencode" ] && cp "$TEMP_DIR/qrencode" "$WORK_DIR"
+
+  sing-box_systemd
+  [ "$IS_ARGO" = 'is_argo' ] && cp "$TEMP_DIR/cloudflared" "$WORK_DIR"
+  [ -n "$ARGO_RUNS" ] && argo_systemd
+  [ -n "$ARGO_JSON" ] && cp $TEMP_DIR/tunnel.* ${WORK_DIR}
+  [ -n "$PORT_NGINX" ] && export_nginx_conf_file
+
+  cmd_systemctl enable sing-box
+  sleep 2
+  sync_firewall_rules
+
+  if cmd_systemctl status sing-box &>/dev/null; then
+    STATUS[0]=$(text 28)
+    info "\n Sing-box $(text 28) $(text 37) \n"
+  else
+    STATUS[0]=$(text 27)
+    error "\n Sing-box $(text 27) $(text 38) \n"
+  fi
+
+  if [ -s ${ARGO_DAEMON_FILE} ]; then
+    cmd_systemctl enable argo
+    sleep 2
+    if cmd_systemctl status argo &>/dev/null; then
+      STATUS[1]=$(text 28)
+      info "\n Argo $(text 28) $(text 37) \n"
+    else
+      STATUS[1]=$(text 27)
+      error "\n Argo $(text 27) $(text 38) \n"
     fi
   fi
 }

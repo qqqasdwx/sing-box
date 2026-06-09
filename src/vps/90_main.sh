@@ -17,18 +17,7 @@ unset _param_i _param_v _param_n _param_lang
 # 获取 -F 参数的值
 CONFIG_FILE=$(awk '-F[ =]' 'tolower($1) ~ /^-f$/{print $2}' <<< "$*")
 if [[ -n "$CONFIG_FILE" && -s "$CONFIG_FILE" ]]; then
-  NONINTERACTIVE_INSTALL=noninteractive_install
-  . $CONFIG_FILE
-  L=${LANGUAGE^^}
-  [[ "$L" =~ ^E ]] && L=E || L=C
-  bool_enabled "${ARGO:-}" && IS_ARGO=is_argo || IS_ARGO=no_argo
-  bool_enabled "${SUBSCRIBE:-}" && IS_SUB=is_sub || IS_SUB=no_sub
-  bool_enabled "${HY2_REALM:-}" && IS_HY2_REALM=is_hy2_realm
-  bool_enabled "${REALM:-}" && IS_HY2_REALM=is_hy2_realm
-  bool_enabled "${HY2_WARP:-}" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
-  bool_enabled "${REALM_WARP:-}" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
-  bool_enabled "${WARP_REALM:-}" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
-  TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
+  apply_config_file_options
 fi
 
 check_root
@@ -304,22 +293,21 @@ check_system_ip
 check_install
 if [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]; then
   if [ "${STATUS[0]}" != "$(text 26)" ]; then
-    info "\n $(text 77) \n"
-    create_shortcut
-    exit 0
+    install_from_config_update
+  else
+    # 预设默认值，允许只传 --CHOOSE_PROTOCOLS 进行最小无交互安装。
+    resolve_protocol_switch_mode
+    CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
+    START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
+    CDN=${CDN:-"${CDN_DOMAIN[0]}"}
+    IS_SUB=${IS_SUB:-'no_sub'}
+    IS_ARGO=${IS_ARGO:-'no_argo'}
+    IS_HOPPING=${IS_HOPPING:-'no_hopping'}
+
+    install_sing-box
   fi
-
-  # 预设默认值，允许只传 --CHOOSE_PROTOCOLS 进行最小无交互安装。
-  resolve_protocol_switch_mode
-  CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
-  START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
-  CDN=${CDN:-"${CDN_DOMAIN[0]}"}
-  IS_SUB=${IS_SUB:-'no_sub'}
-  IS_ARGO=${IS_ARGO:-'no_argo'}
-  IS_HOPPING=${IS_HOPPING:-'no_hopping'}
-
-  install_sing-box
   export_list install
+  write_config_state_file
   create_shortcut
 elif [ "$IS_FAST_INSTALL" = 'is_fast_install' ]; then
   if [ "${STATUS[0]}" != "$(text 26)" ]; then
