@@ -280,6 +280,7 @@ done
 apply_custom_node_names
 normalize_log_level
 normalize_ntp_config
+normalize_ws_domain_mode
 
 check_arch
 check_dependencies
@@ -297,6 +298,7 @@ if [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]; then
     IS_SUB=${IS_SUB:-'no_sub'}
     IS_ARGO=${IS_ARGO:-'no_argo'}
     IS_HOPPING=${IS_HOPPING:-'no_hopping'}
+    normalize_ws_domain_mode
 
     install_sing-box
   fi

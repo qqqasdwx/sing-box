@@ -166,6 +166,7 @@ EOF
 
   # 生成或规范化 Reality 公私钥，避免空数组元素或无效私钥写入 sing-box 配置。
   array_contains_any INSTALL_PROTOCOLS b j k && normalize_reality_keypair "$DIR/sing-box"
+  normalize_ws_domain_mode
 
   # 获取自签名证书的域名
   TLS_SERVER=$(openssl x509 -noout -ext subjectAltName -in ${WORK_DIR}/cert/cert.pem 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
@@ -439,9 +440,11 @@ EOF
   if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_VMESS_WS" ] && PORT_VMESS_WS=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[17]=${NODE_NAME[17]:-"$NODE_NAME_CONFIRM"} && UUID[17]=${UUID[17]:-"$UUID_CONFIRM"} && WS_SERVER_IP[17]=${WS_SERVER_IP[17]:-"$SERVER_IP"} && CDN[17]=${CDN[17]:-"$CDN"} && CDN_PORT[17]=${CDN_PORT[17]:-${CDN_PORT:-80}} && VMESS_WS_PATH=${VMESS_WS_PATH:-"${UUID[17]}-vmess"}
+    local VMESS_WS_HOST
+    VMESS_WS_HOST=$(ws_host_for h)
     cat > ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json << EOF
 //  "WS_SERVER_IP_SHOW": "${WS_SERVER_IP[17]}"
-//  "VMESS_HOST_DOMAIN": "${VMESS_HOST_DOMAIN}${ARGO_DOMAIN}"
+//  "VMESS_HOST_DOMAIN": "${VMESS_WS_HOST}"
 //  "CDN": "${CDN[17]}"
 //  "CDN_PORT": "${CDN_PORT[17]}"
 {
@@ -485,6 +488,8 @@ EOF
   if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
     [ -z "$PORT_VLESS_WS" ] && PORT_VLESS_WS=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
     NODE_NAME[18]=${NODE_NAME[18]:-"$NODE_NAME_CONFIRM"} && UUID[18]=${UUID[18]:-"$UUID_CONFIRM"} && WS_SERVER_IP[18]=${WS_SERVER_IP[18]:-"$SERVER_IP"} && CDN[18]=${CDN[18]:-"$CDN"} && CDN_PORT[18]=${CDN_PORT[18]:-${CDN_PORT:-443}} && VLESS_WS_PATH=${VLESS_WS_PATH:-"${UUID[18]}-vless"}
+    local VLESS_WS_HOST
+    VLESS_WS_HOST=$(ws_host_for i)
     cat > ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json << EOF
 //  "WS_SERVER_IP_SHOW": "${WS_SERVER_IP[18]}"
 //  "CDN": "${CDN[18]}"
@@ -512,7 +517,7 @@ EOF
             },
             "tls":{
                 "enabled":true,
-                "server_name":"${VLESS_HOST_DOMAIN}${ARGO_DOMAIN}",
+                "server_name":"${VLESS_WS_HOST}",
                 "min_version":"1.3",
                 "max_version":"1.3",
                 "certificate_path":"${WORK_DIR}/cert/cert.pem",
@@ -957,17 +962,19 @@ fetch_nodes_value() {
   if [ -s "$NODE_CONF" ]; then
     JSON=$(cat "$NODE_CONF")
     NODE_NAME[17]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[6]}.*/\1/p" <<< "$JSON")
-    PORT_VMESS_WS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
-    UUID[17]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
-    VMESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
-    WS_SERVER_IP[17]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
-    CDN[17]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
-    CDN_PORT[17]=$(awk  -F '"' '/"CDN_PORT"/{print $4}' <<< "$JSON")
-    if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
-      ARGO_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON")
+    PORT_VMESS_WS=$(json_number_value listen_port <<< "$JSON")
+    UUID[17]=$(json_string_value uuid <<< "$JSON")
+    VMESS_WS_PATH=$(json_string_value path <<< "$JSON")
+    VMESS_WS_PATH=${VMESS_WS_PATH#/}
+    WS_SERVER_IP[17]=$(json_string_value WS_SERVER_IP_SHOW <<< "$JSON")
+    CDN[17]=$(json_string_value CDN <<< "$JSON")
+    CDN_PORT[17]=$(json_string_value CDN_PORT <<< "$JSON")
+    if [ -n "${ARGO_DAEMON_FILE:-}" ] && [ -s "$ARGO_DAEMON_FILE" ]; then
+      ARGO_DOMAIN=$(json_string_value VMESS_HOST_DOMAIN <<< "$JSON")
     else
-      VMESS_HOST_DOMAIN=$(awk  -F '"' '/"VMESS_HOST_DOMAIN"/{print $4}' <<< "$JSON")
+      VMESS_HOST_DOMAIN=$(json_string_value VMESS_HOST_DOMAIN <<< "$JSON")
     fi
+    normalize_ws_domains
   fi
 
   # 获取 vless + ws + tls key-value
@@ -975,17 +982,19 @@ fetch_nodes_value() {
   if [ -s "$NODE_CONF" ]; then
     JSON=$(cat "$NODE_CONF")
     NODE_NAME[18]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[7]}.*/\1/p" <<< "$JSON")
-    PORT_VLESS_WS=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
-    UUID[18]=$(awk -F '"' '/"uuid"/{print $4}' <<< "$JSON")
-    VLESS_WS_PATH=$(sed -n 's#.*"path":"/\(.*\)",#\1#p' <<< "$JSON")
-    WS_SERVER_IP[18]=$(awk  -F '"' '/"WS_SERVER_IP_SHOW"/{print $4}' <<< "$JSON")
-    CDN[18]=$(awk  -F '"' '/"CDN"/{print $4}' <<< "$JSON")
-    CDN_PORT[18]=$(awk  -F '"' '/"CDN_PORT"/{print $4}' <<< "$JSON")
-    if [[ "${STATUS[1]}" =~ $(text 27)|$(text 28) ]]; then
-      ARGO_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON")
+    PORT_VLESS_WS=$(json_number_value listen_port <<< "$JSON")
+    UUID[18]=$(json_string_value uuid <<< "$JSON")
+    VLESS_WS_PATH=$(json_string_value path <<< "$JSON")
+    VLESS_WS_PATH=${VLESS_WS_PATH#/}
+    WS_SERVER_IP[18]=$(json_string_value WS_SERVER_IP_SHOW <<< "$JSON")
+    CDN[18]=$(json_string_value CDN <<< "$JSON")
+    CDN_PORT[18]=$(json_string_value CDN_PORT <<< "$JSON")
+    if [ -n "${ARGO_DAEMON_FILE:-}" ] && [ -s "$ARGO_DAEMON_FILE" ]; then
+      ARGO_DOMAIN=$(json_string_value server_name <<< "$JSON")
     else
-      VLESS_HOST_DOMAIN=$(awk -F '"' '/"server_name"/{print $4}' <<< "$JSON")
+      VLESS_HOST_DOMAIN=$(json_string_value server_name <<< "$JSON")
     fi
+    normalize_ws_domains
   fi
 
   # 获取 H2 + Reality key-value
@@ -1027,6 +1036,8 @@ fetch_nodes_value() {
     PORT_NAIVE=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
     UUID[22]=$(awk -F '"' '/"username"/{print $4; exit}' <<< "$JSON")
   fi
+
+  return 0
 }
 
 # 获取 Argo 临时隧道域名
@@ -1047,6 +1058,7 @@ fetch_quicktunnel_domain() {
   done
 
   # 把临时隧道写到 Sing-box 相应的 ws inbounds 文件
+  normalize_ws_domain_mode
   [ -s ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json ] && sed -i "s/VMESS_HOST_DOMAIN.*/VMESS_HOST_DOMAIN\": \"$ARGO_DOMAIN\"/" ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json
   [ -s ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json ] && sed -i "s/\"server_name\":.*/\"server_name\": \"$ARGO_DOMAIN\",/" ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json
 }

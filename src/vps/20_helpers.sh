@@ -316,6 +316,72 @@ normalize_ntp_config() {
   [[ "$NTP_INTERVAL" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]] || error " NTP_INTERVAL must be a duration like 30m, 60m, or 1h. "
 }
 
+collapse_repeated_value() {
+  local _value=$1 _len=${#1} _part _repeat _i
+  [ -n "$_value" ] || return 0
+
+  for ((_i=1; _i<=_len/2; _i++)); do
+    (( _len % _i == 0 )) || continue
+    _part=${_value:0:_i}
+    [[ "$_part" == *.* ]] || continue
+    _repeat=''
+    while [ ${#_repeat} -lt "$_len" ]; do
+      _repeat+=$_part
+    done
+    if [ "$_repeat" = "$_value" ]; then
+      printf '%s' "$_part"
+      return 0
+    fi
+  done
+
+  printf '%s' "$_value"
+}
+
+normalize_domain_value() {
+  local _value=$1
+  _value=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:space:]]//g; s/:[[:space:]]*$//' <<< "$_value")
+  _value=$(collapse_repeated_value "$_value")
+  printf '%s' "$_value"
+}
+
+normalize_ws_domains() {
+  [ -n "${ARGO_DOMAIN+x}" ] && ARGO_DOMAIN=$(normalize_domain_value "$ARGO_DOMAIN")
+  [ -n "${VMESS_HOST_DOMAIN+x}" ] && VMESS_HOST_DOMAIN=$(normalize_domain_value "$VMESS_HOST_DOMAIN")
+  [ -n "${VLESS_HOST_DOMAIN+x}" ] && VLESS_HOST_DOMAIN=$(normalize_domain_value "$VLESS_HOST_DOMAIN")
+  return 0
+}
+
+normalize_ws_domain_mode() {
+  normalize_ws_domains
+
+  if [ "${IS_ARGO:-}" = 'is_argo' ]; then
+    if [ -z "$ARGO_DOMAIN" ] && [ -n "${ARGO_AUTH:-}" ]; then
+      ARGO_DOMAIN=${VLESS_HOST_DOMAIN:-${VMESS_HOST_DOMAIN:-}}
+    fi
+    unset VMESS_HOST_DOMAIN VLESS_HOST_DOMAIN
+  elif [ "${IS_ARGO:-}" = 'no_argo' ]; then
+    VMESS_HOST_DOMAIN=${VMESS_HOST_DOMAIN:-${ARGO_DOMAIN:-}}
+    VLESS_HOST_DOMAIN=${VLESS_HOST_DOMAIN:-${ARGO_DOMAIN:-}}
+    unset ARGO_DOMAIN
+  fi
+  return 0
+}
+
+ws_host_for() {
+  case "$1" in
+    h|vmess )
+      [ "${IS_ARGO:-}" = 'is_argo' ] && printf '%s' "${ARGO_DOMAIN:-}" || printf '%s' "${VMESS_HOST_DOMAIN:-}"
+      ;;
+    i|vless )
+      [ "${IS_ARGO:-}" = 'is_argo' ] && printf '%s' "${ARGO_DOMAIN:-}" || printf '%s' "${VLESS_HOST_DOMAIN:-}"
+      ;;
+  esac
+}
+
+ws_uses_argo() {
+  [ "${IS_ARGO:-}" = 'is_argo' ]
+}
+
 input_uuid() {
   UUID_DEFAULT=$(cat /proc/sys/kernel/random/uuid)
   [[ "$IS_FAST_INSTALL" = 'is_fast_install' || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
@@ -591,6 +657,7 @@ apply_config_file_options() {
   fi
 
   TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
+  normalize_ws_domain_mode
 }
 
 set_protocol_switch() {
@@ -763,6 +830,7 @@ prepare_config_update_defaults() {
   [ -s "${WORK_DIR}/subscribe/qr" ] && IS_SUB=is_sub
 
   fetch_nodes_value
+  normalize_ws_domain_mode
 
   [ -n "$_selection" ] && CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-$_selection}
   UUID_CONFIRM=${UUID_CONFIRM:-"$(first_nonempty_array_value UUID)"}
@@ -826,6 +894,11 @@ config_reality_private() {
 }
 
 config_argo_auth() {
+  if [ "${IS_ARGO:-}" != 'is_argo' ]; then
+    shell_quote ''
+    return
+  fi
+
   if [ -n "$ARGO_JSON" ]; then
     shell_quote "$ARGO_JSON"
   elif [ -n "$ARGO_TOKEN" ]; then
@@ -834,6 +907,18 @@ config_argo_auth() {
     shell_quote "${ARGO_AUTH:-}"
   else
     shell_quote ''
+  fi
+}
+
+config_argo_domain() {
+  [ "${IS_ARGO:-}" = 'is_argo' ] && shell_quote "${ARGO_DOMAIN:-}" || shell_quote ''
+}
+
+config_ws_host_domain() {
+  if [ "${IS_ARGO:-}" = 'is_argo' ]; then
+    shell_quote ''
+  else
+    shell_quote "$(ws_host_for "$1")"
   fi
 }
 
@@ -902,7 +987,7 @@ UUID_CONFIRM=$(config_value UUID_CONFIRM)
 
 SUBSCRIBE=$(config_bool SUBSCRIBE)
 ARGO=$(config_bool ARGO)
-ARGO_DOMAIN=$(config_value ARGO_DOMAIN)
+ARGO_DOMAIN=$(config_argo_domain)
 ARGO_AUTH=$(config_argo_auth)
 CDN=$(shell_quote "${CDN[17]:-${CDN[18]:-${CDN:-${CDN_DOMAIN[0]}}}}")
 CDN_PORT=$(shell_quote "${CDN_PORT[17]:-${CDN_PORT[18]:-${CDN_PORT:-}}}")
@@ -976,7 +1061,7 @@ TROJAN_PASSWORD=$(config_value TROJAN_PASSWORD)
 VMESS_WS=$(config_bool VMESS_WS)
 PORT_VMESS_WS=$(config_value PORT_VMESS_WS)
 NODE_NAME_VMESS_WS=$(config_node_name 17)
-VMESS_HOST_DOMAIN=$(config_value VMESS_HOST_DOMAIN)
+VMESS_HOST_DOMAIN=$(config_ws_host_domain h)
 VMESS_WS_PATH=$(config_value VMESS_WS_PATH)
 
 
@@ -985,7 +1070,7 @@ VMESS_WS_PATH=$(config_value VMESS_WS_PATH)
 VLESS_WS=$(config_bool VLESS_WS)
 PORT_VLESS_WS=$(config_value PORT_VLESS_WS)
 NODE_NAME_VLESS_WS=$(config_node_name 18)
-VLESS_HOST_DOMAIN=$(config_value VLESS_HOST_DOMAIN)
+VLESS_HOST_DOMAIN=$(config_ws_host_domain i)
 VLESS_WS_PATH=$(config_value VLESS_WS_PATH)
 
 
@@ -1029,7 +1114,39 @@ EOF
 }
 
 first_matching_file() {
-  compgen -G "$1" | sed -n '1p'
+  local _matches
+  _matches=$(compgen -G "$1" || true)
+  sed -n '1p' <<< "$_matches"
+}
+
+json_string_value() {
+  local _key=$1
+  awk -v key="\"${_key}\"" '
+    index($0, key) {
+      value=$0
+      sub(".*" key "[[:space:]]*:[[:space:]]*\"", "", value)
+      if (value != $0) {
+        sub("\".*", "", value)
+        print value
+        exit
+      }
+    }
+  '
+}
+
+json_number_value() {
+  local _key=$1
+  awk -v key="\"${_key}\"" '
+    index($0, key) {
+      value=$0
+      sub(".*" key "[[:space:]]*:[[:space:]]*", "", value)
+      if (value != $0) {
+        sub("[^0-9].*", "", value)
+        print value
+        exit
+      }
+    }
+  '
 }
 
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用

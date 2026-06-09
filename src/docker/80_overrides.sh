@@ -75,6 +75,7 @@ docker_prepare_env() {
 
   docker_false "$SUBSCRIBE" && IS_SUB=no_sub || IS_SUB=is_sub
   docker_false "$ARGO" && IS_ARGO=no_argo || IS_ARGO=is_argo
+  normalize_ws_domain_mode
 
   docker_bool "$HY2_REALM" && IS_HY2_REALM=is_hy2_realm
   docker_bool "$REALM" && IS_HY2_REALM=is_hy2_realm
