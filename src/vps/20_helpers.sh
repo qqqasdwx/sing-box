@@ -23,6 +23,228 @@ text() {
   fi
 }
 
+failure_reason_title() {
+  [ "$L" = 'C' ] && printf '失败原因:' || printf 'Failure reason:'
+}
+
+service_detail_title() {
+  if [ "$L" = 'C' ]; then
+    case "$1" in
+      command ) printf '命令输出' ;;
+      status ) printf '服务状态' ;;
+      journal ) printf '最近日志' ;;
+      runtime ) printf '运行日志' ;;
+      check ) printf '配置检查' ;;
+      * ) printf '%s' "$1" ;;
+    esac
+  else
+    case "$1" in
+      command ) printf 'Command output' ;;
+      status ) printf 'Service status' ;;
+      journal ) printf 'Recent logs' ;;
+      runtime ) printf 'Runtime log' ;;
+      check ) printf 'Config check' ;;
+      * ) printf '%s' "$1" ;;
+    esac
+  fi
+}
+
+service_action_text() {
+  case "$1" in
+    enable|start|open ) text 28 ;;
+    disable|stop|close ) text 27 ;;
+    restart ) [ "$L" = 'C' ] && printf '重启' || printf 'restart' ;;
+    reload ) [ "$L" = 'C' ] && printf '重载' || printf 'reload' ;;
+    update ) [ "$L" = 'C' ] && printf '更新' || printf 'update' ;;
+    * ) printf '%s' "$1" ;;
+  esac
+}
+
+service_command_log_file() {
+  local _service=$1 _action=${2:-command}
+  _service=${_service//[^[:alnum:]_.-]/_}
+  _action=${_action//[^[:alnum:]_.-]/_}
+  mkdir -p "$TEMP_DIR" 2>/dev/null || true
+  printf '%s/service_%s_%s.log' "$TEMP_DIR" "$_service" "$_action"
+}
+
+redact_failure_detail() {
+  sed -E \
+    -e 's/--token[= ]+[^[:space:]]+/--token [REDACTED]/g' \
+    -e 's/("TunnelSecret"[[:space:]]*:[[:space:]]*")[^"]+/\1[REDACTED]/g' \
+    -e 's/(TunnelSecret[= ][[:space:]]*)[^,}[:space:]]+/\1[REDACTED]/g'
+}
+
+service_failure_detail() {
+  local _service=$1 _action=${2:-status} _detail='' _log_file _runtime_log=''
+  local _status_output _journal_output _runtime_output _check_output
+
+  _log_file=$(service_command_log_file "$_service" "$_action")
+  if [ -s "$_log_file" ]; then
+    _detail+="$(service_detail_title command)"$'\n'
+    _detail+="$(tail -n 25 "$_log_file")"$'\n'
+  fi
+
+  if [ "$SYSTEM" = 'Alpine' ]; then
+    if command -v rc-service >/dev/null 2>&1; then
+      _status_output=$(rc-service "$_service" status 2>&1 | tail -n 25)
+      if [ -n "$_status_output" ]; then
+        _detail+="$(service_detail_title status)"$'\n'
+        _detail+="${_status_output}"$'\n'
+      fi
+    fi
+  else
+    if command -v systemctl >/dev/null 2>&1; then
+      _status_output=$(systemctl status "$_service" --no-pager -l 2>&1 | tail -n 30)
+      if [ -n "$_status_output" ]; then
+        _detail+="$(service_detail_title status)"$'\n'
+        _detail+="${_status_output}"$'\n'
+      fi
+    fi
+    if command -v journalctl >/dev/null 2>&1; then
+      _journal_output=$(journalctl -u "$_service" -n 30 --no-pager 2>&1 | tail -n 30)
+      if [ -n "$_journal_output" ]; then
+        _detail+="$(service_detail_title journal)"$'\n'
+        _detail+="${_journal_output}"$'\n'
+      fi
+    fi
+  fi
+
+  case "$_service" in
+    sing-box|argo )
+      _runtime_log="${WORK_DIR}/logs/${_service}.log"
+      ;;
+    nginx )
+      if command -v nginx >/dev/null 2>&1 && [ -s "${WORK_DIR}/nginx.conf" ]; then
+        _check_output=$(nginx -t -c "${WORK_DIR}/nginx.conf" 2>&1 | tail -n 25)
+        if [ -n "$_check_output" ]; then
+          _detail+="$(service_detail_title check)"$'\n'
+          _detail+="${_check_output}"$'\n'
+        fi
+      fi
+      ;;
+  esac
+
+  if [ -n "$_runtime_log" ] && [ -s "$_runtime_log" ]; then
+    _runtime_output=$(tail -n 30 "$_runtime_log")
+    if [ -n "$_runtime_output" ]; then
+      _detail+="$(service_detail_title runtime) (${_runtime_log})"$'\n'
+      _detail+="${_runtime_output}"$'\n'
+    fi
+  fi
+
+  printf '%s' "$_detail" | redact_failure_detail | sed '/^[[:space:]]*$/d' | tail -n 100
+}
+
+service_failure_message() {
+  local _message=$1 _service=$2 _action=${3:-status} _detail
+  _detail=$(service_failure_detail "$_service" "$_action")
+  if [ -z "$_detail" ]; then
+    if [ "$L" = 'C' ]; then
+      if [ "$SYSTEM" = 'Alpine' ]; then
+        _detail="未获取到服务错误输出，请手动运行: rc-service ${_service} status"
+      else
+        _detail="未获取到服务错误输出，请手动运行: systemctl status ${_service} --no-pager -l"
+      fi
+    else
+      if [ "$SYSTEM" = 'Alpine' ]; then
+        _detail="No service error output was available. Run: rc-service ${_service} status"
+      else
+        _detail="No service error output was available. Run: systemctl status ${_service} --no-pager -l"
+      fi
+    fi
+  fi
+  printf '\n%s\n\n%s\n%s\n' "$_message" "$(failure_reason_title)" "$_detail"
+}
+
+service_failure_error() {
+  error "$(service_failure_message "$@")"
+}
+
+service_failure_warning() {
+  warning "$(service_failure_message "$@")"
+}
+
+failure_error() {
+  local _message=$1
+  shift || true
+  local _detail="$*"
+  if [ -z "$_detail" ]; then
+    [ "$L" = 'C' ] && _detail='未获取到命令输出。' || _detail='No command output was available.'
+  fi
+  error "$(printf '\n%s\n\n%s\n%s\n' "$_message" "$(failure_reason_title)" "$_detail")"
+}
+
+verify_command_or_fail() {
+  local _message=$1 _detail=$2 _binary _output
+  shift 2
+  _binary=$1
+  _output=$("$@" 2>&1) && return 0
+  failure_error "$_message" "${_detail}${_detail:+
+}Command: $*
+Output:
+${_output:-No output}
+File: ${_binary}
+Size: $([ -e "$_binary" ] && wc -c < "$_binary" 2>/dev/null || printf 0) bytes"
+}
+
+verify_file_or_fail() {
+  local _file=$1 _message=$2 _detail=${3:-}
+  [ -s "$_file" ] && return 0
+  local _output
+  _output=$(ls -l "$_file" 2>&1 || true)
+  failure_error "$_message" "${_detail}${_detail:+
+}File: ${_file}
+Expected: non-empty file
+Output:
+${_output:-No output}"
+}
+
+service_action_failed() {
+  local _label=$1 _service=$2 _action=$3
+  service_failure_error " ${_label} $(service_action_text "$_action") $(text 38) " "$_service" "$_action"
+}
+
+service_action_warn() {
+  local _label=$1 _service=$2 _action=$3
+  service_failure_warning " ${_label} $(service_action_text "$_action") $(text 38) " "$_service" "$_action"
+}
+
+enable_service_or_fail() {
+  local _label=$1 _service=$2 _wait=${3:-2}
+  cmd_systemctl enable "$_service" || service_action_failed "$_label" "$_service" enable
+  sleep "$_wait"
+  cmd_systemctl status "$_service" &>/dev/null &&
+    info " ${_label} $(service_action_text enable) $(text 37)" ||
+    service_action_failed "$_label" "$_service" enable
+}
+
+disable_service_or_fail() {
+  local _label=$1 _service=$2
+  cmd_systemctl disable "$_service" || service_action_failed "$_label" "$_service" disable
+  cmd_systemctl status "$_service" &>/dev/null &&
+    service_action_failed "$_label" "$_service" disable ||
+    info " ${_label} $(service_action_text disable) $(text 37)"
+}
+
+restart_service_or_fail() {
+  local _label=$1 _service=$2
+  cmd_systemctl restart "$_service" || service_action_failed "$_label" "$_service" restart
+  sleep 2
+  cmd_systemctl status "$_service" &>/dev/null &&
+    info " ${_label} $(service_action_text restart) $(text 37)" ||
+    service_action_failed "$_label" "$_service" restart
+}
+
+restart_service_or_warn() {
+  local _label=$1 _service=$2
+  cmd_systemctl restart "$_service" || { service_action_warn "$_label" "$_service" restart; return 1; }
+  sleep 2
+  cmd_systemctl status "$_service" &>/dev/null &&
+    info " ${_label} $(service_action_text restart) $(text 37)" ||
+    { service_action_warn "$_label" "$_service" restart; return 1; }
+}
+
 # 根据 INSTALL_PROTOCOLS 计算安装流程总步骤数
 # sing-box 协议分类：Reality 类 (b/j/k)、Hysteria2(c)、WS 类 (h/i)
 calc_install_steps() {
@@ -1023,7 +1245,7 @@ change_config() {
       [ "$IS_HY2_WARP" = 'is_hy2_warp' ] && sync_hy2_warp_route enable || sync_hy2_warp_route disable
     fi
     hint " $(text 112) "
-    cmd_systemctl restart sing-box
+    restart_service_or_fail Sing-box sing-box
     export_list
     return
   elif [ "$KEY" = "hy2hopping" ]; then
@@ -1108,11 +1330,7 @@ change_config() {
     find ${WORK_DIR} -type f | xargs -P 50 sed -i "s|${OLD}|${NEW_VAL}|g" 2>/dev/null
   fi
 
-  cmd_systemctl restart sing-box
-  sleep 2
-  cmd_systemctl status sing-box &>/dev/null && \
-    info "\n Sing-box $(text 28) $(text 37) \n" || \
-    warning "\n Sing-box $(text 27) $(text 38) \n"
+  restart_service_or_warn Sing-box sing-box || true
 
   export_list
 }
@@ -1707,11 +1925,7 @@ custom_route_add() {
 
   info " $(text 161) "
   hint " $(text 112) "
-  cmd_systemctl restart sing-box
-  sleep 2
-  cmd_systemctl status sing-box &>/dev/null &&
-    info "\n Sing-box $(text 28) $(text 37) \n" ||
-    warning "\n Sing-box $(text 27) $(text 38) \n"
+  restart_service_or_warn Sing-box sing-box || true
 }
 
 custom_route_csv_to_array() {
@@ -1841,11 +2055,7 @@ custom_route_delete() {
 
   info " $(text 164) "
   hint " $(text 112) "
-  cmd_systemctl restart sing-box
-  sleep 2
-  cmd_systemctl status sing-box &>/dev/null &&
-    info "\n Sing-box $(text 28) $(text 37) \n" ||
-    warning "\n Sing-box $(text 27) $(text 38) \n"
+  restart_service_or_warn Sing-box sing-box || true
 }
 
 custom_route_menu() {
@@ -1965,7 +2175,9 @@ change_argo() {
       ;;
     * )
       ARGO_TYPE='Try'
-      cmd_systemctl enable argo && sleep 2 && cmd_systemctl status argo &>/dev/null && fetch_quicktunnel_domain
+      cmd_systemctl enable argo || service_action_failed Argo argo enable
+      sleep 2
+      cmd_systemctl status argo &>/dev/null && fetch_quicktunnel_domain || service_action_failed Argo argo enable
   esac
 
   fetch_nodes_value
@@ -1975,7 +2187,7 @@ change_argo() {
 
   case "$CHANGE_TO" in
     1 )
-      cmd_systemctl disable argo
+      cmd_systemctl disable argo || service_action_failed Argo argo disable
       [ -s ${WORK_DIR}/tunnel.json ] && rm -f ${WORK_DIR}/tunnel.{json,yml}
 
       # 根据系统类型修改配置文件
@@ -1984,7 +2196,7 @@ change_argo() {
     2 )
       [ -s ${WORK_DIR}/tunnel.json ] && rm -f ${WORK_DIR}/tunnel.{json,yml}
       input_argo_auth is_change_argo
-      cmd_systemctl disable argo
+      cmd_systemctl disable argo || service_action_failed Argo argo disable
 
       if [ -n "$ARGO_TOKEN" ]; then
         [ "$SYSTEM" = 'Alpine' ] && sed -i "s@^command_args=.*@command_args=\"--edge-ip-version auto run --token ${ARGO_TOKEN}\"@g" ${ARGO_DAEMON_FILE} || sed -i "s@ExecStart=.*@ExecStart=${WORK_DIR}/cloudflared tunnel --edge-ip-version auto run --token ${ARGO_TOKEN}@g" ${ARGO_DAEMON_FILE}
@@ -2001,7 +2213,9 @@ change_argo() {
   esac
 
   # 启用 Argo 服务
-  cmd_systemctl enable argo
+  cmd_systemctl enable argo || service_action_failed Argo argo enable
+  sleep 2
+  cmd_systemctl status argo &>/dev/null || service_action_failed Argo argo enable
 
   # 更新节点信息和配置
   fetch_nodes_value

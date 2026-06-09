@@ -249,27 +249,42 @@ check_install() {
 
 # 为了适配 alpine，定义 cmd_systemctl 的函数
 cmd_systemctl() {
+  local _action=$1 _service=${2:-systemctl} _log_file _rc=0
+  _log_file=$(service_command_log_file "$_service" "$_action")
+  : > "$_log_file" 2>/dev/null || true
+
   nginx_run() {
-    $(command -v nginx) -c $WORK_DIR/nginx.conf
+    local _nginx_bin
+    _nginx_bin=$(command -v nginx) || return 1
+    "$_nginx_bin" -c "$WORK_DIR/nginx.conf" >> "$_log_file" 2>&1
   }
 
   nginx_stop() {
-    local NGINX_PID=$(ps -eo pid,args | awk -v work_dir="$WORK_DIR" '$0~(work_dir"/nginx.conf"){print $1;exit}')
-    ss -nltp | sed -n "/pid=$NGINX_PID,/ s/,/ /gp" | grep -oP 'pid=\K\S+' | sort -u | xargs kill -9 >/dev/null 2>&1
+    local NGINX_PID NGINX_LISTEN_PIDS
+    NGINX_PID=$(ps -eo pid,args | awk -v work_dir="$WORK_DIR" '$0~(work_dir"/nginx.conf"){print $1;exit}')
+    [ -n "$NGINX_PID" ] || return 0
+    NGINX_LISTEN_PIDS=$(ss -nltp | sed -n "/pid=$NGINX_PID,/ s/,/ /gp" | grep -oP 'pid=\K\S+' | sort -u)
+    [ -n "$NGINX_LISTEN_PIDS" ] || return 0
+    xargs kill -9 >> "$_log_file" 2>&1 <<< "$NGINX_LISTEN_PIDS"
   }
 
   if [ "$SYSTEM" = 'Alpine' ]; then
     case "$1" in
       enable )
-        rc-update add "$2" default >/dev/null 2>&1
-        rc-service "$2" start >/dev/null 2>&1
+        rc-update add "$2" default >> "$_log_file" 2>&1
+        _rc=$?
+        rc-service "$2" start >> "$_log_file" 2>&1 || _rc=$?
+        return "$_rc"
         ;;
       disable )
-        rc-service "$2" stop >/dev/null 2>&1
-        rc-update del "$2" default >/dev/null 2>&1
+        rc-service "$2" stop >> "$_log_file" 2>&1
+        _rc=$?
+        rc-update del "$2" default >> "$_log_file" 2>&1 || _rc=$?
+        return "$_rc"
         ;;
       restart )
-        rc-service "$2" restart >/dev/null 2>&1
+        rc-service "$2" restart >> "$_log_file" 2>&1
+        return $?
         ;;
       status )
         rc-service "$2" status
@@ -279,25 +294,31 @@ cmd_systemctl() {
     systemctl daemon-reload
     case "$1" in
       enable | disable )
-        systemctl "$1" --now "$2" >/dev/null 2>&1
+        systemctl "$1" --now "$2" >> "$_log_file" 2>&1
+        _rc=$?
         if [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s $WORK_DIR/nginx.conf ]; then
           if [ "$1" = 'enable' ]; then
-            nginx_run
+            nginx_run || _rc=$?
           else
-            nginx_stop
+            nginx_stop || _rc=$?
           fi
         fi
+        return "$_rc"
         ;;
       restart )
-        [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s $WORK_DIR/nginx.conf ] && nginx_stop
-        systemctl restart "$2" >/dev/null 2>&1
-        [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s $WORK_DIR/nginx.conf ] && nginx_run
+        [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s "$WORK_DIR/nginx.conf" ] && nginx_stop
+        systemctl restart "$2" >> "$_log_file" 2>&1
+        _rc=$?
+        if [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s "$WORK_DIR/nginx.conf" ]; then
+          nginx_run || _rc=$?
+        fi
+        return "$_rc"
         ;;
       status )
         systemctl is-active "$2"
         ;;
       * )
-        systemctl "$@" >/dev/null 2>&1
+        systemctl "$@" >> "$_log_file" 2>&1
         ;;
     esac
   fi

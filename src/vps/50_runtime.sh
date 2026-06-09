@@ -3,15 +3,16 @@ install_sing-box() {
   sing-box_variables
   hint "\n $(text 2) "
   wait
-  "$TEMP_DIR/sing-box" version >/dev/null 2>&1 || error "\n $(text 42) \n"
-  "$TEMP_DIR/jq" --version >/dev/null 2>&1 || error "\n jq download failed. \n"
-  [ "$IS_ARGO" != 'is_argo' ] || "$TEMP_DIR/cloudflared" -v >/dev/null 2>&1 || error "\n cloudflared download failed. \n"
+  verify_command_or_fail "\n $(text 42) \n" "Version: ${ONLINE:-unknown}
+Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-box" version
+  verify_command_or_fail "\n jq download failed. \n" "Architecture: ${JQ_ARCH:-unknown}" "$TEMP_DIR/jq" "$TEMP_DIR/jq" --version
+  [ "$IS_ARGO" != 'is_argo' ] || verify_command_or_fail "\n cloudflared download failed. \n" "Architecture: ${ARGO_ARCH:-unknown}" "$TEMP_DIR/cloudflared" "$TEMP_DIR/cloudflared" -v
 
   if [ -n "$PORT_NGINX" ] && ! command -v nginx >/dev/null 2>&1; then
     info "\n $(text 7) nginx \n"
     ${PACKAGE_UPDATE[int]} >/dev/null 2>&1
     ${PACKAGE_INSTALL[int]} nginx >/dev/null 2>&1
-    cmd_systemctl disable nginx
+    cmd_systemctl disable nginx || true
   fi
   [ ! -d ${WORK_DIR}/logs ] && mkdir -p ${WORK_DIR}/logs
   [ ! -d ${TEMP_DIR} ] && mkdir -p $TEMP_DIR
@@ -35,7 +36,7 @@ install_sing-box() {
   [ -n "$PORT_NGINX" ] && export_nginx_conf_file
 
   # 系统启动 sing-box 服务
-  cmd_systemctl enable sing-box
+  cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
 
   # 等待服务启动
   sleep 2
@@ -49,14 +50,12 @@ install_sing-box() {
     info "\n Sing-box $(text 28) $(text 37) \n"
   else
     STATUS[0]=$(text 27)
-    error "\n Sing-box $(text 27) $(text 38) \n"
-    # 如果启动失败，再尝试重启
-    cmd_systemctl restart sing-box
+    service_action_failed Sing-box sing-box enable
   fi
 
   # 如果配置了 Argo，也启动 Argo 服务
   if [ -s ${ARGO_DAEMON_FILE} ]; then
-    cmd_systemctl enable argo
+    cmd_systemctl enable argo || service_action_failed Argo argo enable
 
     sleep 2
 
@@ -66,9 +65,7 @@ install_sing-box() {
       info "\n Argo $(text 28) $(text 37) \n"
     else
       STATUS[1]=$(text 27)
-      error "\n Argo $(text 27) $(text 38) \n"
-      # 如果启动失败，再尝试重启
-      cmd_systemctl restart argo
+      service_action_failed Argo argo enable
     fi
   fi
 }
@@ -136,19 +133,26 @@ install_from_config_update() {
   wait
   check_cdn
   prepare_config_update_assets
-  "$TEMP_DIR/sing-box" version >/dev/null 2>&1 || error "\n $(text 42) \n"
-  "$TEMP_DIR/jq" --version >/dev/null 2>&1 || error "\n jq download failed. \n"
-  [ "$IS_ARGO" != 'is_argo' ] || "$TEMP_DIR/cloudflared" -v >/dev/null 2>&1 || error "\n cloudflared download failed. \n"
+  verify_command_or_fail "\n $(text 42) \n" "Version: ${ONLINE:-unknown}
+Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-box" version
+  verify_command_or_fail "\n jq download failed. \n" "Architecture: ${JQ_ARCH:-unknown}" "$TEMP_DIR/jq" "$TEMP_DIR/jq" --version
+  [ "$IS_ARGO" != 'is_argo' ] || verify_command_or_fail "\n cloudflared download failed. \n" "Architecture: ${ARGO_ARCH:-unknown}" "$TEMP_DIR/cloudflared" "$TEMP_DIR/cloudflared" -v
 
   if [ -n "$PORT_NGINX" ] && ! command -v nginx >/dev/null 2>&1; then
     info "\n $(text 7) nginx \n"
     ${PACKAGE_UPDATE[int]} >/dev/null 2>&1
     ${PACKAGE_INSTALL[int]} nginx >/dev/null 2>&1
-    cmd_systemctl disable nginx
+    cmd_systemctl disable nginx || true
   fi
 
-  cmd_systemctl disable argo >/dev/null 2>&1 || true
-  cmd_systemctl disable sing-box >/dev/null 2>&1 || true
+  if [ -s "$ARGO_DAEMON_FILE" ]; then
+    cmd_systemctl disable argo >/dev/null 2>&1 || service_action_failed Argo argo disable
+    cmd_systemctl status argo &>/dev/null && service_action_failed Argo argo disable
+  fi
+  if [ -s "$SINGBOX_DAEMON_FILE" ]; then
+    cmd_systemctl disable sing-box >/dev/null 2>&1 || service_action_failed Sing-box sing-box disable
+    cmd_systemctl status sing-box &>/dev/null && service_action_failed Sing-box sing-box disable
+  fi
 
   if [ -d "${WORK_DIR}/conf" ]; then
     mkdir -p "${WORK_DIR}/backup"
@@ -175,7 +179,7 @@ install_from_config_update() {
   [ -n "$ARGO_JSON" ] && cp $TEMP_DIR/tunnel.* ${WORK_DIR}
   [ -n "$PORT_NGINX" ] && export_nginx_conf_file
 
-  cmd_systemctl enable sing-box
+  cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
   sleep 2
   sync_firewall_rules
 
@@ -184,18 +188,18 @@ install_from_config_update() {
     info "\n Sing-box $(text 28) $(text 37) \n"
   else
     STATUS[0]=$(text 27)
-    error "\n Sing-box $(text 27) $(text 38) \n"
+    service_action_failed Sing-box sing-box enable
   fi
 
   if [ -s ${ARGO_DAEMON_FILE} ]; then
-    cmd_systemctl enable argo
+    cmd_systemctl enable argo || service_action_failed Argo argo enable
     sleep 2
     if cmd_systemctl status argo &>/dev/null; then
       STATUS[1]=$(text 28)
       info "\n Argo $(text 28) $(text 37) \n"
     else
       STATUS[1]=$(text 27)
-      error "\n Argo $(text 27) $(text 38) \n"
+      service_action_failed Argo argo enable
     fi
   fi
 }
@@ -1024,7 +1028,7 @@ change_start_port() {
   done
   [ "$CHANGE_HY2" = true ] && [ -n "$OLD_HOPPING_START" ] && [ -n "$OLD_HOPPING_END" ] && del_port_hopping_nat
 
-  cmd_systemctl disable sing-box
+  cmd_systemctl disable sing-box || service_action_failed Sing-box sing-box disable
   for _i in "${!NEW_PORTS[@]}"; do
     [ "${NEW_PORTS[_i]}" = "${OLD_PORTS[_i]}" ] && continue
     awk -v new_port="${NEW_PORTS[_i]}" '
@@ -1051,12 +1055,12 @@ change_start_port() {
       "${WORK_DIR}/nginx.conf" | sed -n '1p')
     export_nginx_conf_file
   fi
-  cmd_systemctl enable sing-box
+  cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
   sync_firewall_rules
   sleep 2
   export_list
-  cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 121) $(text 37) " || error " Sing-box $(text 121) $(text 38) "
+  cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 121) $(text 37) " || service_failure_error " Sing-box $(text 121) $(text 38) " sing-box enable
 }
 
 # 增加或删除协议
@@ -1397,7 +1401,7 @@ change_protocols() {
   validate_nginx_port
 
   # 停止 sing-box 服务
-  cmd_systemctl disable sing-box
+  cmd_systemctl disable sing-box || service_action_failed Sing-box sing-box disable
 
   # 关闭防火墙相关端口
 
@@ -1414,10 +1418,10 @@ change_protocols() {
   if ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1; then
     if [[ "$ARGO_OR_ORIGIN_RULES" != '2' && "$ARGO_ORIGIN_RULES_STATUS" != 'is_origin' && ! -s ${ARGO_DAEMON_FILE} ]]; then
       argo_systemd
-      cmd_systemctl enable argo >/dev/null 2>&1
+      cmd_systemctl enable argo >/dev/null 2>&1 || service_action_failed Argo argo enable
     fi
   elif [ -s ${ARGO_DAEMON_FILE} ]; then
-    cmd_systemctl disable argo >/dev/null 2>&1
+    cmd_systemctl disable argo >/dev/null 2>&1 || service_action_failed Argo argo disable
     rm -f ${ARGO_DAEMON_FILE}
     [ -s ${WORK_DIR}/tunnel.json ] && rm -f ${WORK_DIR}/tunnel.*
   fi
@@ -1426,7 +1430,7 @@ change_protocols() {
   ! ls ${ARGO_DAEMON_FILE} >/dev/null 2>&1 && [[ -s ${WORK_DIR}/nginx.conf && "$IS_SUB" = 'no_sub' ]] && IS_ARGO=no_argo && rm -f ${WORK_DIR}/nginx.conf
 
   # 运行 sing-box
-  cmd_systemctl enable sing-box
+  cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
 
   # 打开防火墙相关端口
   sync_firewall_rules
@@ -1438,11 +1442,10 @@ change_protocols() {
   check_install
   case "${STATUS[0]}" in
     "$(text 26)" )
-      error "\n Sing-box $(text 28) $(text 38) \n"
+      service_action_failed Sing-box sing-box enable
       ;;
     "$(text 27)" )
-      cmd_systemctl enable sing-box
-      cmd_systemctl status sing-box &>/dev/null && info "\n Sing-box $(text 28) $(text 37) \n" || error "\n Sing-box $(text 28) $(text 38) \n"
+      enable_service_or_fail Sing-box sing-box
       ;;
     "$(text 28)" )
       info "\n Sing-box $(text 28) $(text 37) \n"
@@ -1539,11 +1542,7 @@ protocol_restart_export() {
 
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
 
-  cmd_systemctl restart sing-box
-  sleep 2
-  cmd_systemctl status sing-box &>/dev/null && \
-    info "\n Sing-box $(text 28) $(text 37) \n" || \
-    warning "\n Sing-box $(text 27) $(text 38) \n"
+  restart_service_or_warn Sing-box sing-box || true
 
   export_list
   menu_pause
@@ -1926,8 +1925,8 @@ edit_nginx_port() {
   export_nginx_conf_file
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
   sync_firewall_rules
-  cmd_systemctl restart sing-box
-  [ -s "$ARGO_DAEMON_FILE" ] && cmd_systemctl restart argo
+  restart_service_or_fail Sing-box sing-box
+  [ -s "$ARGO_DAEMON_FILE" ] && restart_service_or_fail Argo argo
   export_list
   menu_pause
 }
@@ -1940,7 +1939,7 @@ restart_nginx_runtime() {
     local NGINX_PID
     NGINX_PID=$(ps -eo pid,args | awk -v work_dir="$WORK_DIR" '$0~(work_dir"/nginx.conf"){print $1;exit}')
     [ -n "$NGINX_PID" ] && kill "$NGINX_PID" >/dev/null 2>&1 || true
-    nginx -c "${WORK_DIR}/nginx.conf" >/dev/null 2>&1
+    nginx -c "${WORK_DIR}/nginx.conf" >/dev/null 2>&1 || service_action_failed Nginx nginx restart
   }
   info " Nginx restart $(text 37)"
   menu_pause
@@ -2212,12 +2211,9 @@ status_nodes_menu() {
 toggle_sing_box_service() {
   check_install
   if [ "${STATUS[0]}" = "$(text 28)" ]; then
-    cmd_systemctl disable sing-box
-    cmd_systemctl status sing-box &>/dev/null && error " Sing-box $(text 27) $(text 38) " || info " Sing-box $(text 27) $(text 37)"
+    disable_service_or_fail Sing-box sing-box
   else
-    cmd_systemctl enable sing-box
-    sleep 2
-    cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 28) $(text 37)" || error " Sing-box $(text 28) $(text 38) "
+    enable_service_or_fail Sing-box sing-box
   fi
   menu_pause
 }
@@ -2225,12 +2221,9 @@ toggle_sing_box_service() {
 toggle_argo_service() {
   check_install
   if [ "${STATUS[1]}" = "$(text 28)" ]; then
-    cmd_systemctl disable argo
-    cmd_systemctl status argo &>/dev/null && error " Argo $(text 27) $(text 38) " || info " Argo $(text 27) $(text 37)"
+    disable_service_or_fail Argo argo
   else
-    cmd_systemctl enable argo
-    sleep 2
-    cmd_systemctl status argo &>/dev/null &&  info " Argo $(text 28) $(text 37)" || error " Argo $(text 28) $(text 38) "
+    enable_service_or_fail Argo argo
     grep -Fqs -- '--url' "$ARGO_DAEMON_FILE" && fetch_quicktunnel_domain && export_list
   fi
   menu_pause
@@ -2252,13 +2245,19 @@ service_control_menu() {
     case "$CHOOSE" in
       0 ) return ;;
       1 ) toggle_sing_box_service ;;
-      2 ) cmd_systemctl restart sing-box; info " Sing-box restart $(text 37)"; menu_pause ;;
+      2 ) restart_service_or_fail Sing-box sing-box; menu_pause ;;
       3 ) toggle_argo_service ;;
-      4 ) cmd_systemctl restart argo; info " Argo restart $(text 37)"; menu_pause ;;
+      4 ) restart_service_or_fail Argo argo; menu_pause ;;
       5 ) restart_nginx_runtime ;;
       6 )
-        cmd_systemctl restart sing-box
-        [ -s "$ARGO_DAEMON_FILE" ] && cmd_systemctl restart argo
+        cmd_systemctl restart sing-box || service_action_failed Sing-box sing-box restart
+        sleep 2
+        cmd_systemctl status sing-box &>/dev/null || service_action_failed Sing-box sing-box restart
+        if [ -s "$ARGO_DAEMON_FILE" ]; then
+          cmd_systemctl restart argo || service_action_failed Argo argo restart
+          sleep 2
+          cmd_systemctl status argo &>/dev/null || service_action_failed Argo argo restart
+        fi
         info " $(menu_text '全部服务已重载' 'All services reloaded')"
         menu_pause
         ;;
@@ -2365,7 +2364,7 @@ version() {
     wget --no-check-certificate --continue ${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz -qO- | tar xz -C $TEMP_DIR sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box
 
     if [ -s $TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box ]; then
-      cmd_systemctl disable sing-box
+      cmd_systemctl disable sing-box || service_action_failed Sing-box sing-box disable
 
       # 备份旧版本
       cp ${WORK_DIR}/sing-box ${WORK_DIR}/sing-box.bak
@@ -2373,7 +2372,7 @@ version() {
 
       # 安装新版本
       chmod +x $TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box && mv $TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box ${WORK_DIR}/sing-box
-      cmd_systemctl enable sing-box
+      cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
       sleep 2
 
       # 检查新版本是否成功运行
@@ -2385,17 +2384,19 @@ version() {
         # 新版本运行失败，恢复旧版本
         warning "\n $(text 104) \n"
         mv ${WORK_DIR}/sing-box.bak ${WORK_DIR}/sing-box
-        cmd_systemctl enable sing-box
+        cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
         sleep 2
 
         if cmd_systemctl status sing-box &>/dev/null; then
           info "\n $(text 105) \n"
         else
-          error "\n $(text 106) \n"
+          service_failure_error "\n $(text 106) \n" sing-box enable
         fi
       fi
     else
-      error "\n $(text 42) "
+      failure_error "\n $(text 42) " "Version: ${ONLINE:-unknown}
+Architecture: ${SING_BOX_ARCH:-unknown}
+Expected file: ${TEMP_DIR}/sing-box-${ONLINE}-linux-${SING_BOX_ARCH}/sing-box"
     fi
   fi
 }

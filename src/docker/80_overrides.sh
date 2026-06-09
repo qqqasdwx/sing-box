@@ -114,7 +114,9 @@ docker_download_assets() {
   wget --no-check-certificate --continue \
     "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" \
     -qO- | tar xz -C "$TEMP_DIR"
-  [ -x "$SB_BIN" ] || error " sing-box download failed. "
+  [ -x "$SB_BIN" ] || failure_error " sing-box download failed. " "Version: ${ONLINE:-unknown}
+Architecture: ${SING_BOX_ARCH:-unknown}
+Expected file: ${SB_BIN}"
   mv "$SB_BIN" "$TEMP_DIR/sing-box"
   chmod +x "$TEMP_DIR/sing-box"
   rm -rf "$SB_DIR"
@@ -135,7 +137,14 @@ docker_download_assets() {
     [ -x "$TEMP_DIR/cloudflared" ] &&
     [ -s "$TEMP_DIR/clash" ] &&
     [ -s "$TEMP_DIR/clash2" ] &&
-    [ -s "$TEMP_DIR/sing-box-template" ] || error " Dependency download failed. "
+    [ -s "$TEMP_DIR/sing-box-template" ] || failure_error " Dependency download failed. " "Expected files:
+$TEMP_DIR/jq
+$TEMP_DIR/qrencode
+$TEMP_DIR/cloudflared
+$TEMP_DIR/clash
+$TEMP_DIR/clash2
+$TEMP_DIR/sing-box-template
+Architecture: jq=${JQ_ARCH:-unknown}, qrencode=${QRENCODE_ARCH:-unknown}, cloudflared=${ARGO_ARCH:-unknown}"
 }
 
 check_install() {
@@ -308,7 +317,9 @@ docker_update_sing_box() {
   wget --no-check-certificate --continue \
     "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" \
     -qO- | tar xz -C "$TEMP_DIR"
-  [ -x "$SB_BIN" ] || error " sing-box download failed. "
+  [ -x "$SB_BIN" ] || failure_error " sing-box download failed. " "Version: ${ONLINE:-unknown}
+Architecture: ${SING_BOX_ARCH:-unknown}
+Expected file: ${SB_BIN}"
 
   cp -f "${WORK_DIR}/sing-box" "$TEMP_DIR/sing-box.bak"
   mv "$SB_BIN" "${WORK_DIR}/sing-box"

@@ -54,12 +54,9 @@ for z in "${!ALL_PARAMETER[@]}"; do
       if [ "${STATUS[0]}" = "$(text 26)" ]; then
         error "\n Sing-box $(text 26) "
       elif [ "${STATUS[0]}" = "$(text 28)" ]; then
-        cmd_systemctl disable sing-box
-        cmd_systemctl status sing-box &>/dev/null && error " Sing-box $(text 27) $(text 38) " || info "\n Sing-box $(text 27) $(text 37)"
+        disable_service_or_fail Sing-box sing-box
       elif [ "${STATUS[0]}" = "$(text 27)" ]; then
-        cmd_systemctl enable sing-box
-        sleep 2
-        cmd_systemctl status sing-box &>/dev/null && info "\n Sing-box $(text 28) $(text 37)" || error "\n Sing-box $(text 28) $(text 38)"
+        enable_service_or_fail Sing-box sing-box
       fi
       exit 0
       ;;
@@ -68,12 +65,9 @@ for z in "${!ALL_PARAMETER[@]}"; do
       if [ "${STATUS[1]}" = "$(text 26)" ]; then
         error "\n Argo $(text 26) "
       elif [ "${STATUS[1]}" = "$(text 28)" ]; then
-        cmd_systemctl disable argo
-        cmd_systemctl status argo &>/dev/null && error " Argo $(text 27) $(text 38) " || info "\n Argo $(text 27) $(text 37)"
+        disable_service_or_fail Argo argo
       elif [ "${STATUS[1]}" = "$(text 27)" ]; then
-        cmd_systemctl enable argo
-        sleep 2
-        cmd_systemctl status argo &>/dev/null && info "\n Argo $(text 28) $(text 37)" || error "\n Argo $(text 28) $(text 38) "
+        enable_service_or_fail Argo argo
         grep -Fqs -- '--url' "$ARGO_DAEMON_FILE" && fetch_quicktunnel_domain && export_list
       fi
       exit 0
