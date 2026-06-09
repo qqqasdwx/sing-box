@@ -558,6 +558,7 @@ verify_command_or_fail() {
   local _message=$1 _detail=$2 _binary _output
   shift 2
   _binary=$1
+  shift
   _output=$("$@" 2>&1) && return 0
   failure_error "$_message" "${_detail}${_detail:+
 }Command: $*
