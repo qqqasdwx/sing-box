@@ -1559,34 +1559,6 @@ valid_uuid_or_error() {
   [[ "${1,,}" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$ ]] || error " $(text 4) "
 }
 
-reality_public_from_private() {
-  local PRIVATE_KEY=$1 B64 MOD PRIV_LEN PREFIX_HEX PRIV_HEX
-  [ -n "$PRIVATE_KEY" ] || return 1
-  [[ "$PRIVATE_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || return 1
-
-  if command -v xxd >/dev/null 2>&1; then
-    B64=$(printf '%s' "$PRIVATE_KEY" | tr '_-' '/+')
-    MOD=$(( ${#B64} % 4 ))
-    [ "$MOD" -eq 2 ] && B64="${B64}=="
-    [ "$MOD" -eq 3 ] && B64="${B64}="
-    [ "$MOD" -eq 1 ] && return 1
-
-    echo "$B64" | base64 -d > "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || return 1
-    PRIV_LEN=$(stat -c%s "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || stat -f%z "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null)
-    [ "$PRIV_LEN" = 32 ] || return 1
-
-    PREFIX_HEX="302e020100300506032b656e04220420"
-    PRIV_HEX=$(xxd -p -c 256 "${TEMP_DIR}/_X25519_PRIV_RAW" | tr -d '\n')
-    printf "%s%s" "$PREFIX_HEX" "$PRIV_HEX" | xxd -r -p > "${TEMP_DIR}/_X25519_PRIV_DER"
-    openssl pkcs8 -inform DER -in "${TEMP_DIR}/_X25519_PRIV_DER" -nocrypt -out "${TEMP_DIR}/_X25519_PRIV_PEM" 2>/dev/null || return 1
-    openssl pkey -in "${TEMP_DIR}/_X25519_PRIV_PEM" -pubout -outform DER > "${TEMP_DIR}/_X25519_PUB_DER" 2>/dev/null || return 1
-    tail -c 32 "${TEMP_DIR}/_X25519_PUB_DER" > "${TEMP_DIR}/_X25519_PUB_RAW"
-    base64 -w0 "${TEMP_DIR}/_X25519_PUB_RAW" | tr '+/' '-_' | sed -E 's/=+$//'
-  else
-    wget --no-check-certificate -qO- --tries=3 --timeout=2 "https://realitykey.cloudflare.now.cc/?privateKey=${PRIVATE_KEY}" | awk -F '"' '/publicKey/{print $4}'
-  fi
-}
-
 protocol_primary_secret() {
   local CODE=$1 NODE_IDX
   NODE_IDX=$(protocol_node_index_by_code "$CODE")
@@ -1673,7 +1645,7 @@ protocol_edit_reality_key() {
     NEW_PRIVATE=$(awk '/PrivateKey/{print $NF}' <<< "$KEYPAIR")
     NEW_PUBLIC=$(awk '/PublicKey/{print $NF}' <<< "$KEYPAIR")
   else
-    [[ "$NEW_PRIVATE" =~ ^[A-Za-z0-9_-]{43}$ ]] || error " $(text 101) "
+    valid_reality_private_format "$NEW_PRIVATE" || error " $(text 101) "
     NEW_PUBLIC=$(reality_public_from_private "$NEW_PRIVATE")
     [ -n "$NEW_PUBLIC" ] || error " $(text 116) "
   fi
