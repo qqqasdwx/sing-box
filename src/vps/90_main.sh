@@ -303,6 +303,12 @@ check_dependencies
 check_system_ip
 check_install
 if [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]; then
+  if [ "${STATUS[0]}" != "$(text 26)" ]; then
+    info "\n $(text 77) \n"
+    create_shortcut
+    exit 0
+  fi
+
   # 预设默认值，允许只传 --CHOOSE_PROTOCOLS 进行最小无交互安装。
   resolve_protocol_switch_mode
   CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
@@ -316,6 +322,12 @@ if [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]; then
   export_list install
   create_shortcut
 elif [ "$IS_FAST_INSTALL" = 'is_fast_install' ]; then
+  if [ "${STATUS[0]}" != "$(text 26)" ]; then
+    info "\n $(text 77) \n"
+    create_shortcut
+    exit 0
+  fi
+
   # 预设默认值
   resolve_protocol_switch_mode
   CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
