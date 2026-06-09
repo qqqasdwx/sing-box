@@ -530,10 +530,15 @@ protocol_switches_to_selection() {
 }
 
 resolve_protocol_switch_mode() {
+  local _selected
   case "${CHOOSE_PROTOCOLS,,}" in
     switch )
       CHOOSE_PROTOCOLS=$(protocol_switches_to_selection)
       [ -n "$CHOOSE_PROTOCOLS" ] || error " CHOOSE_PROTOCOLS=switch requires at least one protocol switch set to true. "
+      ;;
+    "" )
+      _selected=$(protocol_switches_to_selection)
+      [ -n "$_selected" ] && CHOOSE_PROTOCOLS=$_selected
       ;;
   esac
 }

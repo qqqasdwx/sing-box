@@ -20,8 +20,15 @@ if [[ -n "$CONFIG_FILE" && -s "$CONFIG_FILE" ]]; then
   NONINTERACTIVE_INSTALL=noninteractive_install
   . $CONFIG_FILE
   L=${LANGUAGE^^}
-  [ "$ARGO" = 'true' ] && IS_ARGO=is_argo || IS_ARGO=no_argo
-  [ "$SUBSCRIBE" = 'true' ] && IS_SUB=is_sub || IS_SUB=no_sub
+  [[ "$L" =~ ^E ]] && L=E || L=C
+  bool_enabled "${ARGO:-}" && IS_ARGO=is_argo || IS_ARGO=no_argo
+  bool_enabled "${SUBSCRIBE:-}" && IS_SUB=is_sub || IS_SUB=no_sub
+  bool_enabled "${HY2_REALM:-}" && IS_HY2_REALM=is_hy2_realm
+  bool_enabled "${REALM:-}" && IS_HY2_REALM=is_hy2_realm
+  bool_enabled "${HY2_WARP:-}" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
+  bool_enabled "${REALM_WARP:-}" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
+  bool_enabled "${WARP_REALM:-}" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
+  TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
 fi
 
 check_root
@@ -36,6 +43,15 @@ ALL_PARAMETER=($(sed -E 's/(-c|-e|-f|-C|-E|-F) //; s/=([^"])/ \1/g; s/sudo cloud
 # KV 参数安装：只要指定 --CHOOSE_PROTOCOLS，就认为用户要无交互安装。
 # 其余参数允许缺省，脚本会按交互模式默认值自动补齐。
 parameter_present --CHOOSE_PROTOCOLS "${ALL_PARAMETER[@]}" && NONINTERACTIVE_INSTALL=noninteractive_install
+for _protocol_switch in \
+  --XTLS_REALITY --HYSTERIA2 --TUIC --SHADOWTLS --SHADOWSOCKS --TROJAN \
+  --VMESS_WS --VLESS_WS --H2_REALITY --GRPC_REALITY --ANYTLS --NAIVE; do
+  if parameter_present "$_protocol_switch" "${ALL_PARAMETER[@]}"; then
+    NONINTERACTIVE_INSTALL=noninteractive_install
+    break
+  fi
+done
+unset _protocol_switch
 
 # 传参处理，无交互快速安装参数
 for z in "${!ALL_PARAMETER[@]}"; do
@@ -288,6 +304,7 @@ check_system_ip
 check_install
 if [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]; then
   # 预设默认值，允许只传 --CHOOSE_PROTOCOLS 进行最小无交互安装。
+  resolve_protocol_switch_mode
   CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
   START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
   CDN=${CDN:-"${CDN_DOMAIN[0]}"}
@@ -300,6 +317,7 @@ if [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]; then
   create_shortcut
 elif [ "$IS_FAST_INSTALL" = 'is_fast_install' ]; then
   # 预设默认值
+  resolve_protocol_switch_mode
   CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
   START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
   CDN=${CDN:-"${CDN_DOMAIN[0]}"}
