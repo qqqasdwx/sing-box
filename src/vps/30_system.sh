@@ -158,22 +158,22 @@ check_install() {
   if [ "$SYSTEM" = 'Alpine' ]; then
     if [ -s ${ARGO_DAEMON_FILE} ]; then
       local ARGO_CONTENT=$(grep '^command_args=' ${ARGO_DAEMON_FILE})
-      if grep -q '\--token' <<< "$ARGO_CONTENT"; then
+      if grep -Fq -- '--token' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_token_argo
-      elif grep -q '\--config' <<< "$ARGO_CONTENT"; then
+      elif grep -Fq -- '--config' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_json_argo
-      elif grep -q '\--url' <<< "$ARGO_CONTENT"; then
+      elif grep -Fq -- '--url' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_quicktunnel_argo
       fi
     fi
   else
     if [ -s ${ARGO_DAEMON_FILE} ]; then
       local ARGO_CONTENT=$(grep '^ExecStart' ${ARGO_DAEMON_FILE})
-      if grep -q '\--token' <<< "$ARGO_CONTENT"; then
+      if grep -Fq -- '--token' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_token_argo
-      elif grep -q '\--config' <<< "$ARGO_CONTENT"; then
+      elif grep -Fq -- '--config' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_json_argo
-      elif grep -q '\--url' <<< "$ARGO_CONTENT"; then
+      elif grep -Fq -- '--url' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_quicktunnel_argo
       fi
     fi

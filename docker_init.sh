@@ -753,7 +753,7 @@ check_chatgpt() {
   local CHECK_STACK=-$1
   local UA_BROWSER="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
   local UA_SEC_CH_UA='"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"'
-  wget --help | grep -q '\-\-ciphers' && local IS_CIPHERS=is_ciphers
+  wget --help | grep -Fq -- '--ciphers' && local IS_CIPHERS=is_ciphers
 
   # 首先检查API访问
   local CHECK_RESULT1=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} -qO- --content-on-error --header='authority: api.openai.com' --header='accept: */*' --header='accept-language: en-US,en;q=0.9' --header='authorization: Bearer null' --header='content-type: application/json' --header='origin: https://platform.openai.com' --header='referer: https://platform.openai.com/' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: empty' --header='sec-fetch-mode: cors' --header='sec-fetch-site: same-site' --user-agent="${UA_BROWSER}" 'https://api.openai.com/compliance/cookie_requirements')
@@ -2146,22 +2146,22 @@ check_install() {
   if [ "$SYSTEM" = 'Alpine' ]; then
     if [ -s ${ARGO_DAEMON_FILE} ]; then
       local ARGO_CONTENT=$(grep '^command_args=' ${ARGO_DAEMON_FILE})
-      if grep -q '\--token' <<< "$ARGO_CONTENT"; then
+      if grep -Fq -- '--token' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_token_argo
-      elif grep -q '\--config' <<< "$ARGO_CONTENT"; then
+      elif grep -Fq -- '--config' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_json_argo
-      elif grep -q '\--url' <<< "$ARGO_CONTENT"; then
+      elif grep -Fq -- '--url' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_quicktunnel_argo
       fi
     fi
   else
     if [ -s ${ARGO_DAEMON_FILE} ]; then
       local ARGO_CONTENT=$(grep '^ExecStart' ${ARGO_DAEMON_FILE})
-      if grep -q '\--token' <<< "$ARGO_CONTENT"; then
+      if grep -Fq -- '--token' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_token_argo
-      elif grep -q '\--config' <<< "$ARGO_CONTENT"; then
+      elif grep -Fq -- '--config' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_json_argo
-      elif grep -q '\--url' <<< "$ARGO_CONTENT"; then
+      elif grep -Fq -- '--url' <<< "$ARGO_CONTENT"; then
         ARGO_TYPE=is_quicktunnel_argo
       fi
     fi
@@ -4500,7 +4500,7 @@ fetch_nodes_value() {
   [[ -z "$NODE_NAME_CONFIRM" && -s ${WORK_DIR}/subscribe/clash ]] && NODE_NAME_CONFIRM=$(awk -F "'" '/u: &u/{print $2; exit}' ${WORK_DIR}/subscribe/clash)
 
   # 如有 Argo，获取 Argo Tunnel
-  [[ ${STATUS[1]} =~ $(text 27)|$(text 28) ]] && grep -q '\--url' ${ARGO_DAEMON_FILE} && { cmd_systemctl enable argo; sleep 2 && cmd_systemctl status argo &>/dev/null && fetch_quicktunnel_domain; }
+  [[ ${STATUS[1]} =~ $(text 27)|$(text 28) ]] && grep -Fq -- '--url' "$ARGO_DAEMON_FILE" && { cmd_systemctl enable argo; sleep 2 && cmd_systemctl status argo &>/dev/null && fetch_quicktunnel_domain; }
 
   # 获取 Nginx 端口和路径
   [[ "${IS_SUB}" = 'is_sub' || "${IS_ARGO}" = 'is_argo' ]] && local NGINX_JSON=$(cat ${WORK_DIR}/nginx.conf) &&
@@ -6782,7 +6782,7 @@ toggle_argo_service() {
     cmd_systemctl enable argo
     sleep 2
     cmd_systemctl status argo &>/dev/null &&  info " Argo $(text 28) $(text 37)" || error " Argo $(text 28) $(text 38) "
-    grep -qs '\--url' ${ARGO_DAEMON_FILE} && fetch_quicktunnel_domain && export_list
+    grep -Fqs -- '--url' "$ARGO_DAEMON_FILE" && fetch_quicktunnel_domain && export_list
   fi
   menu_pause
 }

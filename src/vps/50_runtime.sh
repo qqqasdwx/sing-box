@@ -2099,7 +2099,7 @@ toggle_argo_service() {
     cmd_systemctl enable argo
     sleep 2
     cmd_systemctl status argo &>/dev/null &&  info " Argo $(text 28) $(text 37)" || error " Argo $(text 28) $(text 38) "
-    grep -qs '\--url' ${ARGO_DAEMON_FILE} && fetch_quicktunnel_domain && export_list
+    grep -Fqs -- '--url' "$ARGO_DAEMON_FILE" && fetch_quicktunnel_domain && export_list
   fi
   menu_pause
 }
