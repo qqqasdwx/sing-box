@@ -506,10 +506,44 @@ array_contains_any() {
   return 1
 }
 
+bool_enabled() {
+  case "${1,,}" in
+    1|true|yes|y|on ) return 0 ;;
+    * ) return 1 ;;
+  esac
+}
+
+protocol_switches_to_selection() {
+  local _selected=''
+  bool_enabled "${XTLS_REALITY:-}" && _selected+='b'
+  bool_enabled "${HYSTERIA2:-}" && _selected+='c'
+  bool_enabled "${TUIC:-}" && _selected+='d'
+  bool_enabled "${SHADOWTLS:-}" && _selected+='e'
+  bool_enabled "${SHADOWSOCKS:-}" && _selected+='f'
+  bool_enabled "${TROJAN:-}" && _selected+='g'
+  bool_enabled "${VMESS_WS:-}" && _selected+='h'
+  bool_enabled "${VLESS_WS:-}" && _selected+='i'
+  bool_enabled "${H2_REALITY:-}" && _selected+='j'
+  bool_enabled "${GRPC_REALITY:-}" && _selected+='k'
+  bool_enabled "${ANYTLS:-}" && _selected+='l'
+  bool_enabled "${NAIVE:-}" && _selected+='m'
+  printf '%s' "$_selected"
+}
+
+resolve_protocol_switch_mode() {
+  case "${CHOOSE_PROTOCOLS,,}" in
+    switch )
+      CHOOSE_PROTOCOLS=$(protocol_switches_to_selection)
+      [ -n "$CHOOSE_PROTOCOLS" ] || error " CHOOSE_PROTOCOLS=switch requires at least one protocol switch set to true. "
+      ;;
+  esac
+}
+
 normalize_install_protocols() {
   local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _ord _protocol
   _max_code=$(asc "$_max_ord")
   INSTALL_PROTOCOLS=()
+  resolve_protocol_switch_mode
 
   if [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-${_max_code}] ]]; then
     for ((_ord=98; _ord<=_max_ord; _ord++)); do
@@ -7143,6 +7177,42 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --CHOOSE_PROTOCOLS )
       ((z++)); CHOOSE_PROTOCOLS=${ALL_PARAMETER[z]}
+      ;;
+    --XTLS_REALITY )
+      ((z++)); XTLS_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --HYSTERIA2 )
+      ((z++)); HYSTERIA2=${ALL_PARAMETER[z]}
+      ;;
+    --TUIC )
+      ((z++)); TUIC=${ALL_PARAMETER[z]}
+      ;;
+    --SHADOWTLS )
+      ((z++)); SHADOWTLS=${ALL_PARAMETER[z]}
+      ;;
+    --SHADOWSOCKS )
+      ((z++)); SHADOWSOCKS=${ALL_PARAMETER[z]}
+      ;;
+    --TROJAN )
+      ((z++)); TROJAN=${ALL_PARAMETER[z]}
+      ;;
+    --VMESS_WS )
+      ((z++)); VMESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --VLESS_WS )
+      ((z++)); VLESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --H2_REALITY )
+      ((z++)); H2_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --GRPC_REALITY )
+      ((z++)); GRPC_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --ANYTLS )
+      ((z++)); ANYTLS=${ALL_PARAMETER[z]}
+      ;;
+    --NAIVE )
+      ((z++)); NAIVE=${ALL_PARAMETER[z]}
       ;;
     --START_PORT )
       ((z++)); START_PORT=${ALL_PARAMETER[z]}

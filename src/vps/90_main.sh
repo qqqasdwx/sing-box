@@ -103,6 +103,42 @@ for z in "${!ALL_PARAMETER[@]}"; do
     --CHOOSE_PROTOCOLS )
       ((z++)); CHOOSE_PROTOCOLS=${ALL_PARAMETER[z]}
       ;;
+    --XTLS_REALITY )
+      ((z++)); XTLS_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --HYSTERIA2 )
+      ((z++)); HYSTERIA2=${ALL_PARAMETER[z]}
+      ;;
+    --TUIC )
+      ((z++)); TUIC=${ALL_PARAMETER[z]}
+      ;;
+    --SHADOWTLS )
+      ((z++)); SHADOWTLS=${ALL_PARAMETER[z]}
+      ;;
+    --SHADOWSOCKS )
+      ((z++)); SHADOWSOCKS=${ALL_PARAMETER[z]}
+      ;;
+    --TROJAN )
+      ((z++)); TROJAN=${ALL_PARAMETER[z]}
+      ;;
+    --VMESS_WS )
+      ((z++)); VMESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --VLESS_WS )
+      ((z++)); VLESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --H2_REALITY )
+      ((z++)); H2_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --GRPC_REALITY )
+      ((z++)); GRPC_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --ANYTLS )
+      ((z++)); ANYTLS=${ALL_PARAMETER[z]}
+      ;;
+    --NAIVE )
+      ((z++)); NAIVE=${ALL_PARAMETER[z]}
+      ;;
     --START_PORT )
       ((z++)); START_PORT=${ALL_PARAMETER[z]}
       ;;

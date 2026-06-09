@@ -127,10 +127,44 @@ array_contains_any() {
   return 1
 }
 
+bool_enabled() {
+  case "${1,,}" in
+    1|true|yes|y|on ) return 0 ;;
+    * ) return 1 ;;
+  esac
+}
+
+protocol_switches_to_selection() {
+  local _selected=''
+  bool_enabled "${XTLS_REALITY:-}" && _selected+='b'
+  bool_enabled "${HYSTERIA2:-}" && _selected+='c'
+  bool_enabled "${TUIC:-}" && _selected+='d'
+  bool_enabled "${SHADOWTLS:-}" && _selected+='e'
+  bool_enabled "${SHADOWSOCKS:-}" && _selected+='f'
+  bool_enabled "${TROJAN:-}" && _selected+='g'
+  bool_enabled "${VMESS_WS:-}" && _selected+='h'
+  bool_enabled "${VLESS_WS:-}" && _selected+='i'
+  bool_enabled "${H2_REALITY:-}" && _selected+='j'
+  bool_enabled "${GRPC_REALITY:-}" && _selected+='k'
+  bool_enabled "${ANYTLS:-}" && _selected+='l'
+  bool_enabled "${NAIVE:-}" && _selected+='m'
+  printf '%s' "$_selected"
+}
+
+resolve_protocol_switch_mode() {
+  case "${CHOOSE_PROTOCOLS,,}" in
+    switch )
+      CHOOSE_PROTOCOLS=$(protocol_switches_to_selection)
+      [ -n "$CHOOSE_PROTOCOLS" ] || error " CHOOSE_PROTOCOLS=switch requires at least one protocol switch set to true. "
+      ;;
+  esac
+}
+
 normalize_install_protocols() {
   local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _ord _protocol
   _max_code=$(asc "$_max_ord")
   INSTALL_PROTOCOLS=()
+  resolve_protocol_switch_mode
 
   if [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-${_max_code}] ]]; then
     for ((_ord=98; _ord<=_max_ord; _ord++)); do
