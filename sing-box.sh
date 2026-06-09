@@ -506,10 +506,49 @@ array_contains_any() {
   return 1
 }
 
+bool_enabled() {
+  case "${1,,}" in
+    1|true|yes|y|on ) return 0 ;;
+    * ) return 1 ;;
+  esac
+}
+
+protocol_switches_to_selection() {
+  local _selected=''
+  bool_enabled "${XTLS_REALITY:-}" && _selected+='b'
+  bool_enabled "${HYSTERIA2:-}" && _selected+='c'
+  bool_enabled "${TUIC:-}" && _selected+='d'
+  bool_enabled "${SHADOWTLS:-}" && _selected+='e'
+  bool_enabled "${SHADOWSOCKS:-}" && _selected+='f'
+  bool_enabled "${TROJAN:-}" && _selected+='g'
+  bool_enabled "${VMESS_WS:-}" && _selected+='h'
+  bool_enabled "${VLESS_WS:-}" && _selected+='i'
+  bool_enabled "${H2_REALITY:-}" && _selected+='j'
+  bool_enabled "${GRPC_REALITY:-}" && _selected+='k'
+  bool_enabled "${ANYTLS:-}" && _selected+='l'
+  bool_enabled "${NAIVE:-}" && _selected+='m'
+  printf '%s' "$_selected"
+}
+
+resolve_protocol_switch_mode() {
+  local _selected
+  case "${CHOOSE_PROTOCOLS,,}" in
+    switch )
+      CHOOSE_PROTOCOLS=$(protocol_switches_to_selection)
+      [ -n "$CHOOSE_PROTOCOLS" ] || error " CHOOSE_PROTOCOLS=switch requires at least one protocol switch set to true. "
+      ;;
+    "" )
+      _selected=$(protocol_switches_to_selection)
+      [ -n "$_selected" ] && CHOOSE_PROTOCOLS=$_selected
+      ;;
+  esac
+}
+
 normalize_install_protocols() {
   local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _ord _protocol
   _max_code=$(asc "$_max_ord")
   INSTALL_PROTOCOLS=()
+  resolve_protocol_switch_mode
 
   if [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-${_max_code}] ]]; then
     for ((_ord=98; _ord<=_max_ord; _ord++)); do
@@ -7061,8 +7100,15 @@ if [[ -n "$CONFIG_FILE" && -s "$CONFIG_FILE" ]]; then
   NONINTERACTIVE_INSTALL=noninteractive_install
   . $CONFIG_FILE
   L=${LANGUAGE^^}
-  [ "$ARGO" = 'true' ] && IS_ARGO=is_argo || IS_ARGO=no_argo
-  [ "$SUBSCRIBE" = 'true' ] && IS_SUB=is_sub || IS_SUB=no_sub
+  [[ "$L" =~ ^E ]] && L=E || L=C
+  bool_enabled "${ARGO:-}" && IS_ARGO=is_argo || IS_ARGO=no_argo
+  bool_enabled "${SUBSCRIBE:-}" && IS_SUB=is_sub || IS_SUB=no_sub
+  bool_enabled "${HY2_REALM:-}" && IS_HY2_REALM=is_hy2_realm
+  bool_enabled "${REALM:-}" && IS_HY2_REALM=is_hy2_realm
+  bool_enabled "${HY2_WARP:-}" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
+  bool_enabled "${REALM_WARP:-}" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
+  bool_enabled "${WARP_REALM:-}" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
+  TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
 fi
 
 check_root
@@ -7077,6 +7123,15 @@ ALL_PARAMETER=($(sed -E 's/(-c|-e|-f|-C|-E|-F) //; s/=([^"])/ \1/g; s/sudo cloud
 # KV 参数安装：只要指定 --CHOOSE_PROTOCOLS，就认为用户要无交互安装。
 # 其余参数允许缺省，脚本会按交互模式默认值自动补齐。
 parameter_present --CHOOSE_PROTOCOLS "${ALL_PARAMETER[@]}" && NONINTERACTIVE_INSTALL=noninteractive_install
+for _protocol_switch in \
+  --XTLS_REALITY --HYSTERIA2 --TUIC --SHADOWTLS --SHADOWSOCKS --TROJAN \
+  --VMESS_WS --VLESS_WS --H2_REALITY --GRPC_REALITY --ANYTLS --NAIVE; do
+  if parameter_present "$_protocol_switch" "${ALL_PARAMETER[@]}"; then
+    NONINTERACTIVE_INSTALL=noninteractive_install
+    break
+  fi
+done
+unset _protocol_switch
 
 # 传参处理，无交互快速安装参数
 for z in "${!ALL_PARAMETER[@]}"; do
@@ -7143,6 +7198,42 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --CHOOSE_PROTOCOLS )
       ((z++)); CHOOSE_PROTOCOLS=${ALL_PARAMETER[z]}
+      ;;
+    --XTLS_REALITY )
+      ((z++)); XTLS_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --HYSTERIA2 )
+      ((z++)); HYSTERIA2=${ALL_PARAMETER[z]}
+      ;;
+    --TUIC )
+      ((z++)); TUIC=${ALL_PARAMETER[z]}
+      ;;
+    --SHADOWTLS )
+      ((z++)); SHADOWTLS=${ALL_PARAMETER[z]}
+      ;;
+    --SHADOWSOCKS )
+      ((z++)); SHADOWSOCKS=${ALL_PARAMETER[z]}
+      ;;
+    --TROJAN )
+      ((z++)); TROJAN=${ALL_PARAMETER[z]}
+      ;;
+    --VMESS_WS )
+      ((z++)); VMESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --VLESS_WS )
+      ((z++)); VLESS_WS=${ALL_PARAMETER[z]}
+      ;;
+    --H2_REALITY )
+      ((z++)); H2_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --GRPC_REALITY )
+      ((z++)); GRPC_REALITY=${ALL_PARAMETER[z]}
+      ;;
+    --ANYTLS )
+      ((z++)); ANYTLS=${ALL_PARAMETER[z]}
+      ;;
+    --NAIVE )
+      ((z++)); NAIVE=${ALL_PARAMETER[z]}
       ;;
     --START_PORT )
       ((z++)); START_PORT=${ALL_PARAMETER[z]}
@@ -7293,6 +7384,7 @@ check_system_ip
 check_install
 if [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]; then
   # 预设默认值，允许只传 --CHOOSE_PROTOCOLS 进行最小无交互安装。
+  resolve_protocol_switch_mode
   CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
   START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
   CDN=${CDN:-"${CDN_DOMAIN[0]}"}
@@ -7305,6 +7397,7 @@ if [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]; then
   create_shortcut
 elif [ "$IS_FAST_INSTALL" = 'is_fast_install' ]; then
   # 预设默认值
+  resolve_protocol_switch_mode
   CHOOSE_PROTOCOLS=${CHOOSE_PROTOCOLS:-'a'}
   START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
   CDN=${CDN:-"${CDN_DOMAIN[0]}"}
