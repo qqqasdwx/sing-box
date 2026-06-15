@@ -1,3 +1,11 @@
+check_cdn
+statistics_of_run_times update sing-box.sh 2>/dev/null
+
+# 传参
+[[ "${*^^}" =~ '-E'|'-K' ]] && L=E
+[[ "${*^^}" =~ '-C'|'-B'|'-L' ]] && L=C
+# 支持在 select_language 前识别 --LANGUAGE，避免 KV 无交互安装仍弹出语言选择。
+
 for ((_param_i=1; _param_i<=$#; _param_i++)); do
   eval "_param_v=\${${_param_i}}"
   case "${_param_v^^}" in
@@ -10,12 +18,22 @@ for ((_param_i=1; _param_i<=$#; _param_i++)); do
       _param_lang="${_param_v#*=}"
       [[ "${_param_lang^^}" =~ ^C ]] && L=C || L=E
       ;;
+    -J|--JSON )
+      _param_n=$((_param_i+1))
+      eval "JSON_CONFIG_FILE=\${${_param_n}}"
+      ;;
+    --JSON=* )
+      JSON_CONFIG_FILE="${_param_v#*=}"
+      ;;
   esac
 done
 unset _param_i _param_v _param_n _param_lang
 
 # 获取 -F 参数的值
 CONFIG_FILE=$(awk '-F[ =]' 'tolower($1) ~ /^-f$/{print $2}' <<< "$*")
+if [ -z "$JSON_CONFIG_FILE" ]; then
+  JSON_CONFIG_FILE=$(awk '-F=' 'tolower($1) ~ /^--json$/{print $2}' <<< "$*")
+fi
 if [[ -n "$CONFIG_FILE" && -s "$CONFIG_FILE" ]]; then
   NONINTERACTIVE_INSTALL=noninteractive_install
   . $CONFIG_FILE
@@ -23,11 +41,20 @@ if [[ -n "$CONFIG_FILE" && -s "$CONFIG_FILE" ]]; then
   [ "$ARGO" = 'true' ] && IS_ARGO=is_argo || IS_ARGO=no_argo
   [ "$SUBSCRIBE" = 'true' ] && IS_SUB=is_sub || IS_SUB=no_sub
 fi
+if [ -n "$JSON_CONFIG_FILE" ]; then
+  NONINTERACTIVE_INSTALL=noninteractive_install
+  L=${L:-C}
+fi
 
 check_root
 select_language
 check_system_info
 check_brutal
+
+if [ -n "$JSON_CONFIG_FILE" ]; then
+  multi_install_from_json "$JSON_CONFIG_FILE"
+  exit 0
+fi
 
 # 可以是 Key Value 或者 Key=Value 的形式。传参时，
 # 传参处理1: 把所有的 = 变为空格，但保留 =" ，因为 Json TunnelSecret 是 =" 结尾的，如 {"AccountTag":"9cc9e3e4d8f29d2a02e297f14f20513a","TunnelSecret":"6AYfKBOoNlPiTAuWg64ZwujsNuERpWLm6pPJ2qpN8PM=","TunnelID":"1ac55430-f4dc-47d5-a850-bdce824c4101"}
@@ -86,7 +113,13 @@ for z in "${!ALL_PARAMETER[@]}"; do
       check_install; uninstall; exit 0
       ;;
     -N )
-      [ ! -s ${WORK_DIR}/list ] && error " Sing-box $(text 26) "; export_list; exit 0
+      [ ! -s ${WORK_DIR}/list ] && error " Sing-box $(text 26) "
+      if is_multi_subscription_install; then
+        cat "${WORK_DIR}/list"
+      else
+        export_list
+      fi
+      exit 0
       ;;
     -V )
       check_system_info; check_arch; version; exit 0
@@ -95,6 +128,7 @@ for z in "${!ALL_PARAMETER[@]}"; do
       bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit
       ;;
     -R )
+      require_not_multi_subscription_install
       change_protocols; exit 0
       ;;
     --LANGUAGE )

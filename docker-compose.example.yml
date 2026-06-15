@@ -12,6 +12,13 @@ services:
     restart: unless-stopped
     environment:
       # 全局选择
+      # 实验功能：多订阅 JSON 模式。仅建议在 feature/multi-subscriptions-json 分支镜像/脚本中使用。
+      # 取消下面两行注释，并挂载 ./config 到 /sing-box/config。
+      # 如果 ./config/config.json 不存在，容器会先生成空模板；编辑后重新启动容器。
+      # CONFIG_JSON: "/sing-box/config/config.json"
+      # CONFIG_DIR: "/sing-box/config"
+      #
+      # 环境变量模式：
       # 协议代码：a=全部；b=VLESS Reality；c=Hysteria2；d=Tuic V5；e=ShadowTLS；f=Shadowsocks；
       # g=Trojan；h=VMess WebSocket；i=VLESS WebSocket TLS；j=H2 Reality；k=gRPC Reality；l=AnyTLS；m=NaiveProxy。
       # 脚本默认值：不填写 CHOOSE_PROTOCOLS 且不启用单协议开关时为 a，即全部协议。
@@ -122,3 +129,6 @@ services:
       # NAIVE: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
       # PORT_NAIVE: "" # 可选：m 协议监听端口。脚本默认值：START_PORT + m 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_NAIVE: "" # 可选：单协议节点名。用户名和密码默认使用 UUID_CONFIRM。
+    # 多订阅 JSON 模式挂载示例：
+    # volumes:
+    #   - ./config:/sing-box/config

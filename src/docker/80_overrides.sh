@@ -98,6 +98,41 @@ docker_prepare_env() {
   fi
 }
 
+docker_config_path() {
+  if [ -n "${CONFIG_JSON:-}" ]; then
+    printf '%s' "$CONFIG_JSON"
+  elif [ -s "${WORK_DIR}/config.json" ]; then
+    printf '%s' "${WORK_DIR}/config.json"
+  elif [ -d "${CONFIG_DIR:-}" ]; then
+    printf '%s' "${CONFIG_DIR%/}/config.json"
+  elif [ -d "${WORK_DIR}/config" ]; then
+    printf '%s' "${WORK_DIR}/config/config.json"
+  else
+    printf '%s' "${WORK_DIR}/config.json"
+  fi
+}
+
+docker_has_config_input() {
+  [ -n "${CONFIG_JSON:-}" ] || [ -n "${CONFIG_DIR:-}" ] || [ -s "${WORK_DIR}/config.json" ] || [ -d "${WORK_DIR}/config" ]
+}
+
+docker_prepare_multi_env() {
+  L=${LANGUAGE:-${L:-C}}
+  [[ "${L^^}" =~ ^C ]] && L=C || L=E
+
+  SYSTEM='Alpine'
+  SYS='Alpine Docker'
+  int=0
+  PACKAGE_UPDATE=("apk update -f")
+  PACKAGE_INSTALL=("apk add --no-cache")
+  PACKAGE_UNINSTALL=("apk del -f")
+  ARGO_DAEMON_FILE='/etc/services.d/argo/run'
+  SINGBOX_DAEMON_FILE='/etc/services.d/sing-box/run'
+  IS_PREFER_GO=true
+  NONINTERACTIVE_INSTALL=noninteractive_install
+  START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
+}
+
 docker_download_assets() {
   mkdir -p "$TEMP_DIR" "$WORK_DIR"/{cert,conf,subscribe,logs}
   check_cdn
@@ -258,6 +293,19 @@ EOF
 }
 
 docker_install() {
+  if docker_has_config_input; then
+    local DOCKER_CONFIG_FILE
+    DOCKER_CONFIG_FILE=$(docker_config_path)
+    if [ ! -s "$DOCKER_CONFIG_FILE" ]; then
+      multi_write_default_config "$DOCKER_CONFIG_FILE"
+      info " Created default config: ${DOCKER_CONFIG_FILE}. Edit it and restart the container. "
+      rm -rf /etc/services.d/sing-box /etc/services.d/nginx /etc/services.d/argo
+      return 0
+    fi
+    multi_install_from_json "$DOCKER_CONFIG_FILE" docker
+    return 0
+  fi
+
   docker_prepare_env
   docker_download_assets
   check_brutal

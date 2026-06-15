@@ -32,6 +32,7 @@ check_install() {
   local PS_LIST=$(ps -eo pid,args | grep -E "$WORK_DIR.*([s]ing-box|[c]loudflared|[n]ginx)" | sed 's/^[ ]\+//g')
 
   [[ "$IS_SUB" = 'is_sub' || -s ${WORK_DIR}/subscribe/qr ]] && IS_SUB=is_sub || IS_SUB=no_sub
+  is_multi_subscription_install && IS_SUB=is_sub
   if ls ${WORK_DIR}/conf/*${NODE_TAG[1]}_inbounds.json >/dev/null 2>&1; then
     check_port_hopping_nat
     [ -n "$PORT_HOPPING_END" ] && IS_HOPPING=is_hopping || IS_HOPPING=no_hopping
@@ -1538,7 +1539,7 @@ http {
     server_name localhost;
 "
 
-  [[ -n "$PORT_VMESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
+  [[ -n "$PORT_VMESS_WS" && "$IS_ARGO" = 'is_argo' && "$IS_MULTI_SUBSCRIPTIONS" != 'is_multi_subscriptions' ]] && NGINX_CONF+="
     # 反代 sing-box vmess websocket
     location /${VMESS_NGINX_PATH} {
       if (\$http_upgrade != \"websocket\") {
@@ -1555,7 +1556,7 @@ http {
     }
 "
 
-  [[ -n "$PORT_VLESS_WS" && "$IS_ARGO" = 'is_argo' ]] && NGINX_CONF+="
+  [[ -n "$PORT_VLESS_WS" && "$IS_ARGO" = 'is_argo' && "$IS_MULTI_SUBSCRIPTIONS" != 'is_multi_subscriptions' ]] && NGINX_CONF+="
     # 反代 sing-box vless websocket
     location /${VLESS_NGINX_PATH} {
       if (\$http_upgrade != \"websocket\") {
@@ -1573,6 +1574,28 @@ http {
     }
 "
 
+  [ -n "${MULTI_NGINX_WS_LOCATIONS:-}" ] && NGINX_CONF+="$MULTI_NGINX_WS_LOCATIONS"
+
+  if [ "$IS_MULTI_SUBSCRIPTIONS" = 'is_multi_subscriptions' ]; then
+    NGINX_CONF+="
+    # 多订阅: 每个订阅 UUID 对应独立目录
+    location ~ ^/([0-9a-fA-F-]{36})/auto2 {
+      default_type 'text/plain; charset=utf-8';
+      alias ${WORK_DIR}/subscribe/\$1/\$path2;
+    }
+
+    location ~ ^/([0-9a-fA-F-]{36})/auto {
+      default_type 'text/plain; charset=utf-8';
+      alias ${WORK_DIR}/subscribe/\$1/\$path1;
+    }
+
+    location ~ ^/([0-9a-fA-F-]{36})/(.*) {
+      autoindex on;
+      default_type 'text/plain; charset=utf-8';
+      alias ${WORK_DIR}/subscribe/\$1/\$2;
+    }
+"
+  else
   [ "$IS_SUB" = 'is_sub' ] && NGINX_CONF+="
     # 来自 /auto2 的分流
     location ~ ^/${UUID_CONFIRM}/auto2 {
@@ -1593,6 +1616,7 @@ http {
       alias ${WORK_DIR}/subscribe/\$1;
     }
 "
+  fi
 
   NGINX_CONF+="  }
 }"

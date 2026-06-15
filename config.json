@@ -1,0 +1,41 @@
+{
+  "_comment": "Experimental multi-subscription JSON config. Strict JSON. Fields starting with _ are ignored by the installer.",
+  "global": {
+    "_comment": "language: c/e. server_ip can be empty for auto-detect.",
+    "language": "c",
+    "server_ip": "",
+    "nginx_port": 8899,
+    "tls_server": "addons.mozilla.org",
+    "dns_strategy": "prefer_ipv4",
+    "cdn": "skk.moe",
+    "argo": false,
+    "argo_domain": "",
+    "argo_auth": ""
+  },
+  "subscriptions": [],
+  "_example_subscriptions": [
+    {
+      "name": "订阅 A",
+      "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "nodes": [
+        {
+          "protocol": "hysteria2",
+          "port": 8801,
+          "name": "A-HY2-1",
+          "up_mbps": 200,
+          "down_mbps": 1000
+        },
+        {
+          "protocol": "hysteria2",
+          "port": 8802,
+          "name": "A-HY2-2"
+        },
+        {
+          "protocol": "vless-reality",
+          "port": 8803,
+          "name": "A-Reality"
+        }
+      ]
+    }
+  ]
+}

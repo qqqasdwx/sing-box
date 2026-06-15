@@ -51,6 +51,19 @@ wget -O config.conf https://raw.githubusercontent.com/qqqasdwx/sing-box/release/
 bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh) -f config.conf
 ```
 
+实验功能：多订阅 JSON 安装
+
+> 该能力仅保留在 `feature/multi-subscriptions-json` 实验分支中，不进入常规 release。它面向少数需要单实例承载多个独立订阅的场景；没有明确需求时建议继续使用默认单订阅模式。
+
+```sh
+wget -O config.json https://raw.githubusercontent.com/qqqasdwx/sing-box/release/config.json
+bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh) --json config.json
+```
+
+`config.json` 使用新的数据模型：`subscriptions[].uuid` 是订阅入口 UUID，`subscriptions[].nodes[]` 是该订阅独占的节点；节点未设置 `uuid` 时继承订阅 UUID。订阅路径为 `/<订阅UUID>/auto`、`/<订阅UUID>/auto2`、`/<订阅UUID>/clash`、`/<订阅UUID>/sing-box`、`/<订阅UUID>/v2rayn` 等。
+
+多订阅 JSON 支持裸机 VPS 和 Docker，支持 Argo，也支持同一订阅内重复添加同一种协议。修改多订阅配置时，裸机编辑 `/etc/sing-box/config.json` 后重新执行 `--json` 安装命令；Docker 编辑挂载的 `config.json` 后重启容器。多订阅安装后的 `sb -d` 旧菜单管理仍不适用，节点增删改以 JSON 为准。
+
 参数化安装示例：
 
 ```sh
@@ -83,6 +96,8 @@ docker pull ghcr.io/qqqasdwx/sing-box:latest
 
 Compose 示例见 [docker-compose.example.yml](docker-compose.example.yml)。示例文件列出了 Docker 支持的环境变量，并包含用临时镜像生成 `UUID_CONFIRM` 和 `REALITY_PRIVATE` 的命令。
 
+Docker 支持两种启动方式：不挂载配置时继续使用下面的环境变量模式；挂载 `config.json` 时走多订阅 JSON 模式。可用 `-e CONFIG_JSON=/sing-box/config/config.json -v /opt/sing-box:/sing-box/config` 指定配置文件，也可以直接挂载到 `/sing-box/config.json`。如果指定了配置入口但文件不存在，容器会先生成一份没有订阅和节点的默认 `config.json`，编辑后重启容器生效。
+
 最小示例：
 
 ```sh
@@ -93,6 +108,22 @@ docker run -d --name sing-box --network host --restart unless-stopped \
   -e SUBSCRIBE=true \
   -e NODE_NAME_CONFIRM=sing-box \
   -e NODE_NAME_HYSTERIA2=sing-box-hy2 \
+  ghcr.io/qqqasdwx/sing-box:latest
+```
+
+多订阅 JSON 示例：
+
+```sh
+mkdir -p /opt/sing-box
+docker run --rm \
+  -e CONFIG_JSON=/sing-box/config/config.json \
+  -v /opt/sing-box:/sing-box/config \
+  ghcr.io/qqqasdwx/sing-box:latest
+
+# 编辑 /opt/sing-box/config.json 后启动
+docker run -d --name sing-box --network host --restart unless-stopped \
+  -e CONFIG_JSON=/sing-box/config/config.json \
+  -v /opt/sing-box:/sing-box/config \
   ghcr.io/qqqasdwx/sing-box:latest
 ```
 

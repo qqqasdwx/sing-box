@@ -794,6 +794,7 @@ EOF
 
 # 更换各协议的监听端口
 change_start_port() {
+  require_not_multi_subscription_install
   local TARGET_CODE=${1:-}
   load_installed_protocol_ports
   [ "${#INSTALLED_PORT_VALUES[@]}" = 0 ] && error " $(text 110) "
@@ -927,6 +928,7 @@ change_start_port() {
 
 # 增加或删除协议
 change_protocols() {
+  require_not_multi_subscription_install
   check_install
   [ "${STATUS[0]}" = "$(text 26)" ] && error "\n Sing-box $(text 26) "
 
@@ -2015,6 +2017,7 @@ protocol_detail_menu() {
 }
 
 protocol_config_menu() {
+  require_not_multi_subscription_install
   local CHOOSE CODE IDX NODE_IDX STATUS_TEXT
   while true; do
     check_install
@@ -2128,6 +2131,7 @@ service_control_menu() {
 }
 
 global_config_menu() {
+  require_not_multi_subscription_install
   local CHOOSE
   while true; do
     hint "\n $(menu_text '全局配置' 'Global Configuration')\n"
@@ -2149,6 +2153,7 @@ global_config_menu() {
 }
 
 argo_cdn_subscribe_menu() {
+  require_not_multi_subscription_install
   local CHOOSE
   while true; do
     hint "\n $(menu_text 'Argo / CDN / 订阅' 'Argo / CDN / Subscribe')\n"
@@ -2369,11 +2374,3 @@ menu() {
     warning " $(text 36) [0-$((${#OPTION[*]}-1))] " && sleep 1 && menu
   fi
 }
-
-check_cdn
-statistics_of_run_times update sing-box.sh 2>/dev/null
-
-# 传参
-[[ "${*^^}" =~ '-E'|'-K' ]] && L=E
-[[ "${*^^}" =~ '-C'|'-B'|'-L' ]] && L=C
-# 支持在 select_language 前识别 --LANGUAGE，避免 KV 无交互安装仍弹出语言选择。

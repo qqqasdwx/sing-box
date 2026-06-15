@@ -26,6 +26,7 @@ release_files=(
   BEHAVIOR_DIFFS.md
   LICENSE
   config.conf
+  config.json
   force_version
 )
 

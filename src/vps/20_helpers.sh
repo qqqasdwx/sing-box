@@ -231,6 +231,14 @@ first_matching_file() {
   compgen -G "$1" | sed -n '1p'
 }
 
+is_multi_subscription_install() {
+  return 1
+}
+
+require_not_multi_subscription_install() {
+  return 0
+}
+
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
 check_cdn() {
   local PROXY CODE PID CMD
