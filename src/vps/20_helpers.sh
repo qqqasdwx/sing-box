@@ -899,12 +899,12 @@ config_argo_auth() {
     return
   fi
 
-  if [ -n "$ARGO_JSON" ]; then
+  if [ -n "${ARGO_AUTH:-}" ]; then
+    shell_quote "$ARGO_AUTH"
+  elif [ -n "$ARGO_JSON" ]; then
     shell_quote "$ARGO_JSON"
   elif [ -n "$ARGO_TOKEN" ]; then
     shell_quote "$ARGO_TOKEN"
-  elif [ -n "$ARGO_DOMAIN" ]; then
-    shell_quote "${ARGO_AUTH:-}"
   else
     shell_quote ''
   fi
