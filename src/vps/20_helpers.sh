@@ -937,7 +937,7 @@ config_state_set_line() {
           if (match($0, /[[:space:]]#[^#]*$/)) {
             comment = substr($0, RSTART)
           }
-          prefix = active == "true" ? "" : "# "
+          prefix = active == "true" ? "" : "#"
           print prefix var "=" value comment
           done = 1
           next
@@ -965,7 +965,7 @@ config_state_comment_line() {
         line = $0
         sub(/^[[:space:]]*/, "", line)
         sub(/^#[[:space:]]*/, "", line)
-        print "# " line
+        print "#" line
         done = 1
         next
       }
