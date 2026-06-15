@@ -8,24 +8,36 @@ This repository is a shell-script installer and Docker packaging project for sin
 - `src/docker/` contains Docker-specific modules that generate `docker_init.sh`, the container entrypoint.
 - `tools/bundle.sh` rebuilds root scripts; `tools/prepare-release.sh` creates the trimmed release tree.
 - `Dockerfile` builds the Alpine image and installs `s6-overlay` plus runtime dependencies.
+- `docker-compose.example.yml` is the Docker environment variable example; keep it aligned with Docker config changes.
 - `config.conf` is the key-value example for non-interactive installs.
 - `force_version` pins or overrides the sing-box version used by install flows.
-- `.github/workflows/` contains CI, release publishing, GHCR image build, and upstream watch workflows.
+- `CHANGELOG.md` records downstream user-facing and release-relevant changes.
+- `BEHAVIOR_DIFFS.md` records intentional behavior differences from upstream.
+- `UPSTREAM.md` records upstream tracking policy and the reviewed upstream commit.
+- `.shellcheckrc` is the current ShellCheck baseline for upstream-derived scripts.
+- `.github/workflows/` contains `bundle.yml` for bundle/syntax CI, `build.yml` for release/GHCR publishing, and `upstream-watch.yml` for upstream update issues.
 - `README.md` is the user-facing install and operations reference.
 
 Generated runtime files are not stored here. The VPS installer writes under `/etc/sing-box/`; the container writes under `/sing-box/`.
+The root `sing-box.sh` and `docker_init.sh` files are generated artifacts. For normal changes, edit `src/vps/` or `src/docker/`, then run `tools/bundle.sh`; do not hand-edit generated root scripts except for temporary investigation.
 
 ## Build, Test, and Development Commands
 
-- `bash -n sing-box.sh docker_init.sh` checks shell syntax without executing installer logic.
+- `bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh` checks shell syntax without executing installer logic.
 - `tools/bundle.sh --check` verifies generated root scripts match `src/`.
 - `tools/prepare-release.sh /tmp/sing-box-release` creates a local release tree.
-- `shellcheck sing-box.sh docker_init.sh` runs static analysis; use it before larger script changes when available.
-  ShellCheck can saturate this VM's CPU or memory and may freeze the machine on large generated scripts. When running it, prefer targeted files or small batches and monitor system resources while it runs.
+- Do not run ShellCheck over the generated large scripts (`sing-box.sh` or `docker_init.sh`) in this VM. It has repeatedly saturated CPU and caused machine freezes. If ShellCheck is needed, run it only on small, targeted source modules or tool scripts, for example `shellcheck src/vps/40_config.sh tools/bundle.sh`, and avoid broad globs or whole-repo scans.
 - `docker build -t sing-box:local .` builds a local test image from `Dockerfile`.
 - `docker run --rm --network host -e START_PORT=8800 -e SERVER_IP=127.0.0.1 sing-box:local` smoke-tests container startup. Add variables such as `-e XTLS_REALITY=true` when testing configs.
 
 Avoid running installer paths on a workstation unless you intend to modify system services, firewall rules, and `/etc/sing-box/`.
+
+## Documentation Sync
+
+- When adding, removing, or renaming configuration variables, update the relevant source module, `config.conf`, `README.md`, and `docker-compose.example.yml` together.
+- When changing user-visible behavior, release packaging, Docker behavior, or downstream-only behavior, update `CHANGELOG.md` and, when applicable, `BEHAVIOR_DIFFS.md`.
+- When reviewing or porting upstream changes from `fscarmen/sing-box`, update `UPSTREAM.md` with the reviewed upstream commit and keep intentional downstream differences documented in `BEHAVIOR_DIFFS.md`.
+- `tools/prepare-release.sh` currently publishes `sing-box.sh`, `docker_init.sh`, `Dockerfile`, `README.md`, `docker-compose.example.yml`, `CHANGELOG.md`, `BEHAVIOR_DIFFS.md`, `LICENSE`, `config.conf`, and `force_version`. `UPSTREAM.md` is maintainer-facing and is not included in the release tree.
 
 ## Coding Style & Naming Conventions
 
