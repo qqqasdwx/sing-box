@@ -3509,6 +3509,13 @@ sing-box_variables() {
     validate_nginx_port
   fi
 
+  # Argo 是订阅和 WebSocket 可复用的全局隧道，不依赖是否选择了 WS 协议。
+  if [ "$IS_ARGO" = 'is_argo' ]; then
+    (( STEP_NUM++ )) || true
+    input_argo_auth is_install
+    [ -n "$ARGO_RUNS" ] && local ARGO_READY=argo_ready
+  fi
+
   # 输入服务器 IP,默认为检测到的服务器 IP，如果全部为空，则提示并退出脚本
   if [ "$IS_FAST_INSTALL" = 'is_fast_install' ]; then
     grep -q '^$' <<< "$SERVER_IP" && grep -q '.' <<< "$WAN4" && SERVER_IP=$WAN4
@@ -3577,13 +3584,7 @@ sing-box_variables() {
 
   # 如选择有 h. vmess + ws 或 i. vless + ws 时，先检测是否有支持的 http 端口可用，如有则要求输入域名和 cdn
   if array_contains h "${INSTALL_PROTOCOLS[@]}"; then
-    if [ "$IS_ARGO" = 'is_argo' ]; then
-      if [ "$ARGO_READY" != 'argo_ready' ]; then
-        (( STEP_NUM++ )) || true
-        input_argo_auth is_install
-      fi
-      local ARGO_READY=argo_ready
-    else
+    if [ "$IS_ARGO" != 'is_argo' ]; then
       local DOMAIN_ERROR_TIME=5
       until [ -n "$VMESS_HOST_DOMAIN" ]; do
         (( DOMAIN_ERROR_TIME-- )) || true
@@ -3593,13 +3594,7 @@ sing-box_variables() {
   fi
 
   if array_contains i "${INSTALL_PROTOCOLS[@]}"; then
-    if [ "$IS_ARGO" = 'is_argo' ]; then
-      if [ "$ARGO_READY" != 'argo_ready' ]; then
-        (( STEP_NUM++ )) || true
-        input_argo_auth is_install
-      fi
-      local ARGO_READY=argo_ready
-    else
+    if [ "$IS_ARGO" != 'is_argo' ]; then
       local DOMAIN_ERROR_TIME=5
       until [ -n "$VLESS_HOST_DOMAIN" ]; do
         (( DOMAIN_ERROR_TIME-- )) || true
@@ -3609,7 +3604,7 @@ sing-box_variables() {
   fi
 
   # 选择或者输入 cdn
-  if [[ -z "$CDN" && -n "${VMESS_HOST_DOMAIN}${VLESS_HOST_DOMAIN}${ARGO_READY}" ]]; then
+  if [[ -z "$CDN" ]] && array_contains_any INSTALL_PROTOCOLS h i; then
     (( STEP_NUM++ )) || true
     input_cdn
   fi
@@ -5763,11 +5758,11 @@ export_list() {
     SERVER_IP_2="$SERVER_IP"
   fi
 
-  # 使用 Argo 时，获取临时隧道域名
-  ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && [ "$IS_ARGO" = 'is_argo' ] && [ -z "$ARGO_DOMAIN" ] && [[ "${STATUS[1]}" = "$(text 28)" || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && fetch_quicktunnel_domain
+  # 使用 Argo 时，获取临时隧道域名。Argo 是全局隧道，可能只用于订阅而没有 WS 协议。
+  [ "$IS_ARGO" = 'is_argo' ] && [ -z "$ARGO_DOMAIN" ] && [[ "${STATUS[1]}" = "$(text 28)" || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && fetch_quicktunnel_domain
 
-  # 如果使用 Json 或者 Token Argo，则使用加密的而且是固定的 Argo 隧道域名，否则使用 IP:PORT 的 http 服务
-  [[ "$ARGO_TYPE" = 'is_token_argo' || "$ARGO_TYPE" = 'is_json_argo' ]] && SUBSCRIBE_ADDRESS="https://$ARGO_DOMAIN" || SUBSCRIBE_ADDRESS="http://${SERVER_IP_1}:${PORT_NGINX}"
+  # 启用 Argo 后订阅通过 Argo 域名导出；未启用时使用 IP:PORT 的 http 服务。
+  [ "$IS_ARGO" = 'is_argo' ] && [ -n "$ARGO_DOMAIN" ] && SUBSCRIBE_ADDRESS="https://$ARGO_DOMAIN" || SUBSCRIBE_ADDRESS="http://${SERVER_IP_1}:${PORT_NGINX}"
 
   # v1.3.0 (2025.11.10)及之后 reality 使用 xtls-rprx-vision 流控替代多路复用 multiplex，但为了兼容旧版本已安装的客户端 URI，在这里作判断
   if [ -n "$PORT_XTLS_REALITY" ]; then
