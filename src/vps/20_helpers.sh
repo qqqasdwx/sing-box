@@ -922,185 +922,216 @@ config_ws_host_domain() {
   fi
 }
 
+config_state_set_line() {
+  local _file=$1 _var=$2 _value=$3 _active=${4:-true}
+  local _tmp
+
+  if grep -Eq "^[[:space:]]*#?[[:space:]]*${_var}[[:space:]]*=" "$_file"; then
+    _tmp=$(mktemp "${_file}.line.XXXXXX") || error " Cannot create temporary config file. "
+    awk -v var="$_var" -v value="$_value" -v active="$_active" '
+      BEGIN { done = 0 }
+      !done {
+        pattern = "^[[:space:]]*#?[[:space:]]*" var "[[:space:]]*="
+        if ($0 ~ pattern) {
+          comment = ""
+          if (match($0, /[[:space:]]#[^#]*$/)) {
+            comment = substr($0, RSTART)
+          }
+          prefix = active == "true" ? "" : "# "
+          print prefix var "=" value comment
+          done = 1
+          next
+        }
+      }
+      { print }
+    ' "$_file" > "$_tmp" || { rm -f "$_tmp"; error " Failed to update config variable: $_var "; }
+    cat "$_tmp" > "$_file" || { rm -f "$_tmp"; error " Failed to write config file: $_file "; }
+    rm -f "$_tmp"
+  elif [ "$_active" = true ]; then
+    printf '\n%s=%s\n' "$_var" "$_value" >> "$_file" || error " Failed to write config variable: $_var "
+  fi
+}
+
+config_state_comment_line() {
+  local _file=$1 _var=$2 _tmp
+  grep -Eq "^[[:space:]]*#?[[:space:]]*${_var}[[:space:]]*=" "$_file" || return 0
+
+  _tmp=$(mktemp "${_file}.line.XXXXXX") || error " Cannot create temporary config file. "
+  awk -v var="$_var" '
+    BEGIN { done = 0 }
+    !done {
+      pattern = "^[[:space:]]*#?[[:space:]]*" var "[[:space:]]*="
+      if ($0 ~ pattern) {
+        line = $0
+        sub(/^[[:space:]]*/, "", line)
+        sub(/^#[[:space:]]*/, "", line)
+        print "# " line
+        done = 1
+        next
+      }
+    }
+    { print }
+  ' "$_file" > "$_tmp" || { rm -f "$_tmp"; error " Failed to update config variable: $_var "; }
+  cat "$_tmp" > "$_file" || { rm -f "$_tmp"; error " Failed to write config file: $_file "; }
+  rm -f "$_tmp"
+}
+
+config_state_set_optional() {
+  local _file=$1 _var=$2 _value=$3 _active=${4:-false}
+  if [ "$_active" != true ]; then
+    config_state_comment_line "$_file" "$_var"
+    return
+  fi
+  config_state_set_line "$_file" "$_var" "$_value" "$_active"
+}
+
+config_state_set_bool() {
+  local _file=$1 _var=$2 _value _active=false
+  _value=$(config_bool "$_var")
+  if [ "$_value" != "'true'" ]; then
+    config_state_comment_line "$_file" "$_var"
+    return
+  fi
+  _active=true
+  config_state_set_line "$_file" "$_var" "$_value" "$_active"
+}
+
 write_config_state_file() {
   [ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ] || return
   [ -n "$CONFIG_FILE" ] || return
 
   local _target=$CONFIG_FILE
-  local _dir _base _backup _tmp _selected
+  local _dir _base _backup _tmp _active _value
+  local _has_reality=false _has_xtls=false _has_hy2=false _has_tuic=false _has_shadowtls=false _has_shadowsocks=false _has_trojan=false
+  local _has_vmess_ws=false _has_vless_ws=false _has_ws=false _has_h2=false _has_grpc=false _has_anytls=false _has_naive=false
   _dir=$(dirname "$_target")
   _base=$(basename "$_target")
   [ -d "$_dir" ] || error " Config directory does not exist: $_dir "
+  [ -e "$_target" ] || error " Config file does not exist: $_target "
 
   _backup="${_target}.bak.$(date +%Y%m%d%H%M%S)"
-  [ -e "$_target" ] && cp -p "$_target" "$_backup"
+  cp -p "$_target" "$_backup"
   _tmp=$(mktemp "${_dir}/.${_base}.tmp.XXXXXX") || error " Cannot create temporary config file. "
+  cp -p "$_target" "$_tmp" || { rm -f "$_tmp"; error " Failed to prepare config file: $_target "; }
 
-  _selected=$(printf '%s' "${INSTALL_PROTOCOLS[*]}" | tr -d ' ')
+  array_contains b "${INSTALL_PROTOCOLS[@]}" && _has_xtls=true
+  array_contains_any INSTALL_PROTOCOLS b j k && _has_reality=true
+  array_contains c "${INSTALL_PROTOCOLS[@]}" && _has_hy2=true
+  array_contains d "${INSTALL_PROTOCOLS[@]}" && _has_tuic=true
+  array_contains e "${INSTALL_PROTOCOLS[@]}" && _has_shadowtls=true
+  array_contains f "${INSTALL_PROTOCOLS[@]}" && _has_shadowsocks=true
+  array_contains g "${INSTALL_PROTOCOLS[@]}" && _has_trojan=true
+  array_contains h "${INSTALL_PROTOCOLS[@]}" && _has_vmess_ws=true
+  array_contains i "${INSTALL_PROTOCOLS[@]}" && _has_vless_ws=true
+  [[ "$_has_vmess_ws" = true || "$_has_vless_ws" = true ]] && _has_ws=true
+  array_contains j "${INSTALL_PROTOCOLS[@]}" && _has_h2=true
+  array_contains k "${INSTALL_PROTOCOLS[@]}" && _has_grpc=true
+  array_contains l "${INSTALL_PROTOCOLS[@]}" && _has_anytls=true
+  array_contains m "${INSTALL_PROTOCOLS[@]}" && _has_naive=true
 
-  cat > "$_tmp" << EOF
-# 使用说明 / Usage:
-# 1. 此文件可作为 -f 的可复用状态文件；安装或更新成功后，脚本会备份并回写实际值。
-#    This file can be reused with -f. After a successful install/update, the script backs it up and writes actual values back.
-# 2. 回写会标准化为本项目模板样式，不保留原文件排版或注释。
-#    The write-back uses this project's template layout and does not preserve custom formatting or comments.
-# 3. 脚本不会修改此文件权限；其中包含 UUID、Reality 私钥、协议密码、Argo 认证等敏感值，请自行保护权限。
-#    The script does not change this file's permissions. It contains sensitive values; protect it yourself.
-# 4. 执行安装或更新 / Run install or update:
-#    bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh) -f ${_base}
+  config_state_set_line "$_tmp" CHOOSE_PROTOCOLS "$(shell_quote switch)" true
 
-# 说明 / Notes:
-# - CHOOSE_PROTOCOLS='switch' 时，会按下方单协议开关生成协议列表；至少启用一个协议。
-#   With CHOOSE_PROTOCOLS='switch', protocols are selected from the per-protocol switches below.
-# - 当前实际协议组合为：${_selected:-none}
-#   Current resolved protocol selection: ${_selected:-none}
-# - 布尔值支持 true/1/y/yes/on；未填写或注释表示 false，除非注释里另有默认值说明。
-#   Boolean true values: true/1/y/yes/on. Commented or empty means false unless documented otherwise.
+  config_state_set_line "$_tmp" LANGUAGE "$(shell_quote "${L,,}")" true
+  config_state_set_line "$_tmp" START_PORT "$(config_value START_PORT "$START_PORT_DEFAULT")" true
+  config_state_set_line "$_tmp" LOG_LEVEL "$(config_value LOG_LEVEL "$LOG_LEVEL_DEFAULT")" true
+  config_state_set_line "$_tmp" NTP_ENABLED "$(config_value NTP_ENABLED "$NTP_ENABLED_DEFAULT")" true
+  config_state_set_line "$_tmp" NTP_SERVER "$(config_value NTP_SERVER "$NTP_SERVER_DEFAULT")" true
+  config_state_set_line "$_tmp" NTP_SERVER_PORT "$(config_value NTP_SERVER_PORT "$NTP_SERVER_PORT_DEFAULT")" true
+  config_state_set_line "$_tmp" NTP_INTERVAL "$(config_value NTP_INTERVAL "$NTP_INTERVAL_DEFAULT")" true
+  _active=false; [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]] && _active=true
+  config_state_set_optional "$_tmp" PORT_NGINX "$(config_value PORT_NGINX)" "$_active"
+  config_state_set_line "$_tmp" SERVER_IP "$(config_value SERVER_IP)" true
+  config_state_set_line "$_tmp" TLS_SERVER "$(shell_quote "${TLS_SERVER:-$TLS_SERVER_DEFAULT}")" true
+  config_state_set_line "$_tmp" NODE_NAME_CONFIRM "$(config_value NODE_NAME_CONFIRM)" true
 
+  config_state_set_line "$_tmp" UUID_CONFIRM "$(config_value UUID_CONFIRM)" true
 
-# 全局选择 / Global Selection
+  config_state_set_bool "$_tmp" SUBSCRIBE
+  config_state_set_bool "$_tmp" ARGO
+  _active=false; [[ "$IS_ARGO" = 'is_argo' && -n "${ARGO_DOMAIN:-}" && ! "$ARGO_DOMAIN" =~ trycloudflare\.com$ ]] && _active=true
+  config_state_set_optional "$_tmp" ARGO_DOMAIN "$(config_argo_domain)" "$_active"
+  _value=$(config_argo_auth)
+  _active=false; [[ "$IS_ARGO" = 'is_argo' && "$_value" != "''" ]] && _active=true
+  config_state_set_optional "$_tmp" ARGO_AUTH "$_value" "$_active"
+  config_state_set_optional "$_tmp" CDN "$(shell_quote "${CDN[17]:-${CDN[18]:-${CDN:-${CDN_DOMAIN[0]}}}}")" "$_has_ws"
+  _value=$(shell_quote "${CDN_PORT[17]:-${CDN_PORT[18]:-${CDN_PORT:-}}}")
+  _active=false; [[ "$_has_ws" = true && "$_value" != "''" ]] && _active=true
+  config_state_set_optional "$_tmp" CDN_PORT "$_value" "$_active"
 
-CHOOSE_PROTOCOLS='switch'
+  config_state_set_optional "$_tmp" REALITY_PRIVATE "$(config_reality_private)" "$_has_reality"
 
+  config_state_set_bool "$_tmp" XTLS_REALITY
+  config_state_set_optional "$_tmp" PORT_XTLS_REALITY "$(config_value PORT_XTLS_REALITY)" "$_has_xtls"
+  config_state_set_optional "$_tmp" NODE_NAME_XTLS_REALITY "$(config_node_name 11)" "$_has_xtls"
 
-# 全局基础项 / Global Basics
+  config_state_set_bool "$_tmp" HYSTERIA2
+  config_state_set_optional "$_tmp" PORT_HYSTERIA2 "$(config_value PORT_HYSTERIA2)" "$_has_hy2"
+  config_state_set_optional "$_tmp" NODE_NAME_HYSTERIA2 "$(config_node_name 12)" "$_has_hy2"
+  _value=$(config_value HY2_PORT_HOPPING_RANGE)
+  _active=false; [[ "$_has_hy2" = true && "$_value" != "''" ]] && _active=true
+  config_state_set_optional "$_tmp" HY2_PORT_HOPPING_RANGE "$_value" "$_active"
+  config_state_set_bool "$_tmp" HY2_REALM
+  config_state_set_line "$_tmp" REALM "$(shell_quote false)" false
+  config_state_set_bool "$_tmp" HY2_WARP
+  config_state_set_line "$_tmp" REALM_WARP "$(shell_quote false)" false
+  config_state_set_line "$_tmp" WARP_REALM "$(shell_quote false)" false
+  _active=false; [[ "$_has_hy2" = true && "$IS_HY2_REALM" = 'is_hy2_realm' ]] && _active=true
+  config_state_set_optional "$_tmp" HY2_REALM_ID "$(config_value HY2_REALM_ID)" "$_active"
+  config_state_set_optional "$_tmp" HY2_UP "$(config_value HY2_UP 200)" "$_has_hy2"
+  config_state_set_optional "$_tmp" HY2_DOWN "$(config_value HY2_DOWN 1000)" "$_has_hy2"
 
-LANGUAGE=$(shell_quote "${L,,}")
-START_PORT=$(config_value START_PORT "$START_PORT_DEFAULT")
-LOG_LEVEL=$(config_value LOG_LEVEL "$LOG_LEVEL_DEFAULT")
-NTP_ENABLED=$(config_value NTP_ENABLED "$NTP_ENABLED_DEFAULT")
-NTP_SERVER=$(config_value NTP_SERVER "$NTP_SERVER_DEFAULT")
-NTP_SERVER_PORT=$(config_value NTP_SERVER_PORT "$NTP_SERVER_PORT_DEFAULT")
-NTP_INTERVAL=$(config_value NTP_INTERVAL "$NTP_INTERVAL_DEFAULT")
-PORT_NGINX=$(config_value PORT_NGINX)
-SERVER_IP=$(config_value SERVER_IP)
-TLS_SERVER=$(shell_quote "${TLS_SERVER:-$TLS_SERVER_DEFAULT}")
-NODE_NAME_CONFIRM=$(config_value NODE_NAME_CONFIRM)
+  config_state_set_bool "$_tmp" TUIC
+  config_state_set_optional "$_tmp" PORT_TUIC "$(config_value PORT_TUIC)" "$_has_tuic"
+  config_state_set_optional "$_tmp" NODE_NAME_TUIC "$(config_node_name 13)" "$_has_tuic"
+  config_state_set_optional "$_tmp" TUIC_PASSWORD "$(config_value TUIC_PASSWORD)" "$_has_tuic"
+  config_state_set_optional "$_tmp" TUIC_CONGESTION_CONTROL "$(config_value TUIC_CONGESTION_CONTROL bbr)" "$_has_tuic"
 
+  config_state_set_bool "$_tmp" SHADOWTLS
+  config_state_set_optional "$_tmp" PORT_SHADOWTLS "$(config_value PORT_SHADOWTLS)" "$_has_shadowtls"
+  config_state_set_optional "$_tmp" NODE_NAME_SHADOWTLS "$(config_node_name 14)" "$_has_shadowtls"
+  config_state_set_optional "$_tmp" SHADOWTLS_PASSWORD "$(config_value SHADOWTLS_PASSWORD)" "$_has_shadowtls"
+  config_state_set_optional "$_tmp" SHADOWTLS_METHOD "$(config_value SHADOWTLS_METHOD 2022-blake3-aes-128-gcm)" "$_has_shadowtls"
 
-# 全局身份凭据 / Global Identity
+  config_state_set_bool "$_tmp" SHADOWSOCKS
+  config_state_set_optional "$_tmp" PORT_SHADOWSOCKS "$(config_value PORT_SHADOWSOCKS)" "$_has_shadowsocks"
+  config_state_set_optional "$_tmp" NODE_NAME_SHADOWSOCKS "$(config_node_name 15)" "$_has_shadowsocks"
+  config_state_set_optional "$_tmp" SHADOWSOCKS_PASSWORD "$(config_value SHADOWSOCKS_PASSWORD)" "$_has_shadowsocks"
+  config_state_set_optional "$_tmp" SHADOWSOCKS_METHOD "$(config_value SHADOWSOCKS_METHOD 2022-blake3-aes-128-gcm)" "$_has_shadowsocks"
 
-UUID_CONFIRM=$(config_value UUID_CONFIRM)
+  config_state_set_bool "$_tmp" TROJAN
+  config_state_set_optional "$_tmp" PORT_TROJAN "$(config_value PORT_TROJAN)" "$_has_trojan"
+  config_state_set_optional "$_tmp" NODE_NAME_TROJAN "$(config_node_name 16)" "$_has_trojan"
+  config_state_set_optional "$_tmp" TROJAN_PASSWORD "$(config_value TROJAN_PASSWORD)" "$_has_trojan"
 
+  config_state_set_bool "$_tmp" VMESS_WS
+  config_state_set_optional "$_tmp" PORT_VMESS_WS "$(config_value PORT_VMESS_WS)" "$_has_vmess_ws"
+  config_state_set_optional "$_tmp" NODE_NAME_VMESS_WS "$(config_node_name 17)" "$_has_vmess_ws"
+  _active=false; [[ "$_has_vmess_ws" = true && "$IS_ARGO" != 'is_argo' ]] && _active=true
+  config_state_set_optional "$_tmp" VMESS_HOST_DOMAIN "$(config_ws_host_domain h)" "$_active"
+  config_state_set_optional "$_tmp" VMESS_WS_PATH "$(config_value VMESS_WS_PATH)" "$_has_vmess_ws"
 
-# 输出模式、Argo 与 WebSocket 共用项 / Output, Argo, and WebSocket Common
+  config_state_set_bool "$_tmp" VLESS_WS
+  config_state_set_optional "$_tmp" PORT_VLESS_WS "$(config_value PORT_VLESS_WS)" "$_has_vless_ws"
+  config_state_set_optional "$_tmp" NODE_NAME_VLESS_WS "$(config_node_name 18)" "$_has_vless_ws"
+  _active=false; [[ "$_has_vless_ws" = true && "$IS_ARGO" != 'is_argo' ]] && _active=true
+  config_state_set_optional "$_tmp" VLESS_HOST_DOMAIN "$(config_ws_host_domain i)" "$_active"
+  config_state_set_optional "$_tmp" VLESS_WS_PATH "$(config_value VLESS_WS_PATH)" "$_has_vless_ws"
 
-SUBSCRIBE=$(config_bool SUBSCRIBE)
-ARGO=$(config_bool ARGO)
-ARGO_DOMAIN=$(config_argo_domain)
-ARGO_AUTH=$(config_argo_auth)
-CDN=$(shell_quote "${CDN[17]:-${CDN[18]:-${CDN:-${CDN_DOMAIN[0]}}}}")
-CDN_PORT=$(shell_quote "${CDN_PORT[17]:-${CDN_PORT[18]:-${CDN_PORT:-}}}")
+  config_state_set_bool "$_tmp" H2_REALITY
+  config_state_set_optional "$_tmp" PORT_H2_REALITY "$(config_value PORT_H2_REALITY)" "$_has_h2"
+  config_state_set_optional "$_tmp" NODE_NAME_H2_REALITY "$(config_node_name 19)" "$_has_h2"
 
+  config_state_set_bool "$_tmp" GRPC_REALITY
+  config_state_set_optional "$_tmp" PORT_GRPC_REALITY "$(config_value PORT_GRPC_REALITY)" "$_has_grpc"
+  config_state_set_optional "$_tmp" NODE_NAME_GRPC_REALITY "$(config_node_name 20)" "$_has_grpc"
 
-# Reality 共享项 / Reality Shared Settings (b/j/k)
+  config_state_set_bool "$_tmp" ANYTLS
+  config_state_set_optional "$_tmp" PORT_ANYTLS "$(config_value PORT_ANYTLS)" "$_has_anytls"
+  config_state_set_optional "$_tmp" NODE_NAME_ANYTLS "$(config_node_name 21)" "$_has_anytls"
 
-REALITY_PRIVATE=$(config_reality_private)
-
-
-# b. VLESS Reality
-
-XTLS_REALITY=$(config_bool XTLS_REALITY)
-PORT_XTLS_REALITY=$(config_value PORT_XTLS_REALITY)
-NODE_NAME_XTLS_REALITY=$(config_node_name 11)
-
-
-# c. Hysteria2
-
-HYSTERIA2=$(config_bool HYSTERIA2)
-PORT_HYSTERIA2=$(config_value PORT_HYSTERIA2)
-NODE_NAME_HYSTERIA2=$(config_node_name 12)
-HY2_PORT_HOPPING_RANGE=$(config_value HY2_PORT_HOPPING_RANGE)
-HY2_REALM=$(config_bool HY2_REALM)
-# REALM='false'             # 可选：HY2_REALM 的旧别名；默认 false / Optional. Legacy alias for HY2_REALM. Default: false.
-HY2_WARP=$(config_bool HY2_WARP)
-# REALM_WARP='false'        # 可选：HY2_WARP 的旧别名；默认 false / Optional. Legacy alias for HY2_WARP. Default: false.
-# WARP_REALM='false'        # 可选：HY2_WARP 的旧别名；默认 false / Optional. Legacy alias for HY2_WARP. Default: false.
-HY2_REALM_ID=$(config_value HY2_REALM_ID)
-HY2_UP=$(config_value HY2_UP 200)
-HY2_DOWN=$(config_value HY2_DOWN 1000)
-
-
-# d. Tuic V5
-
-TUIC=$(config_bool TUIC)
-PORT_TUIC=$(config_value PORT_TUIC)
-NODE_NAME_TUIC=$(config_node_name 13)
-TUIC_PASSWORD=$(config_value TUIC_PASSWORD)
-TUIC_CONGESTION_CONTROL=$(config_value TUIC_CONGESTION_CONTROL bbr)
-
-
-# e. ShadowTLS
-
-SHADOWTLS=$(config_bool SHADOWTLS)
-PORT_SHADOWTLS=$(config_value PORT_SHADOWTLS)
-NODE_NAME_SHADOWTLS=$(config_node_name 14)
-SHADOWTLS_PASSWORD=$(config_value SHADOWTLS_PASSWORD)
-SHADOWTLS_METHOD=$(config_value SHADOWTLS_METHOD 2022-blake3-aes-128-gcm)
-
-
-# f. Shadowsocks
-
-SHADOWSOCKS=$(config_bool SHADOWSOCKS)
-PORT_SHADOWSOCKS=$(config_value PORT_SHADOWSOCKS)
-NODE_NAME_SHADOWSOCKS=$(config_node_name 15)
-SHADOWSOCKS_PASSWORD=$(config_value SHADOWSOCKS_PASSWORD)
-SHADOWSOCKS_METHOD=$(config_value SHADOWSOCKS_METHOD 2022-blake3-aes-128-gcm)
-
-
-# g. Trojan
-
-TROJAN=$(config_bool TROJAN)
-PORT_TROJAN=$(config_value PORT_TROJAN)
-NODE_NAME_TROJAN=$(config_node_name 16)
-TROJAN_PASSWORD=$(config_value TROJAN_PASSWORD)
-
-
-# h. VMess WebSocket
-
-VMESS_WS=$(config_bool VMESS_WS)
-PORT_VMESS_WS=$(config_value PORT_VMESS_WS)
-NODE_NAME_VMESS_WS=$(config_node_name 17)
-VMESS_HOST_DOMAIN=$(config_ws_host_domain h)
-VMESS_WS_PATH=$(config_value VMESS_WS_PATH)
-
-
-# i. VLESS WebSocket TLS
-
-VLESS_WS=$(config_bool VLESS_WS)
-PORT_VLESS_WS=$(config_value PORT_VLESS_WS)
-NODE_NAME_VLESS_WS=$(config_node_name 18)
-VLESS_HOST_DOMAIN=$(config_ws_host_domain i)
-VLESS_WS_PATH=$(config_value VLESS_WS_PATH)
-
-
-# j. H2 Reality
-
-H2_REALITY=$(config_bool H2_REALITY)
-PORT_H2_REALITY=$(config_value PORT_H2_REALITY)
-NODE_NAME_H2_REALITY=$(config_node_name 19)
-
-
-# k. gRPC Reality
-
-GRPC_REALITY=$(config_bool GRPC_REALITY)
-PORT_GRPC_REALITY=$(config_value PORT_GRPC_REALITY)
-NODE_NAME_GRPC_REALITY=$(config_node_name 20)
-
-
-# l. AnyTLS
-
-ANYTLS=$(config_bool ANYTLS)
-PORT_ANYTLS=$(config_value PORT_ANYTLS)
-NODE_NAME_ANYTLS=$(config_node_name 21)
-
-
-# m. NaiveProxy
-
-NAIVE=$(config_bool NAIVE)
-PORT_NAIVE=$(config_value PORT_NAIVE)
-NODE_NAME_NAIVE=$(config_node_name 22)
-EOF
+  config_state_set_bool "$_tmp" NAIVE
+  config_state_set_optional "$_tmp" PORT_NAIVE "$(config_value PORT_NAIVE)" "$_has_naive"
+  config_state_set_optional "$_tmp" NODE_NAME_NAIVE "$(config_node_name 22)" "$_has_naive"
 
   if [ -e "$_target" ]; then
     cat "$_tmp" > "$_target" || { rm -f "$_tmp"; error " Failed to write config file: $_target "; }
