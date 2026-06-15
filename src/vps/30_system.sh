@@ -690,6 +690,13 @@ sing-box_variables() {
     validate_nginx_port
   fi
 
+  # Argo 是订阅和 WebSocket 可复用的全局隧道，不依赖是否选择了 WS 协议。
+  if [ "$IS_ARGO" = 'is_argo' ]; then
+    (( STEP_NUM++ )) || true
+    input_argo_auth is_install
+    [ -n "$ARGO_RUNS" ] && local ARGO_READY=argo_ready
+  fi
+
   # 输入服务器 IP,默认为检测到的服务器 IP，如果全部为空，则提示并退出脚本
   if [ "$IS_FAST_INSTALL" = 'is_fast_install' ]; then
     grep -q '^$' <<< "$SERVER_IP" && grep -q '.' <<< "$WAN4" && SERVER_IP=$WAN4
@@ -758,13 +765,7 @@ sing-box_variables() {
 
   # 如选择有 h. vmess + ws 或 i. vless + ws 时，先检测是否有支持的 http 端口可用，如有则要求输入域名和 cdn
   if array_contains h "${INSTALL_PROTOCOLS[@]}"; then
-    if [ "$IS_ARGO" = 'is_argo' ]; then
-      if [ "$ARGO_READY" != 'argo_ready' ]; then
-        (( STEP_NUM++ )) || true
-        input_argo_auth is_install
-      fi
-      local ARGO_READY=argo_ready
-    else
+    if [ "$IS_ARGO" != 'is_argo' ]; then
       local DOMAIN_ERROR_TIME=5
       until [ -n "$VMESS_HOST_DOMAIN" ]; do
         (( DOMAIN_ERROR_TIME-- )) || true
@@ -774,13 +775,7 @@ sing-box_variables() {
   fi
 
   if array_contains i "${INSTALL_PROTOCOLS[@]}"; then
-    if [ "$IS_ARGO" = 'is_argo' ]; then
-      if [ "$ARGO_READY" != 'argo_ready' ]; then
-        (( STEP_NUM++ )) || true
-        input_argo_auth is_install
-      fi
-      local ARGO_READY=argo_ready
-    else
+    if [ "$IS_ARGO" != 'is_argo' ]; then
       local DOMAIN_ERROR_TIME=5
       until [ -n "$VLESS_HOST_DOMAIN" ]; do
         (( DOMAIN_ERROR_TIME-- )) || true
@@ -790,7 +785,7 @@ sing-box_variables() {
   fi
 
   # 选择或者输入 cdn
-  if [[ -z "$CDN" && -n "${VMESS_HOST_DOMAIN}${VLESS_HOST_DOMAIN}${ARGO_READY}" ]]; then
+  if [[ -z "$CDN" ]] && array_contains_any INSTALL_PROTOCOLS h i; then
     (( STEP_NUM++ )) || true
     input_cdn
   fi
