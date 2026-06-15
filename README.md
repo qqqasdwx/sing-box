@@ -51,7 +51,7 @@ wget -O config.conf https://raw.githubusercontent.com/qqqasdwx/sing-box/release/
 bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh) -f config.conf
 ```
 
-`-f config.conf` 可用于首次安装，也可用于已安装后的配置更新。首次成功安装或后续成功更新后，脚本会先备份原 `config.conf`，再按项目标准模板把实际 UUID、端口、节点名、Reality 私钥、协议密码、Argo 认证等值回写到该文件，使其成为可复用状态文件。回写不会保留用户自定义排版或注释，也不会修改文件权限；请自行保护这个文件的权限。
+`-f config.conf` 可用于首次安装，也可用于已安装后的配置更新。首次成功安装或后续成功更新后，脚本会先备份原 `config.conf`，再只取消注释并补齐实际生效或需要复用的值，例如 UUID、端口、节点名、Reality 私钥、协议密码、Argo 认证等，使其成为可复用状态文件。未启用或当前模式下不生效的配置会保持注释状态；回写不会修改文件权限。请自行保护这个文件的权限。
 
 参数化安装示例：
 
