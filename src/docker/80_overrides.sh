@@ -71,6 +71,7 @@ docker_prepare_env() {
   apply_custom_node_names
   normalize_log_level
   normalize_ntp_config
+  normalize_finger_print
   TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
 
   docker_false "$SUBSCRIBE" && IS_SUB=no_sub || IS_SUB=is_sub

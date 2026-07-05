@@ -2,7 +2,7 @@
 
 # Docker keeps only container-specific defaults here. Protocol generation,
 # subscriptions, Argo parsing, and node export are shared with the VPS script.
-VERSION='v1.3.14 (2026.06.02)'
+VERSION='v1.3.15 (2026.07.01)'
 
 GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
 
@@ -27,6 +27,7 @@ CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
 CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org" "cf.090227.xyz")
 SUBSCRIBE_TEMPLATE="https://raw.githubusercontent.com/fscarmen/client_template/main"
 DEFAULT_NEWEST_VERSION='1.13.0-rc.4'
+FINGER_PRINT_DEFAULT='chrome'
 STEP_NUM=0
 TOTAL_STEPS=''
 

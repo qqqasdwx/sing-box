@@ -316,6 +316,11 @@ normalize_ntp_config() {
   [[ "$NTP_INTERVAL" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]] || error " NTP_INTERVAL must be a duration like 30m, 60m, or 1h. "
 }
 
+normalize_finger_print() {
+  FINGER_PRINT=${FINGER_PRINT:-"${FINGER_PRINT_DEFAULT:-chrome}"}
+  [[ "${FINGER_PRINT,,}" =~ ^[0-9a-z]+$ ]] || error " FINGER_PRINT must contain only letters and numbers. "
+}
+
 collapse_repeated_value() {
   local _value=$1 _len=${#1} _part _repeat _i
   [ -n "$_value" ] || return 0
@@ -625,6 +630,8 @@ apply_config_file_options() {
     L=${LANGUAGE^^}
     [[ "$L" =~ ^E ]] && L=E || L=C
   fi
+
+  config_file_has_var FINGER_PRINT && FINGER_PRINT_EXPLICIT=1
 
   if config_file_has_var ARGO; then
     bool_enabled "${ARGO:-}" && IS_ARGO=is_argo || IS_ARGO=no_argo
@@ -1042,6 +1049,7 @@ write_config_state_file() {
   config_state_set_optional "$_tmp" PORT_NGINX "$(config_value PORT_NGINX)" "$_active"
   config_state_set_line "$_tmp" SERVER_IP "$(config_value SERVER_IP)" true
   config_state_set_line "$_tmp" TLS_SERVER "$(shell_quote "${TLS_SERVER:-$TLS_SERVER_DEFAULT}")" true
+  config_state_set_line "$_tmp" FINGER_PRINT "$(config_value FINGER_PRINT "${FINGER_PRINT:-${FINGER_PRINT_DEFAULT:-chrome}}")" true
   config_state_set_line "$_tmp" NODE_NAME_CONFIRM "$(config_value NODE_NAME_CONFIRM)" true
 
   config_state_set_line "$_tmp" UUID_CONFIRM "$(config_value UUID_CONFIRM)" true
@@ -1183,7 +1191,7 @@ json_number_value() {
 # 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
 check_cdn() {
   local PROXY CODE PID CMD
-  local _WAIT_COUNT=120
+  local _WAIT_COUNT=40
   local PIDS=()
   local API_URL='https://api.github.com/repos/SagerNet/sing-box/releases'
 
@@ -1351,7 +1359,8 @@ input_cdn() {
     case "$CUSTOM_CDN" in
       [1-${#CDN_DOMAIN[@]}] )
         CDN="${CDN_DOMAIN[$((CUSTOM_CDN-1))]}"
-        unset CDN_PORT
+        CDN_PORT[17]='80'
+        CDN_PORT[18]='443'
         break
         ;;
       ?????* )
@@ -1360,12 +1369,19 @@ input_cdn() {
           continue
         }
         CDN="$PARSED_HOST"
-        CDN_PORT="$PARSED_PORT"
+        if [ -n "$PARSED_PORT" ]; then
+          CDN_PORT[17]="$PARSED_PORT"
+          CDN_PORT[18]="$PARSED_PORT"
+        else
+          CDN_PORT[17]='80'
+          CDN_PORT[18]='443'
+        fi
         break
         ;;
       * )
         CDN="${CDN_DOMAIN[0]}"
-        unset CDN_PORT
+        CDN_PORT[17]='80'
+        CDN_PORT[18]='443'
         break
     esac
   done
@@ -1401,6 +1417,11 @@ change_config() {
   ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && local SERVER_IP_NOW=$(awk -F '"' '/"WS_SERVER_IP_SHOW"/{print $4; exit}' ${WORK_DIR}/conf/*-ws*inbounds.json) || local SERVER_IP_NOW=$(grep -A1 '"tag"' ${WORK_DIR}/list | sed -E '/-ws(-tls)*",$/{N;d}' | awk -F '"' '/"server"/{count++; if (count == 1) {print $4; exit}}')
   [ -n "$SERVER_IP_NOW" ] && MENU_IDX+=(132) && MENU_KEY+=(serverip) && MENU_VAL+=("$SERVER_IP_NOW")
 
+  # 从 sing-box 格式的 list 中提取 client-fingerprint，取第一个匹配值
+  local FP_NOW=$(awk -F '"' '/"fingerprint"/{print $4; exit}' ${WORK_DIR}/list 2>/dev/null)
+  FP_NOW=${FP_NOW:-${FINGER_PRINT:-${FINGER_PRINT_DEFAULT:-chrome}}}
+  [ -n "$FP_NOW" ] && MENU_IDX+=(168) && MENU_KEY+=(fingerprint) && MENU_VAL+=("$FP_NOW")
+
   # Hysteria2 带宽和端口跳跃（仅在 Hysteria2 已安装时显示）
   if ls ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json >/dev/null 2>&1; then
     local HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies)
@@ -1416,13 +1437,14 @@ change_config() {
 
     MENU_IDX+=(140) && MENU_KEY+=(hy2bw) && MENU_VAL+=("${HY2_UP_NOW}/${HY2_DOWN_NOW}")
 
-    local HY2_CONF_NOW=$(ls ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json 2>/dev/null | sed -n '1p')
-    if [ -n "$HY2_CONF_NOW" ] && grep -q '"realm"[[:space:]]*:' "$HY2_CONF_NOW"; then
-      local HY2_REALM_ACTION="$(text 27)"
+    if grep -q 'realm-opts' <<< "$HY2_LINE"; then
+      local HY2_REALM_ACTION="$(text 171)"
+      MENU_IDX+=(171)
     else
-      local HY2_REALM_ACTION="$(text 28)"
+      local HY2_REALM_ACTION="$(text 172)"
+      MENU_IDX+=(172)
     fi
-    MENU_IDX+=(147) && MENU_KEY+=(hy2realm) && MENU_VAL+=("${HY2_REALM_ACTION}")
+    MENU_KEY+=(hy2realm) && MENU_VAL+=("${HY2_REALM_ACTION}")
 
     check_port_hopping_nat
     MENU_IDX+=(139) && MENU_KEY+=(hy2hopping) && MENU_VAL+=("${HY2_PORT_HOPPING_RANGE}")
@@ -1458,7 +1480,13 @@ change_config() {
   local OLD="${MENU_VAL[IDX]}"
 
   # 特殊操作路由（不走通用替换逻辑）
-  if [ "$KEY" = "ports" ]; then
+  if  [ "$KEY" = "cdn" ]; then
+    input_cdn
+    ls ${WORK_DIR}/conf/*vmess-ws*inbounds.json >/dev/null 2>&1 && sed -i "s|CDN\": \".*\"|CDN\": \"${CDN}\"|g; s|CDN_PORT\": \".*\"|CDN_PORT\": \"${CDN_PORT[17]}\"|g" ${WORK_DIR}/conf/*vmess-ws*inbounds.json 2>/dev/null
+    ls ${WORK_DIR}/conf/*vless-ws*inbounds.json >/dev/null 2>&1 && sed -i "s|CDN\": \".*\"|CDN\": \"${CDN}\"|g; s|CDN_PORT\": \".*\"|CDN_PORT\": \"${CDN_PORT[18]}\"|g" ${WORK_DIR}/conf/*vless-ws*inbounds.json 2>/dev/null
+    export_list
+    return
+  elif [ "$KEY" = "ports" ]; then
     change_start_port
     return
   elif [ "$KEY" = "hy2bw" ]; then
@@ -1481,11 +1509,12 @@ change_config() {
     return
   elif [ "$KEY" = "hy2realm" ]; then
     # 添加 / 删除 Hysteria2 Realm；菜单已明确显示开启/关闭动作，这里不再二次确认 Realm 本身
-    fetch_nodes_value
-    if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+    local HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies)
+    if grep -q 'realm-opts' <<< "$HY2_LINE"; then
       set_hy2_realm_config disable
       sync_hy2_warp_route disable
     else
+      fetch_nodes_value
       IS_HY2_REALM=is_hy2_realm
       HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
       input_hy2_warp
@@ -1531,7 +1560,7 @@ change_config() {
           PORT_HOPPING_END=$NEW_END
           HY2_PORT_HOPPING_RANGE="$NEW_RANGE"
           local HOPPING_TARGET="$PORT_HOPPING_TARGET"
-          [ -z "$HOPPING_TARGET" ] && HOPPING_TARGET=$(awk -F '[:,]' '/"listen_port"/{print $2; exit}' ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json 2>/dev/null)
+          [ -z "$HOPPING_TARGET" ] && HOPPING_TARGET=$(awk -F '[:,]' '/"listen_port"/{print $2; exit}' ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json 2>/dev/null | tr -d ' ')
           # 静默添加端口跳跃规则，不显示 UFW 检测和成功提示
           (add_port_hopping_nat "$PORT_HOPPING_START" "$PORT_HOPPING_END" "$HOPPING_TARGET") >/dev/null 2>&1
           IS_HOPPING_SET=true
@@ -1548,10 +1577,24 @@ change_config() {
   elif [ "$KEY" = "customroute" ]; then
     custom_route_menu
     return
+  elif [ "$KEY" = "fingerprint" ]; then
+    local FP_CHOICE
+    hint "\n $(text 169) \n"
+    reading " $(text 24) " FP_CHOICE
+    case "$FP_CHOICE" in
+      ""|1 ) NEW_VAL="chrome" ;;
+      2 ) NEW_VAL="firefox" ;;
+      * ) NEW_VAL="$FP_CHOICE" ;;
+    esac
+    [[ ! "${NEW_VAL,,}" =~ ^[0-9a-z]+$ ]] && error " $(text 170) "
+    FINGER_PRINT="$NEW_VAL"
+    FINGER_PRINT_EXPLICIT=1
+    export_list
+    return
   fi
 
   hint ""
-  reading " $(text 134) " NEW_VAL
+  [ -z "$NEW_VAL" ] && reading " $(text 134) " NEW_VAL
   [ -z "$NEW_VAL" ] && info " $(text 135) " && return
 
   # 各 key 的校验
@@ -1563,10 +1606,10 @@ change_config() {
     [[ ! "$NEW_VAL" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && [[ ! "$NEW_VAL" =~ ^[0-9a-fA-F:]+$ ]] && error " $(text 133) "
   fi
 
-  # 批量替换
-  hint " $(text 112) "
+  # 批量替换，更换服务 IP 和导出指纹不需重启服务
+  [[ ! "$KEY" =~ ^(fingerprint|serverip|cdn)$ ]] && hint " $(text 112) "
 
-  if [ "$KEY" = "serverip" ]; then
+  if [[ "$KEY" =~ ^(serverip|cdn)$ ]]; then
     # IP 在配置里出现的形式有多种，逐一替换
     find ${WORK_DIR} -type f | xargs -P 50 sed -i \
       -e "s|\"server\": \"${OLD}\"|\"server\": \"${NEW_VAL}\"|g" \
@@ -1576,9 +1619,10 @@ change_config() {
     find ${WORK_DIR}/subscribe -type f | xargs -P 50 sed -i "s|${OLD}|${NEW_VAL}|g" 2>/dev/null
   else
     find ${WORK_DIR} -type f | xargs -P 50 sed -i "s|${OLD}|${NEW_VAL}|g" 2>/dev/null
+    if [[ ! "$KEY" =~ ^(fingerprint)$ ]]; then
+      restart_service_or_warn Sing-box sing-box || true
+    fi
   fi
-
-  restart_service_or_warn Sing-box sing-box || true
 
   export_list
 }

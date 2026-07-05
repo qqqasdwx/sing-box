@@ -872,6 +872,12 @@ fetch_nodes_value() {
   EXISTED_PORTS=$(awk -F ':|,' '/listen_port/{print $2}' ${WORK_DIR}/conf/*_inbounds.json)
   START_PORT=$(awk 'NR == 1 { min = $0 } { if ($0 < min) min = $0; count++ } END {print min}' <<< "$EXISTED_PORTS")
   [[ -z "$NODE_NAME_CONFIRM" && -s ${WORK_DIR}/subscribe/clash ]] && NODE_NAME_CONFIRM=$(awk -F "'" '/u: &u/{print $2; exit}' ${WORK_DIR}/subscribe/clash)
+  if [ -z "${FINGER_PRINT_EXPLICIT:-}" ]; then
+    local FINGER_PRINT_NOW
+    FINGER_PRINT_NOW=$(awk -F '"' '/"fingerprint"/{print $4; exit}' ${WORK_DIR}/list 2>/dev/null)
+    [ -n "$FINGER_PRINT_NOW" ] && FINGER_PRINT="$FINGER_PRINT_NOW"
+  fi
+  FINGER_PRINT=${FINGER_PRINT:-${FINGER_PRINT_DEFAULT:-chrome}}
 
   # 如有 Argo，获取 Argo Tunnel
   [[ ${STATUS[1]} =~ $(text 27)|$(text 28) ]] && grep -Fq -- '--url' "$ARGO_DAEMON_FILE" && { cmd_systemctl enable argo; sleep 2 && cmd_systemctl status argo &>/dev/null && fetch_quicktunnel_domain; }

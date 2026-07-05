@@ -156,6 +156,9 @@ for z in "${!ALL_PARAMETER[@]}"; do
     --NTP_INTERVAL )
       ((z++)); NTP_INTERVAL=${ALL_PARAMETER[z]}
       ;;
+    --FINGER_PRINT )
+      ((z++)); FINGER_PRINT=${ALL_PARAMETER[z]}; FINGER_PRINT_EXPLICIT=1
+      ;;
     --PORT_NGINX )
       ((z++)); PORT_NGINX=${ALL_PARAMETER[z]}
       ;;
@@ -280,6 +283,7 @@ done
 apply_custom_node_names
 normalize_log_level
 normalize_ntp_config
+normalize_finger_print
 normalize_ws_domain_mode
 
 check_arch

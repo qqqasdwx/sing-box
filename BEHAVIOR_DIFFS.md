@@ -1,17 +1,18 @@
 # 与上游的行为差异
 
-本次 review 基线，日期：2026-06-07。
+本次 review 基线，日期：2026-07-05。
 
-- 上游：`fscarmen/sing-box@2ca9504654e0bfc2fd6270d386a919e8f14800ab`
+- 上游：`fscarmen/sing-box@3dfbec421510806564cbe2071cf101614f759842`
 - 下游：`qqqasdwx/sing-box@main`
 
-本次 review 时未发现新的上游提交。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
+本次 review 已移植上游 `6bb22b3`、`53ce0dc`、`5dfd0cd` 和 `3dfbec4` 中适用于本仓库的变化。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
 
 ## Review 结果
 
 - VPS 安装脚本刻意尽量保持与上游一致。目前观察到的差异主要是仓库归属链接、`force_version` 来源，以及生成的 `sb` 快捷命令地址。
 - Docker 行为刻意与上游不同：本仓库的 Docker 入口复用 VPS 的协议生成逻辑，而不是继续维护一份独立手写实现。
-- 本次 review 已移植上游 `803cfa7` 与 `2ca9504`，包括 `nginx.conf` UUID 提取修复、Throne 订阅输出、客户端订阅 TLS 安全参数调整和 V2rayN Trojan 输出改进。
+- 本次 review 已移植上游 `6bb22b3`、`53ce0dc`、`5dfd0cd` 和 `3dfbec4`，包括客户端 TLS 指纹、部分导出配置热更新、服务端 IP 修改修复、协议变更 UUID 保留、Hysteria2 Realm UX、v2rayN Realm `Finalmask` 输出、端口跳跃目标解析和 Hysteria2 sing-box JSON 输出修复。
+- 早前 review 已移植上游 `803cfa7` 与 `2ca9504`，包括 `nginx.conf` UUID 提取修复、Throne 订阅输出、客户端订阅 TLS 安全参数调整和 V2rayN Trojan 输出改进。
 - 早前 review 发现并修复了两个迁移问题：
   - README 重写后，脚本输出中的 ShadowTLS 帮助链接曾指向不存在的锚点；当前已随上游迁移到 Throne 小节。
   - Docker `init.sh -v` 更新 sing-box 时丢失了上游的失败回滚保护。现在会备份旧二进制，通过 s6 重启检查新进程；如果新进程没有恢复，会还原旧二进制。
@@ -26,6 +27,7 @@
 | `force_version` | 从上游 `fscarmen/sing-box/main/force_version` 读取。 | 从本仓库 `qqqasdwx/sing-box/release/force_version` 读取。 | 已发布的安装脚本应该使用同一发布分支中的版本钉住文件。 |
 | 节点命名 | 只支持一个全局节点名，所有协议共用同一前缀。 | 支持 `NODE_NAME_CONFIRM` 全局节点名，也支持 `NODE_NAME_XTLS_REALITY`、`NODE_NAME_HYSTERIA2` 等单协议节点名。 | 用户可以给每个协议设置可识别的名称；未设置单协议名称时仍保持上游式全局回退。 |
 | 协议端口 | 主要通过 `START_PORT` 按所选协议顺序连续分配端口。 | 支持 `PORT_XTLS_REALITY`、`PORT_HYSTERIA2` 等单协议端口；未设置时仍按 `START_PORT` 顺序使用默认端口。 | 保留上游默认行为，同时允许 Docker 或配置文件固定某个协议的公开端口。 |
+| 客户端 TLS 指纹 | 通过已安装后的 `sb -d` 菜单修改导出订阅里的客户端 TLS fingerprint。 | 保留菜单修改，并额外支持 `FINGER_PRINT` 配置文件变量和 Docker 环境变量；默认值同上游为 `chrome`。 | Docker 没有交互菜单，配置化可以让 VPS 和 Docker 的订阅输出保持一致。 |
 | Docker 镜像仓库 | Action 使用 Docker Hub secrets 推送到 Docker Hub。 | Action 使用 `GITHUB_TOKEN` 推送到 `ghcr.io/qqqasdwx/sing-box:latest`。 | 不再依赖 Docker Hub 凭据，镜像发布留在 GitHub Packages。 |
 | Docker 构建上下文 | 直接从仓库分支构建。 | 从生成后的 release tree 构建。 | 确保 Docker 镜像使用的 `docker_init.sh` 和发布分支里的文件完全一致。 |
 | Docker 协议生成 | Docker 有一份独立手写的配置生成逻辑。 | Docker 复用 VPS 模块来生成协议 JSON、订阅、Argo、Reality 密钥、Hysteria2 Realm 和节点导出。 | 避免 Docker 和 VPS 两套行为继续漂移。 |

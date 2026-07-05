@@ -33,6 +33,7 @@ services:
       # PORT_NGINX: "" # 可选：订阅/Argo 的 nginx 端口。脚本默认值：启用订阅或 Argo 时，从 START_PORT + 已选协议数量开始，并避开已选协议端口。
       # SERVER_IP: "" # 可选：服务器公网 IPv4/IPv6。脚本默认值：自动检测公网 IP，优先 IPv4；无 IPv4 时用 IPv6。
       # TLS_SERVER: "" # 可选：SNI/证书域名。脚本默认值：addons.mozilla.org。
+      # FINGER_PRINT: "chrome" # 可选：客户端 TLS 指纹。脚本默认值：chrome；常用值 chrome/firefox。
       # NODE_NAME_CONFIRM: "" # 建议固定：全局节点名。脚本默认值：检测到的国家/地区 emoji + 容器 hostname。
 
       # 全局身份凭据

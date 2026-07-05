@@ -410,7 +410,7 @@ get_sing_box_version() {
     local API_RESPONSE=$(wget --no-check-certificate --server-response --tries=2 --timeout=3 -qO- "${GH_PROXY}https://api.github.com/repos/SagerNet/sing-box/releases" 2>&1 | grep -E '^[ ]+HTTP/|tag_name')
     if grep -q 'HTTP.* 200' <<< "$API_RESPONSE"; then
       local VERSION_LATEST=$(awk -F '["v-]' '/tag_name/{print $5}' <<< "$API_RESPONSE" | sort -Vr | sed -n '1p')
-      local RESULT_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- ${GH_PROXY}https://api.github.com/repos/SagerNet/sing-box/releases | awk -F '["v]' -v var="tag_name.*$VERSION_LATEST" '$0 ~ var {print $5; exit}')
+      local RESULT_VERSION=$(awk -F '["v]' -v var="tag_name.*$VERSION_LATEST" '$0 ~ var {print $5; exit}' <<< "$API_RESPONSE")
     else
       local RESULT_VERSION="$DEFAULT_NEWEST_VERSION"
     fi
@@ -533,7 +533,7 @@ check_port_hopping_nat() {
   FW_BACKEND=$(check_port_hopping_firewall)
 
   unset PORT_HOPPING_START PORT_HOPPING_END HY2_PORT_HOPPING_RANGE
-  PORT_HOPPING_TARGET=$(awk -F '[:,]' '/"listen_port"/{print $2; exit}' ${WORK_DIR}/conf/*${NODE_TAG[1]}_inbounds.json 2>/dev/null)
+  PORT_HOPPING_TARGET=$(awk -F '[:,]' '/"listen_port"/{print $2; exit}' ${WORK_DIR}/conf/*${NODE_TAG[1]}_inbounds.json 2>/dev/null | tr -d ' ')
 
   if [ "$FW_BACKEND" = 'ufw' ]; then
     check_port_hopping_ufw_rules
