@@ -2,6 +2,12 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-07-05
+
+- 移植上游 `3dfbec4`：客户端订阅 TLS 指纹默认改为 `chrome` 并支持 `FINGER_PRINT` 配置，v2rayN Hysteria2 Realm 输出增加 `Finalmask`，Realm 菜单显示改为明确的开启/关闭动作。
+- 移植上游 `5dfd0cd`、`53ce0dc`、`6bb22b3` 中的修复：`sb -r` 添加/删除协议时保留已有 UUID，服务端 IP 修改继续同步 `WS_SERVER_IP_SHOW`，Hysteria2 端口跳跃目标端口去除前导空格，sing-box 版本查询减少重复 API 请求。
+- 更新上游跟踪基线到 `fscarmen/sing-box@3dfbec421510806564cbe2071cf101614f759842`。
+
 ## 2026-06-07
 
 - 移植上游 `803cfa7`：修复 `sb -d` 修改端口后从 `nginx.conf` 提取 UUID 时误匹配 `/auto`、`/auto2` 的问题。
