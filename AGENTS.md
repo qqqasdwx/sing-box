@@ -39,6 +39,14 @@ Avoid running installer paths on a workstation unless you intend to modify syste
 - When reviewing or porting upstream changes from `fscarmen/sing-box`, update `UPSTREAM.md` with the reviewed upstream commit and keep intentional downstream differences documented in `BEHAVIOR_DIFFS.md`.
 - `tools/prepare-release.sh` currently publishes `sing-box.sh`, `docker_init.sh`, `Dockerfile`, `README.md`, `docker-compose.example.yml`, `CHANGELOG.md`, `BEHAVIOR_DIFFS.md`, `LICENSE`, `config.conf`, and `force_version`. `UPSTREAM.md` is maintainer-facing and is not included in the release tree.
 
+## Upstream Review Workflow
+
+When upstream-watch issues or Actions indicate that `fscarmen/sing-box` has new commits, do not port changes immediately by default. First inspect the upstream commits, compare them with this downstream repository, and report the functional differences in plain language, including likely user scenarios and any conflict with intentional downstream behavior.
+
+Wait for an explicit user instruction to port upstream changes before editing source files, generated scripts, release documents, or tracking metadata. After approval, port only the approved changes, preserving documented downstream behavior unless the user explicitly chooses the upstream behavior.
+
+Updating `upstream-main`, pushing branches, closing upstream-watch issues, or publishing release artifacts should happen only after the user explicitly asks for that finalization step.
+
 ## Coding Style & Naming Conventions
 
 Use Bash for scripts. Follow the existing style: two-space indentation inside blocks, uppercase global configuration variables, lowercase function names, and `local` for function-scoped variables. Keep bilingual text aligned through the `E[...]` and `C[...]` arrays in `src/vps/10_i18n.sh`.
