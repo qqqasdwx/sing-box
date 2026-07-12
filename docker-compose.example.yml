@@ -10,6 +10,9 @@ services:
     container_name: sing-box
     network_mode: host
     restart: unless-stopped
+    volumes:
+      # 唯一的自定义路由/出站源配置；首次启动时会生成默认文件。
+      - ./custom:/sing-box/custom
     environment:
       # 全局选择
       # 协议代码：a=全部；b=VLESS Reality；c=Hysteria2；d=Tuic V5；e=ShadowTLS；f=Shadowsocks；
@@ -61,8 +64,6 @@ services:
       # HY2_PORT_HOPPING_RANGE: "" # 可选：端口跳跃范围，格式 start:end，例如 50000:51000；Docker 不管理宿主机 NAT。
       # HY2_REALM: "false" # 可选：true/false；启用 Hysteria2 Realm。
       # REALM: "false" # 可选：HY2_REALM 的旧别名。
-      # HY2_WARP: "false" # 可选：true/false；启用 WARP 辅助 Realm，并隐含 HY2_REALM=true。
-      # REALM_WARP: "false" # 可选：HY2_WARP 的旧别名。
       # HY2_REALM_ID: "" # 可选：Realm ID。脚本默认值：Hysteria2 的 UUID。
       # HY2_UP: "200" # 可选：导出的客户端上行 Mbps。脚本默认值：200。
       # HY2_DOWN: "1000" # 可选：导出的客户端下行 Mbps。脚本默认值：1000。

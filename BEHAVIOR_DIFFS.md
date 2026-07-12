@@ -11,7 +11,7 @@
 
 - VPS 安装脚本刻意尽量保持与上游一致。目前观察到的差异主要是仓库归属链接、`force_version` 来源，以及生成的 `sb` 快捷命令地址。
 - Docker 行为刻意与上游不同：本仓库的 Docker 入口复用 VPS 的协议生成逻辑，而不是继续维护一份独立手写实现。
-- 本次 review 已移植上游 `c62368e`，自定义 `warp-ep` 路由规则会显式写入 `action: route`；本仓库还会在 VPS 启用或重启 sing-box 前迁移已有旧格式规则。
+- 本仓库完全移除内置 WARP endpoint、宿主机 WARP 检测/状态显示，以及 OpenAI、Hysteria2 和 `sb -d` 的 WARP 专用逻辑；Hysteria2 Realm/STUN 与通用自定义出站能力保留。
 - 本次 review 已移植上游 `6bb22b3`、`53ce0dc`、`5dfd0cd` 和 `3dfbec4`，包括客户端 TLS 指纹、部分导出配置热更新、服务端 IP 修改修复、协议变更 UUID 保留、Hysteria2 Realm UX、v2rayN Realm `Finalmask` 输出、端口跳跃目标解析和 Hysteria2 sing-box JSON 输出修复。
 - 早前 review 已移植上游 `803cfa7` 与 `2ca9504`，包括 `nginx.conf` UUID 提取修复、Throne 订阅输出、客户端订阅 TLS 安全参数调整和 V2rayN Trojan 输出改进。
 - 早前 review 发现并修复了两个迁移问题：
@@ -29,6 +29,8 @@
 | 节点命名 | 只支持一个全局节点名，所有协议共用同一前缀。 | 支持 `NODE_NAME_CONFIRM` 全局节点名，也支持 `NODE_NAME_XTLS_REALITY`、`NODE_NAME_HYSTERIA2` 等单协议节点名。 | 用户可以给每个协议设置可识别的名称；未设置单协议名称时仍保持上游式全局回退。 |
 | 协议端口 | 主要通过 `START_PORT` 按所选协议顺序连续分配端口。 | 支持 `PORT_XTLS_REALITY`、`PORT_HYSTERIA2` 等单协议端口；未设置时仍按 `START_PORT` 顺序使用默认端口。 | 保留上游默认行为，同时允许 Docker 或配置文件固定某个协议的公开端口。 |
 | 客户端 TLS 指纹 | 通过已安装后的 `sb -d` 菜单修改导出订阅里的客户端 TLS fingerprint。 | 保留菜单修改，并额外支持 `FINGER_PRINT` 配置文件变量和 Docker 环境变量；默认值同上游为 `chrome`。 | Docker 没有交互菜单，配置化可以让 VPS 和 Docker 的订阅输出保持一致。 |
+| 自定义路由与出站 | 路由和出站由安装脚本直接生成在 sing-box 的配置目录，自定义 WARP 规则另存一份配置。 | `custom/03_route.json` 和 `custom/04_outbounds.json` 是唯一源文件；完整检查成功后合并发布到 `conf/03_routing.json`。VPS 使用 `sb check/reload`，Docker 在启动时发布。 | 避免基本路由与附加规则存在多个来源，同时保证错误配置不会覆盖最后一次可运行版本。 |
+| 内置 WARP | 默认生成 `warp-ep`，OpenAI 检测失败时自动使用，另有 Hysteria2 和 `sb -d` WARP 路由入口。 | 不生成 WARP endpoint，并删除所有 WARP 专用入口；旧引用在升级时清理。 | 项目没有足够明确、普适的场景需要默认携带或管理 WARP。 |
 | Docker 镜像仓库 | Action 使用 Docker Hub secrets 推送到 Docker Hub。 | Action 使用 `GITHUB_TOKEN` 推送到 `ghcr.io/qqqasdwx/sing-box:latest`。 | 不再依赖 Docker Hub 凭据，镜像发布留在 GitHub Packages。 |
 | Docker 构建上下文 | 直接从仓库分支构建。 | 从生成后的 release tree 构建。 | 确保 Docker 镜像使用的 `docker_init.sh` 和发布分支里的文件完全一致。 |
 | Docker 协议生成 | Docker 有一份独立手写的配置生成逻辑。 | Docker 复用 VPS 模块来生成协议 JSON、订阅、Argo、Reality 密钥、Hysteria2 Realm 和节点导出。 | 避免 Docker 和 VPS 两套行为继续漂移。 |

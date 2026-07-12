@@ -4,8 +4,13 @@
 
 ## 2026-07-12
 
-- 移植上游 `c62368e`：自定义 `warp-ep` 路由规则显式写入 `action: route`，兼容 sing-box 1.14.0-alpha.38 及以上版本。
-- VPS 在启用或重启 sing-box 前会自动迁移已有 `08_custom_route.json` 旧格式规则，避免升级主程序后因缺少路由动作而启动失败。
+- 新增统一的自定义路由与出站配置：`custom/03_route.json` 和 `custom/04_outbounds.json` 是唯一源文件，检查成功后合并发布为 `conf/03_routing.json`。
+- VPS 新增 `sb check` 和 `sb reload`；发布采用临时候选配置、完整 `sing-box check`、原子替换和 HUP，失败时保留当前运行配置。
+- Docker 支持挂载 `/sing-box/custom`，容器启动前强制检查并发布配置，容器内可用 `sb check` 验证，配置错误时明确退出。
+- 默认内置 SagerNet 的 `geosite-google` 与 `geosite-openai` 规则集；OpenAI 保留原有 DNS 偏好，Google 新增 IPv6 优先解析，两者最终都明确使用 `direct`。
+- 完全移除内置 WARP：不再生成 `warp-ep` endpoint，删除 OpenAI 自动检测/回退、Hysteria2 WARP 选项、`sb -d` WARP 专用路由菜单以及宿主机 WARP 检测/状态显示；Realm/STUN 保留。
+- 升级时把旧自动 OpenAI WARP 规则改为 `direct`，删除其余引用 `warp-ep` 的路由、孤立规则集和旧 endpoint，避免留下无效配置。
+- 已有 `01_outbounds.json`、`03_route.json`、`08_custom_route.json` 会迁移并合并到新的唯一源配置。
 - 更新上游审查基线到 `fscarmen/sing-box@c62368ebccf27eedbd044e5c33c0c16e3ea3effd`。
 
 ## 2026-07-05

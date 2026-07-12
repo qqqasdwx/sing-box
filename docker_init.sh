@@ -8,6 +8,8 @@ GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
 
 TEMP_DIR='/tmp/sing-box'
 WORK_DIR='/sing-box'
+CUSTOM_DIR="${WORK_DIR}/custom"
+STATE_DIR="${WORK_DIR}/state"
 FIREWALL_STATE_DIR="${WORK_DIR}/firewall"
 SERVICE_FIREWALL_STATE_FILE="${FIREWALL_STATE_DIR}/service_ports.list"
 START_PORT_DEFAULT='8881'
@@ -43,8 +45,8 @@ trap 'cleanup_temp; printf "\n"; exit 1' INT QUIT TERM
 mkdir -p "$TEMP_DIR"
 E[0]="Language:\n 1. English (default) \n 2. 简体中文"
 C[0]="${E[0]}"
-E[1]="1. Added Hysteria2 Realm support for machines without public inbound access, with optional WARP-assisted hole punching; 2. add v2rayN Finalmask field for hysteria2 realm subscription output"
-C[1]="1. 增加 Hysteria2 Realm 支持，适用于没有公网入口的机器，并可选 WARP 辅助打洞; 2. v2rayN 订阅输出增加 Realm 的 Finalmask 字段"
+E[1]="1. Added Hysteria2 Realm support for machines without public inbound access; 2. add v2rayN Finalmask field for hysteria2 realm subscription output"
+C[1]="1. 增加 Hysteria2 Realm 支持，适用于没有公网入口的机器; 2. v2rayN 订阅输出增加 Realm 的 Finalmask 字段"
 E[2]="Downloading Sing-box. Please wait a seconds ..."
 C[2]="下载 Sing-box 中，请稍等 ..."
 E[3]="Input errors up to 5 times.The script is aborted."
@@ -133,8 +135,6 @@ E[44]="Ports are in used:  \${IN_USED[*]}"
 C[44]="正在使用中的端口: \${IN_USED[*]}"
 E[45]="Ports used: \${NOW_START_PORT} - \$((NOW_START_PORT+NOW_CONSECUTIVE_PORTS-1))"
 C[45]="使用端口: \${NOW_START_PORT} - \$((NOW_START_PORT+NOW_CONSECUTIVE_PORTS-1))"
-E[46]="Warp / warp-go was detected to be running. Please enter the correct server IP:"
-C[46]="检测到 warp / warp-go 正在运行，请输入确认的服务器 IP:"
 E[47]="No server ip, script exits. Feedback:[https://github.com/qqqasdwx/sing-box/issues]"
 C[47]="没有 server ip，脚本退出，问题反馈:[https://github.com/qqqasdwx/sing-box/issues]"
 E[48]="ShadowTLS - Copy the above two Throne links and manually set up the chained proxies in order. Tutorial: https://github.com/qqqasdwx/sing-box/blob/release/README.md#throne-%E8%AE%BE%E7%BD%AE-shadowtls-%E6%96%B9%E6%B3%95"
@@ -337,8 +337,6 @@ E[146]="Failed to update UFW PortHopping forwarding rules. Please check UFW conf
 C[146]="更新 UFW 的 PortHopping 转发规则失败，请手动检查 UFW 配置文件"
 E[147]="Hysteria2 Realm is useful for China-back routing or machines without public inbound access. It is not recommended when the server already has a public inbound IP/port. Enable Realm? [y/N] (default is N):"
 C[147]="Hysteria2 Realm 适用于回国或者没有公网入口的机器；有公网入口时不建议使用。是否启用？[y/N] (默认为 N):"
-E[148]="WARP-assisted hole punching is useful in strict NAT environments. When direct hole punching fails, Cloudflare WARP can provide a CF egress path to improve success. Enable it? [y/N]:"
-C[148]="WARP 辅助打洞（适用于 NAT 严格环境）：当 NAT 类型较严格（如对称 NAT）导致直连打洞失败时，可借助 Cloudflare WARP 获取一个 CF 出口 IP 作为中转，提升打洞成功率。是否启用？[y/N]:"
 E[149]="All protocol ports from a new starting port"
 C[149]="按新的起始端口重排所有协议端口"
 E[150]="Please select the protocol port to modify:"
@@ -349,34 +347,6 @@ E[152]="Port \${_new_port} conflicts with \${_conflict_name}."
 C[152]="端口 \${_new_port} 与 \${_conflict_name} 冲突。"
 E[153]="Port \${_new_port} is already in use."
 C[153]="端口 \${_new_port} 正在被占用。"
-E[154]="Custom warp-ep outbound rules  (rules: \${CUSTOM_ROUTE_COUNT:-0})"
-C[154]="自定义 warp-ep 出站路由规则  (规则数: \${CUSTOM_ROUTE_COUNT:-0})"
-E[155]="1. Add rule\n 2. View rules\n 3. Delete rule\n 0. Back"
-C[155]="1. 添加规则\n 2. 查看规则\n 3. 删除规则\n 0. 返回"
-E[156]="Select rule type:\\n 1. domain_suffix\\n 2. rule_set"
-C[156]="选择规则类型:\\n 1. domain_suffix (域名后缀)\\n 2. rule_set (规则集)"
-E[157]="Enter domain suffix (comma-separated, e.g. google.com,telegram.org):"
-C[157]="输入域名后缀 (逗号分隔，如 google.com,telegram.org):"
-E[158]="Enter rule_set name (comma-separated, e.g. geosite-google,geosite-telegram):"
-C[158]="输入规则集名称 (逗号分隔，如 geosite-google,geosite-telegram):"
-E[159]="Matched custom route rules will use warp-ep outbound."
-C[159]="命中的自定义路由规则将使用 warp-ep 出站。"
-E[160]="Rule set \"\${RULE_NAME}\" not found in SagerNet or MetaCubeX repositories. Please re-enter:"
-C[160]="规则集 \"\${RULE_NAME}\" 在 SagerNet 和 MetaCubeX 仓库中均未找到，请重新输入:"
-E[161]="Custom route rule added successfully."
-C[161]="自定义路由规则添加成功。"
-E[162]="No custom route rules configured."
-C[162]="未配置自定义路由规则。"
-E[163]="Enter warp-ep outbound rule number(s) to delete (comma-separated):"
-C[163]="输入要删除的 warp-ep 出站规则编号 (逗号分隔):"
-E[164]="Custom route rule(s) deleted."
-C[164]="自定义路由规则已删除。"
-E[165]="Invalid domain format: \${DOMAIN}"
-C[165]="无效的域名格式: \${DOMAIN}"
-E[166]="API check failed, using SagerNet URL as default. (Warning: rule_set may not exist)"
-C[166]="API 校验失败，默认使用 SagerNet 地址。(警告: 规则集可能不存在)"
-E[167]="Current custom route rules:"
-C[167]="当前自定义路由规则:"
 E[168]="Client Fingerprint  (current: \${_val})"
 C[168]="客户端指纹  (当前: \${_val})"
 E[169]="Please select or input client fingerprint:\n 1. chrome (default)\n 2. firefox\n Or input custom value:"
@@ -387,10 +357,6 @@ E[171]="Close Realm"
 C[171]="关闭 Realm"
 E[172]="Open Realm"
 C[172]="开启 Realm"
-E[173]="Invalid custom route configuration."
-C[173]="自定义路由配置无效。"
-E[174]="Failed to migrate custom route configuration."
-C[174]="迁移自定义路由配置失败。"
 # 自定义字体彩色，read 函数
 warning() { echo -e "\033[31m\033[01m$*\033[0m"; }  # 红色
 error() { echo -e "\033[31m\033[01m$*\033[0m" && exit 1; } # 红色
@@ -651,7 +617,7 @@ calc_install_steps() {
   [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]] && (( _total++ ))  # nginx 端口
   $HAS_REALITY && (( _total++ ))                # Reality 私钥
   $HAS_WS && (( _total++ ))                     # CDN / 域名
-  # Hysteria2 Realm / WARP / Port Hopping are protocol sub-options and are not counted as install steps.
+  # Hysteria2 Realm / Port Hopping are protocol sub-options and are not counted as install steps.
   [ "$IS_ARGO" = 'is_argo' ] && (( _total++ ))  # Argo 域名
   TOTAL_STEPS=$_total
 }
@@ -1042,15 +1008,6 @@ apply_config_file_options() {
     fi
   fi
 
-  if config_file_has_var HY2_WARP || config_file_has_var REALM_WARP || config_file_has_var WARP_REALM; then
-    if bool_enabled "${HY2_WARP:-}" || bool_enabled "${REALM_WARP:-}" || bool_enabled "${WARP_REALM:-}"; then
-      IS_HY2_WARP=is_hy2_warp
-      IS_HY2_REALM=is_hy2_realm
-    else
-      unset IS_HY2_WARP
-    fi
-  fi
-
   if [ "$_config_hy2_hopping_set" = true ] && [ -z "$HY2_PORT_HOPPING_RANGE" ]; then
     IS_HOPPING=no_hopping
     unset PORT_HOPPING_START PORT_HOPPING_END
@@ -1277,7 +1234,6 @@ config_bool() {
     SUBSCRIBE ) [ "$IS_SUB" = 'is_sub' ] && _enabled=true ;;
     ARGO ) [ "$IS_ARGO" = 'is_argo' ] && _enabled=true ;;
     HY2_REALM ) [ "$IS_HY2_REALM" = 'is_hy2_realm' ] && _enabled=true ;;
-    HY2_WARP ) [ "$IS_HY2_WARP" = 'is_hy2_warp' ] && _enabled=true ;;
   esac
   shell_quote "$_enabled"
 }
@@ -1473,9 +1429,9 @@ write_config_state_file() {
   config_state_set_optional "$_tmp" HY2_PORT_HOPPING_RANGE "$_value" "$_active"
   config_state_set_bool "$_tmp" HY2_REALM
   config_state_set_line "$_tmp" REALM "$(shell_quote false)" false
-  config_state_set_bool "$_tmp" HY2_WARP
-  config_state_set_line "$_tmp" REALM_WARP "$(shell_quote false)" false
-  config_state_set_line "$_tmp" WARP_REALM "$(shell_quote false)" false
+  config_state_comment_line "$_tmp" HY2_WARP
+  config_state_comment_line "$_tmp" REALM_WARP
+  config_state_comment_line "$_tmp" WARP_REALM
   _active=false; [[ "$_has_hy2" = true && "$IS_HY2_REALM" = 'is_hy2_realm' ]] && _active=true
   config_state_set_optional "$_tmp" HY2_REALM_ID "$(config_value HY2_REALM_ID)" "$_active"
   config_state_set_optional "$_tmp" HY2_UP "$(config_value HY2_UP 200)" "$_has_hy2"
@@ -1636,37 +1592,6 @@ check_cdn() {
   for PID in "${PIDS[@]}"; do kill "$PID" >/dev/null 2>&1 || true; done
   for PID in "${PIDS[@]}"; do wait "$PID" 2>/dev/null || true; done
   rm -f "${TEMP_DIR}/cdn_proxy"
-}
-
-# 检测是否解锁 chatGPT，以决定是否使用 warp 链式代理或者是 direct out，此处判断改编自 https://github.com/lmc999/RegionRestrictionCheck
-check_chatgpt() {
-  local CHECK_STACK=-$1
-  local UA_BROWSER="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-  local UA_SEC_CH_UA='"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"'
-  wget --help | grep -Fq -- '--ciphers' && local IS_CIPHERS=is_ciphers
-
-  # 首先检查API访问
-  local CHECK_RESULT1=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} -qO- --content-on-error --header='authority: api.openai.com' --header='accept: */*' --header='accept-language: en-US,en;q=0.9' --header='authorization: Bearer null' --header='content-type: application/json' --header='origin: https://platform.openai.com' --header='referer: https://platform.openai.com/' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: empty' --header='sec-fetch-mode: cors' --header='sec-fetch-site: same-site' --user-agent="${UA_BROWSER}" 'https://api.openai.com/compliance/cookie_requirements')
-
-  [ -z "$CHECK_RESULT1" ] && grep -qw is_ciphers <<< "$IS_CIPHERS" && local CHECK_RESULT1=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} --ciphers=DEFAULT@SECLEVEL=1 --no-check-certificate -qO- --content-on-error --header='authority: api.openai.com' --header='accept: */*' --header='accept-language: en-US,en;q=0.9' --header='authorization: Bearer null' --header='content-type: application/json' --header='origin: https://platform.openai.com' --header='referer: https://platform.openai.com/' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: empty' --header='sec-fetch-mode: cors' --header='sec-fetch-site: same-site' --user-agent="${UA_BROWSER}" 'https://api.openai.com/compliance/cookie_requirements')
-
-  # 如果API检测失败或者检测到unsupported_country,直接返回ban
-  if [ -z "$CHECK_RESULT1" ] || grep -qi 'unsupported_country' <<< "$CHECK_RESULT1"; then
-    echo "ban"
-    return
-  fi
-
-  # API检测通过后,继续检查网页访问
-  local CHECK_RESULT2=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} -qO- --content-on-error --header='authority: ios.chat.openai.com' --header='accept: */*;q=0.8,application/signed-exchange;v=b3;q=0.7' --header='accept-language: en-US,en;q=0.9' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: document' --header='sec-fetch-mode: navigate' --header='sec-fetch-site: none' --header='sec-fetch-user: ?1' --header='upgrade-insecure-requests: 1' --user-agent="${UA_BROWSER}" https://ios.chat.openai.com/)
-
-  [ -z "$CHECK_RESULT2" ] && grep -qw is_ciphers <<< "$IS_CIPHERS" && local CHECK_RESULT2=$(wget --timeout=2 --tries=2 --retry-connrefused --waitretry=5 ${CHECK_STACK} --ciphers=DEFAULT@SECLEVEL=1 --no-check-certificate -qO- --content-on-error --header='authority: ios.chat.openai.com' --header='accept: */*;q=0.8,application/signed-exchange;v=b3;q=0.7' --header='accept-language: en-US,en;q=0.9' --header="sec-ch-ua: ${UA_SEC_CH_UA}" --header='sec-ch-ua-mobile: ?0' --header='sec-ch-ua-platform: "Windows"' --header='sec-fetch-dest: document' --header='sec-fetch-mode: navigate' --header='sec-fetch-site: none' --header='sec-fetch-user: ?1' --header='upgrade-insecure-requests: 1' --user-agent="${UA_BROWSER}" https://ios.chat.openai.com/)
-
-  # 检查第二个结果
-  if [ -z "$CHECK_RESULT2" ] || grep -qi 'VPN' <<< "$CHECK_RESULT2"; then
-    echo "ban"
-  else
-    echo "unlock"
-  fi
 }
 
 # 脚本当天及累计运行次数统计
@@ -1843,12 +1768,6 @@ change_config() {
     MENU_IDX+=(139) && MENU_KEY+=(hy2hopping) && MENU_VAL+=("${HY2_PORT_HOPPING_RANGE}")
   fi
 
-  # 自定义路由规则（仅在 warp-ep 存在时显示）
-  if grep -q '"warp-ep"' "${WORK_DIR}/conf/02_endpoints.json" 2>/dev/null; then
-    CUSTOM_ROUTE_COUNT=$(custom_route_count)
-    MENU_IDX+=(154) && MENU_KEY+=(customroute) && MENU_VAL+=("${CUSTOM_ROUTE_COUNT}")
-  fi
-
   [ "${#MENU_IDX[@]}" -eq 0 ] && error " $(text 110) "
 
   # 显示动态菜单
@@ -1905,14 +1824,11 @@ change_config() {
     local HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies)
     if grep -q 'realm-opts' <<< "$HY2_LINE"; then
       set_hy2_realm_config disable
-      sync_hy2_warp_route disable
     else
       fetch_nodes_value
       IS_HY2_REALM=is_hy2_realm
       HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
-      input_hy2_warp
       set_hy2_realm_config enable
-      [ "$IS_HY2_WARP" = 'is_hy2_warp' ] && sync_hy2_warp_route enable || sync_hy2_warp_route disable
     fi
     hint " $(text 112) "
     restart_service_or_fail Sing-box sing-box
@@ -1966,9 +1882,6 @@ change_config() {
     done
 
     export_list
-    return
-  elif [ "$KEY" = "customroute" ]; then
-    custom_route_menu
     return
   elif [ "$KEY" = "fingerprint" ]; then
     local FP_CHOICE
@@ -2307,35 +2220,23 @@ input_hopping_port() {
 input_hy2_realm() {
   HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
 
-  # 参数 / 快速安装模式：不交互，尊重 --HY2_REALM 和 --HY2_WARP
-  # --HY2_WARP=true 隐含启用 Realm，否则 route 规则没有意义。
+  # 参数 / 快速安装模式：不交互，尊重 --HY2_REALM。
   if [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]]; then
-    if [ "$IS_HY2_WARP" = 'is_hy2_warp' ]; then
-      IS_HY2_REALM=is_hy2_realm
-    fi
     if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
       HY2_REALM_ID="${HY2_REALM_ID:-${UUID_CONFIRM}}"
     else
-      unset IS_HY2_REALM IS_HY2_WARP HY2_REALM_ID
+      unset IS_HY2_REALM HY2_REALM_ID
     fi
     return
   fi
 
-  unset IS_HY2_REALM IS_HY2_WARP
+  unset IS_HY2_REALM
   local CHOOSE_REALM
   reading "\n $(text 147) " CHOOSE_REALM
   if [[ "${CHOOSE_REALM,,}" =~ ^(y|yes)$ ]]; then
     IS_HY2_REALM=is_hy2_realm
     HY2_REALM_ID="${HY2_REALM_ID:-${UUID_CONFIRM}}"
-    input_hy2_warp
   fi
-}
-
-# 输入 Hysteria2 Realm 的 WARP 辅助打洞选项
-input_hy2_warp() {
-  local CHOOSE_WARP
-  reading "\n $(text 148) " CHOOSE_WARP
-  [[ "${CHOOSE_WARP,,}" =~ ^(y|yes)$ ]] && IS_HY2_WARP=is_hy2_warp || unset IS_HY2_WARP
 }
 
 # jq 入口，优先使用脚本自带 jq
@@ -2347,6 +2248,324 @@ jq_exec() {
   else
     jq "$@"
   fi
+}
+
+# ===================== 自定义出站与路由发布 =====================
+
+routing_default_outbounds() {
+  cat << 'EOF'
+{
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ]
+}
+EOF
+}
+
+routing_default_route() {
+  cat << 'EOF'
+{
+  "route": {
+    "default_http_client": "http-client-direct",
+    "rule_set": [
+      {
+        "tag": "geosite-google",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-google.srs"
+      },
+      {
+        "tag": "geosite-openai",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "resolve",
+        "domain": [
+          "api.openai.com"
+        ],
+        "strategy": "prefer_ipv4"
+      },
+      {
+        "action": "resolve",
+        "rule_set": [
+          "geosite-openai"
+        ],
+        "strategy": "prefer_ipv6"
+      },
+      {
+        "action": "resolve",
+        "rule_set": [
+          "geosite-google"
+        ],
+        "strategy": "prefer_ipv6"
+      },
+      {
+        "domain": [
+          "api.openai.com"
+        ],
+        "rule_set": [
+          "geosite-openai"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "geosite-google"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      }
+    ]
+  }
+}
+EOF
+}
+
+routing_remove_legacy_warp() {
+  local ROUTE_FILE="${CUSTOM_DIR}/03_route.json"
+  local TMP_FILE="${ROUTE_FILE}.tmp.$$"
+  local LEGACY_COUNT
+  [ -s "$ROUTE_FILE" ] || return 0
+
+  LEGACY_COUNT=$(jq_exec '[.route.rules[]? | select(.outbound? == "warp-ep")] | length' "$ROUTE_FILE") || return 1
+  [ "$LEGACY_COUNT" -gt 0 ] || return 0
+
+  jq_exec '
+    .route.rules |= map(select(.outbound? != "warp-ep")) |
+    ([.route.rules[]? | .rule_set[]?] | unique) as $used |
+    .route.rule_set = [(.route.rule_set // [])[] | select(.tag as $tag | $used | index($tag) != null)]
+  ' "$ROUTE_FILE" > "$TMP_FILE" || { rm -f "$TMP_FILE"; return 1; }
+  mv "$TMP_FILE" "$ROUTE_FILE"
+}
+
+routing_migrate_legacy() {
+  local ROUTE_FILE="${CUSTOM_DIR}/03_route.json"
+  local OUTBOUNDS_FILE="${CUSTOM_DIR}/04_outbounds.json"
+  local LEGACY_ROUTE="${WORK_DIR}/conf/03_route.json"
+  local LEGACY_OUTBOUNDS="${WORK_DIR}/conf/01_outbounds.json"
+  local LEGACY_CUSTOM="${WORK_DIR}/conf/08_custom_route.json"
+  local PUBLISHED="${WORK_DIR}/conf/03_routing.json"
+  local TMP_FILE
+
+  mkdir -p "$CUSTOM_DIR" "$STATE_DIR"
+
+  if [ ! -e "$OUTBOUNDS_FILE" ]; then
+    TMP_FILE="${OUTBOUNDS_FILE}.tmp.$$"
+    if [ -s "$PUBLISHED" ] && jq_exec -e '.outbounds | type == "array"' "$PUBLISHED" >/dev/null 2>&1; then
+      jq_exec '{outbounds:.outbounds}' "$PUBLISHED" > "$TMP_FILE"
+    elif [ -s "$LEGACY_OUTBOUNDS" ] && jq_exec -e '.outbounds | type == "array"' "$LEGACY_OUTBOUNDS" >/dev/null 2>&1; then
+      jq_exec '{outbounds:.outbounds}' "$LEGACY_OUTBOUNDS" > "$TMP_FILE"
+    elif [ -s "$PUBLISHED" ] || [ -s "$LEGACY_OUTBOUNDS" ]; then
+      printf 'Unable to migrate invalid outbound configuration.\n' >&2
+      rm -f "$TMP_FILE"
+      return 1
+    else
+      routing_default_outbounds > "$TMP_FILE"
+    fi
+    mv "$TMP_FILE" "$OUTBOUNDS_FILE"
+  fi
+
+  if [ ! -e "$ROUTE_FILE" ]; then
+    TMP_FILE="${ROUTE_FILE}.tmp.$$"
+    if [ -s "$PUBLISHED" ] && jq_exec -e '.route | type == "object"' "$PUBLISHED" >/dev/null 2>&1; then
+      jq_exec '{route:.route}' "$PUBLISHED" > "$TMP_FILE"
+    elif [ -s "$LEGACY_ROUTE" ] && jq_exec -e '.route | type == "object"' "$LEGACY_ROUTE" >/dev/null 2>&1; then
+      jq_exec '{route:.route}' "$LEGACY_ROUTE" > "$TMP_FILE"
+    elif [ -s "$PUBLISHED" ] || [ -s "$LEGACY_ROUTE" ]; then
+      printf 'Unable to migrate invalid routing configuration.\n' >&2
+      rm -f "$TMP_FILE"
+      return 1
+    else
+      routing_default_route > "$TMP_FILE"
+    fi
+
+    if [ -s "$LEGACY_CUSTOM" ] && jq_exec -e '.route | type == "object"' "$LEGACY_CUSTOM" >/dev/null 2>&1; then
+      if ! jq_exec -s '
+        .[0] as $base | .[1] as $extra |
+        $base |
+        .route.rule_set = reduce ((($base.route.rule_set // []) + ($extra.route.rule_set // []))[]) as $item
+          ([]; if any(.[]; .tag == $item.tag) then . else . + [$item] end) |
+        .route.rules = (($base.route.rules // []) + ($extra.route.rules // []))
+      ' "$TMP_FILE" "$LEGACY_CUSTOM" > "${TMP_FILE}.merged"; then
+        printf 'Unable to merge legacy custom routing configuration: %s\n' "$LEGACY_CUSTOM" >&2
+        rm -f "$TMP_FILE" "${TMP_FILE}.merged"
+        return 1
+      fi
+      mv "${TMP_FILE}.merged" "$TMP_FILE"
+    elif [ -s "$LEGACY_CUSTOM" ]; then
+      printf 'Unable to migrate invalid custom routing configuration: %s\n' "$LEGACY_CUSTOM" >&2
+      rm -f "$TMP_FILE"
+      return 1
+    fi
+    if ! jq_exec '
+      .route.rule_set = (.route.rule_set // []) |
+      if any(.route.rule_set[]; .tag == "geosite-google") then . else
+        .route.rule_set += [{
+          tag:"geosite-google",
+          type:"remote",
+          format:"binary",
+          url:"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-google.srs"
+        }]
+      end |
+      .route.rules = (.route.rules // []) |
+      .route.rules |= map(
+        if .outbound? == "warp-ep" and
+           (.domain? // []) == ["api.openai.com"] and
+           (.rule_set? // []) == ["geosite-openai"] and
+           ((keys_unsorted - ["action", "domain", "outbound", "rule_set"]) | length) == 0 then
+          .outbound = "direct" | .action = "route"
+        elif .outbound? == "direct" and
+             (.rule_set? // []) == ["geosite-google", "geosite-openai"] and
+             ((keys_unsorted - ["action", "outbound", "rule_set"]) | length) == 0 then
+          .rule_set = ["geosite-openai"] | .domain = ["api.openai.com"] | .action = "route"
+        else . end
+      ) |
+      if any(.route.rules[]; .action? == "resolve" and (.rule_set? // []) == ["geosite-google"]) then . else
+        (.route.rules | map(.outbound? != null) | index(true)) as $idx |
+        ({action:"resolve", rule_set:["geosite-google"], strategy:"prefer_ipv6"}) as $rule |
+        .route.rules = if $idx == null then .route.rules + [$rule] else .route.rules[0:$idx] + [$rule] + .route.rules[$idx:] end
+      end |
+      if any(.route.rules[]; .outbound? == "direct" and (.rule_set? // []) == ["geosite-google"]) then . else
+        .route.rules += [{rule_set:["geosite-google"], action:"route", outbound:"direct"}]
+      end
+    ' "$TMP_FILE" > "${TMP_FILE}.defaults"; then
+      printf 'Unable to update migrated default routing rules.\n' >&2
+      rm -f "$TMP_FILE" "${TMP_FILE}.defaults"
+      return 1
+    fi
+    mv "${TMP_FILE}.defaults" "$TMP_FILE"
+    if ! jq_exec '
+      .route.rules |= map(
+        if .outbound? != null and .action? == null then . + {action:"route"} else . end
+      )
+    ' "$TMP_FILE" > "${TMP_FILE}.normalized"; then
+      printf 'Unable to normalize migrated routing configuration.\n' >&2
+      rm -f "$TMP_FILE" "${TMP_FILE}.normalized"
+      return 1
+    fi
+    mv "${TMP_FILE}.normalized" "$TMP_FILE"
+    mv "$TMP_FILE" "$ROUTE_FILE"
+  fi
+  routing_remove_legacy_warp
+}
+
+routing_validate_sources() {
+  local ROUTE_FILE="${CUSTOM_DIR}/03_route.json"
+  local OUTBOUNDS_FILE="${CUSTOM_DIR}/04_outbounds.json"
+
+  [ -s "$ROUTE_FILE" ] || { printf 'Missing routing source: %s\n' "$ROUTE_FILE" >&2; return 1; }
+  [ -s "$OUTBOUNDS_FILE" ] || { printf 'Missing outbound source: %s\n' "$OUTBOUNDS_FILE" >&2; return 1; }
+  jq_exec -e '.route | type == "object"' "$ROUTE_FILE" >/dev/null || {
+    printf 'Invalid routing source: %s\n' "$ROUTE_FILE" >&2
+    return 1
+  }
+  jq_exec -e '.outbounds | type == "array" and length > 0' "$OUTBOUNDS_FILE" >/dev/null || {
+    printf 'Invalid outbound source: %s\n' "$OUTBOUNDS_FILE" >&2
+    return 1
+  }
+}
+
+routing_prepare_candidate() {
+  local CANDIDATE_DIR=$1 FILE BASENAME
+  routing_validate_sources || return 1
+  mkdir -p "$CANDIDATE_DIR"
+
+  for FILE in "${WORK_DIR}"/conf/*.json; do
+    [ -e "$FILE" ] || continue
+    BASENAME=${FILE##*/}
+    case "$BASENAME" in
+      01_outbounds.json|02_endpoints.json|03_route.json|03_routing.json|08_custom_route.json ) continue ;;
+    esac
+    cp "$FILE" "$CANDIDATE_DIR/$BASENAME" || return 1
+  done
+
+  jq_exec -s '.[0] * .[1]' \
+    "${CUSTOM_DIR}/04_outbounds.json" \
+    "${CUSTOM_DIR}/03_route.json" > "${CANDIDATE_DIR}/03_routing.json"
+}
+
+routing_validate_candidate() {
+  local CANDIDATE_DIR=$1
+  [ -x "${WORK_DIR}/sing-box" ] || {
+    printf 'Sing-box binary not found: %s\n' "${WORK_DIR}/sing-box" >&2
+    return 1
+  }
+  "${WORK_DIR}/sing-box" check -C "$CANDIDATE_DIR"
+}
+
+routing_check() {
+  local CANDIDATE_DIR RC
+  CANDIDATE_DIR=$(mktemp -d "${TEMP_DIR}/routing-check.XXXXXX") || return 1
+  routing_prepare_candidate "$CANDIDATE_DIR" && routing_validate_candidate "$CANDIDATE_DIR"
+  RC=$?
+  rm -rf "$CANDIDATE_DIR"
+  return "$RC"
+}
+
+routing_write_state() {
+  local ROUTE_HASH OUTBOUNDS_HASH
+  command -v sha256sum >/dev/null 2>&1 || return 0
+  ROUTE_HASH=$(sha256sum "${CUSTOM_DIR}/03_route.json" | awk '{print $1}')
+  OUTBOUNDS_HASH=$(sha256sum "${CUSTOM_DIR}/04_outbounds.json" | awk '{print $1}')
+  jq_exec -n \
+    --arg schema "1" \
+    --arg route "$ROUTE_HASH" \
+    --arg outbounds "$OUTBOUNDS_HASH" \
+    --arg published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{schema:($schema|tonumber),route_sha256:$route,outbounds_sha256:$outbounds,published_at:$published}' \
+    > "${STATE_DIR}/routing.json.tmp.$$" &&
+    mv "${STATE_DIR}/routing.json.tmp.$$" "${STATE_DIR}/routing.json"
+}
+
+routing_publish() (
+  local LOCK_DIR="${STATE_DIR}/routing.lock"
+  local CANDIDATE_DIR='' RUNTIME_TMP='' RC=1 WAIT_COUNT=0
+  mkdir -p "$STATE_DIR"
+  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    [ "$WAIT_COUNT" -lt 50 ] || { printf 'Routing publish is locked: %s\n' "$LOCK_DIR" >&2; return 1; }
+    sleep 0.1
+  done
+  RUNTIME_TMP="${WORK_DIR}/conf/03_routing.json.tmp.$$"
+  trap 'rm -rf "$CANDIDATE_DIR" "$LOCK_DIR"; rm -f "$RUNTIME_TMP"' EXIT
+
+  CANDIDATE_DIR=$(mktemp -d "${TEMP_DIR}/routing-publish.XXXXXX") || return 1
+  if routing_prepare_candidate "$CANDIDATE_DIR" && routing_validate_candidate "$CANDIDATE_DIR"; then
+    cp "${CANDIDATE_DIR}/03_routing.json" "$RUNTIME_TMP" &&
+      mv "$RUNTIME_TMP" "${WORK_DIR}/conf/03_routing.json" &&
+      rm -f "${WORK_DIR}/conf/01_outbounds.json" "${WORK_DIR}/conf/02_endpoints.json" "${WORK_DIR}/conf/03_route.json" "${WORK_DIR}/conf/08_custom_route.json" &&
+      { routing_write_state || true; }
+    RC=$?
+  fi
+  return "$RC"
+)
+
+routing_reload() {
+  local PID
+  local PIDS=()
+  routing_publish || return 1
+  if [ "$SYSTEM" = 'Alpine' ]; then
+    mapfile -t PIDS < <(pgrep -f "^${WORK_DIR}/sing-box run( |$)")
+    [ "${#PIDS[@]}" -gt 0 ] || return 1
+    for PID in "${PIDS[@]}"; do
+      kill -HUP "$PID" || return 1
+    done
+  else
+    systemctl kill --kill-who=main --signal=HUP sing-box || return 1
+  fi
+  sleep 2
+  cmd_systemctl status sing-box >/dev/null 2>&1
 }
 
 # 更新 Hysteria2 服务端 Realm 模块
@@ -2363,430 +2582,10 @@ set_hy2_realm_config() {
     IS_HY2_REALM=is_hy2_realm
   else
     jq_exec '.inbounds |= map(if .type == "hysteria2" then del(.realm) else . end)' "$HY2_CONF" > "$TMP_FILE" && mv "$TMP_FILE" "$HY2_CONF"
-    unset IS_HY2_REALM IS_HY2_WARP HY2_REALM_ID
+    unset IS_HY2_REALM HY2_REALM_ID
   fi
 }
 
-# Hysteria2 Realm 的 WARP 辅助路由：添加或删除 inbound -> warp-ep
-sync_hy2_warp_route() {
-  local ACTION=$1
-  local ROUTE_FILE="${WORK_DIR}/conf/03_route.json"
-  [ ! -s "$ROUTE_FILE" ] && return
-  local HY2_TAG="${NODE_NAME[12]} ${NODE_TAG[1]}"
-  [ -z "${NODE_NAME[12]}" ] && HY2_TAG=$(awk -F'"' '/"tag"[[:space:]]*:[[:space:]]*".*hysteria2"/{print $4; exit}' ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json 2>/dev/null)
-  [ -z "$HY2_TAG" ] && return
-  local TMP_FILE="${ROUTE_FILE}.tmp"
-
-  if [ "$ACTION" = 'enable' ]; then
-    jq_exec --arg tag "$HY2_TAG" '
-      .route.rules |= (
-        map(select(.inbound != [$tag] or .outbound != "warp-ep")) as $rules |
-        ($rules | map(.action == "resolve" and (.rule_set // []) == ["geosite-openai"]) | index(true)) as $idx |
-        if $idx == null then
-          $rules + [{"inbound":[$tag],"action":"route","outbound":"warp-ep"}]
-        else
-          $rules[0:$idx+1] + [{"inbound":[$tag],"action":"route","outbound":"warp-ep"}] + $rules[$idx+1:]
-        end
-      )' "$ROUTE_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$ROUTE_FILE"
-    IS_HY2_WARP=is_hy2_warp
-  else
-    jq_exec --arg tag "$HY2_TAG" '.route.rules |= map(select(.inbound != [$tag] or .outbound != "warp-ep"))' "$ROUTE_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$ROUTE_FILE"
-    unset IS_HY2_WARP
-  fi
-}
-
-# ===================== 自定义路由规则 =====================
-
-# 统计自定义路由规则数量（按数组里的单项统计，不按整条 route rule 统计）
-custom_route_count() {
-  local CUSTOM_FILE="${WORK_DIR}/conf/08_custom_route.json"
-  if [ -s "$CUSTOM_FILE" ]; then
-    jq_exec '[.route.rules[]? | ((.domain_suffix // []) | length) + ((.rule_set // []) | length)] | add // 0' "$CUSTOM_FILE" 2>/dev/null || echo 0
-  else
-    echo 0
-  fi
-}
-
-# 将 warp-ep 的 domain_suffix / rule_set 合并到同一条 route rule，保持 08_custom_route.json 更简洁
-custom_route_compact_rules() {
-  local CUSTOM_FILE="${WORK_DIR}/conf/08_custom_route.json"
-  local TMP_FILE="${CUSTOM_FILE}.tmp"
-  [ ! -s "$CUSTOM_FILE" ] && return
-
-  jq_exec '
-    (.route.rules // []) as $rules |
-    ($rules | map(select((.outbound // "warp-ep") == "warp-ep") | .domain_suffix // []) | add // [] | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)) as $domains |
-    ($rules | map(select((.outbound // "warp-ep") == "warp-ep") | .rule_set // []) | add // [] | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)) as $sets |
-    ($rules | map(select((.outbound // "warp-ep") != "warp-ep"))) as $others |
-    .route.rules = (
-      $others +
-      (if (($domains | length) + ($sets | length)) > 0 then
-        [((if ($sets | length) > 0 then {rule_set:$sets} else {} end)
-          + (if ($domains | length) > 0 then {domain_suffix:$domains} else {} end)
-          + {action:"route", outbound:"warp-ep"})]
-      else [] end)
-    )
-  ' "$CUSTOM_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CUSTOM_FILE"
-}
-
-custom_route_migrate_actions() {
-  local CUSTOM_FILE="${WORK_DIR}/conf/08_custom_route.json"
-  local TMP_FILE="${CUSTOM_FILE}.tmp"
-  local NEEDS_MIGRATION
-  [ ! -s "$CUSTOM_FILE" ] && return
-
-  NEEDS_MIGRATION=$(jq_exec -r 'any(.route.rules[]?; .outbound? == "warp-ep" and .action? == null)' "$CUSTOM_FILE" 2>/dev/null) ||
-    failure_error "\n $(text 173) \n" "File: $CUSTOM_FILE"
-  [ "$NEEDS_MIGRATION" != 'true' ] && return
-
-  if ! jq_exec '
-    .route.rules |= map(
-      if .outbound? == "warp-ep" and .action? == null then
-        . + {action:"route"}
-      else
-        .
-      end
-    )
-  ' "$CUSTOM_FILE" > "$TMP_FILE"; then
-    rm -f "$TMP_FILE"
-    failure_error "\n $(text 174) \n" "File: $CUSTOM_FILE"
-  fi
-  mv "$TMP_FILE" "$CUSTOM_FILE"
-}
-
-# 通过 GitHub API 校验 rule_set 是否存在，返回下载 URL
-check_rule_set_exists() {
-  local NAME="$1"
-  local SRS_NAME="${NAME}.srs"
-  local CACHE_DIR="${TEMP_DIR}/ruleset_cache"
-  mkdir -p "$CACHE_DIR"
-
-  local SAGERNET_CACHE="${CACHE_DIR}/sagernet_tree.json"
-  if [ ! -s "$SAGERNET_CACHE" ]; then
-    curl -sL --connect-timeout 5 --max-time 15 "https://api.github.com/repos/SagerNet/sing-geosite/git/trees/rule-set?recursive=1" > "$SAGERNET_CACHE" 2>/dev/null || true
-  fi
-
-  if [ -s "$SAGERNET_CACHE" ] && jq_exec -e ".tree[]? | select(.path == \"${SRS_NAME}\")" "$SAGERNET_CACHE" >/dev/null 2>&1; then
-    echo "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/${SRS_NAME}"
-    return 0
-  fi
-
-  local METACUBEX_CACHE="${CACHE_DIR}/metacubex_tree.json"
-  if [ ! -s "$METACUBEX_CACHE" ]; then
-    curl -sL --connect-timeout 5 --max-time 15 "https://api.github.com/repos/MetaCubeX/meta-rules-dat/git/trees/sing?recursive=1" > "$METACUBEX_CACHE" 2>/dev/null || true
-  fi
-
-  if [ -s "$METACUBEX_CACHE" ]; then
-    local MATCH_PATH
-    MATCH_PATH=$(jq_exec -r "[.tree[]? | select(.path | endswith(\"/${SRS_NAME}\") or . == \"${SRS_NAME}\") | .path] | first // empty" "$METACUBEX_CACHE" 2>/dev/null)
-    if [ -n "$MATCH_PATH" ]; then
-      echo "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/${MATCH_PATH}"
-      return 0
-    fi
-  fi
-
-  if [ ! -s "$SAGERNET_CACHE" ] && [ ! -s "$METACUBEX_CACHE" ]; then
-    warning " $(text 166) "
-    echo "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/${SRS_NAME}"
-    return 0
-  fi
-
-  return 1
-}
-
-custom_route_add() {
-  local CUSTOM_FILE="${WORK_DIR}/conf/08_custom_route.json"
-
-  hint "\n $(text 156) "
-  reading " $(text 24) " RULE_TYPE_CHOICE
-  case "$RULE_TYPE_CHOICE" in
-    1 ) local RULE_TYPE="domain_suffix" ;;
-    2 ) local RULE_TYPE="rule_set" ;;
-    * ) info " $(text 135) " && return ;;
-  esac
-
-  local VALIDATED_VALUES=()
-  local RULE_SET_URLS=()
-
-  if [ "$RULE_TYPE" = "domain_suffix" ]; then
-    reading " $(text 157) " DOMAIN_INPUT
-    [ -z "$DOMAIN_INPUT" ] && info " $(text 135) " && return
-
-    local DOMAINS=()
-    custom_route_csv_to_array "$DOMAIN_INPUT" DOMAINS
-    local DOMAIN
-    for DOMAIN in "${DOMAINS[@]}"; do
-      DOMAIN=$(sed 's/。/./g' <<< "${DOMAIN,,}")
-      if [[ "$DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$ ]]; then
-        VALIDATED_VALUES+=("$DOMAIN")
-      else
-        warning " $(text 165) "
-      fi
-    done
-    [ "${#VALIDATED_VALUES[@]}" -eq 0 ] && warning " $(text 135) " && return
-
-  elif [ "$RULE_TYPE" = "rule_set" ]; then
-    reading " $(text 158) " RULESET_INPUT
-    [ -z "$RULESET_INPUT" ] && info " $(text 135) " && return
-
-    local RULESETS=()
-    custom_route_csv_to_array "$RULESET_INPUT" RULESETS
-
-    local RULE_NAME RETRY URL
-    for RULE_NAME in "${RULESETS[@]}"; do
-      RULE_NAME="${RULE_NAME,,}"
-      RULE_NAME=$(sed -E 's#^.*/##; s/\.srs$//I' <<< "$RULE_NAME")
-      [[ -n "$RULE_NAME" && ! "$RULE_NAME" =~ ^geo(site|ip)- ]] && RULE_NAME="geosite-${RULE_NAME}"
-      [ -z "$RULE_NAME" ] && continue
-
-      RETRY=3
-      URL=""
-      while [ $RETRY -gt 0 ]; do
-        URL=$(check_rule_set_exists "$RULE_NAME")
-        if [ -n "$URL" ]; then
-          VALIDATED_VALUES+=("$RULE_NAME")
-          RULE_SET_URLS+=("$URL")
-          break
-        else
-          ((RETRY--)) || true
-          if [ $RETRY -gt 0 ]; then
-            warning " $(text 160) "
-            reading " " RULE_NAME
-            RULE_NAME="${RULE_NAME,,}"
-            RULE_NAME=$(sed -E 's#^.*/##; s/\.srs$//I' <<< "$RULE_NAME")
-            [[ -n "$RULE_NAME" && ! "$RULE_NAME" =~ ^geo(site|ip)- ]] && RULE_NAME="geosite-${RULE_NAME}"
-          else
-            warning " $(text 160) "
-          fi
-        fi
-      done
-    done
-    [ "${#VALIDATED_VALUES[@]}" -eq 0 ] && warning " $(text 135) " && return
-  fi
-
-  local OUTBOUND="warp-ep"
-  hint " $(text 159) "
-
-  if [ ! -s "$CUSTOM_FILE" ]; then
-    echo '{"route":{"rule_set":[],"rules":[]}}' | jq_exec '.' > "$CUSTOM_FILE"
-  fi
-
-  local TMP_FILE="${CUSTOM_FILE}.tmp"
-
-  if [ "$RULE_TYPE" = "domain_suffix" ]; then
-    local DOMAINS_JSON
-    DOMAINS_JSON=$(printf '%s\n' "${VALIDATED_VALUES[@]}" | jq_exec -R . | jq_exec -s 'reduce .[] as $x ([]; if index($x) then . else . + [$x] end)')
-
-    jq_exec --argjson domains "$DOMAINS_JSON" --arg out "$OUTBOUND" '
-      .route.rules = (.route.rules // []) |
-      (.route.rules | map(select((.outbound // $out) == $out) | .domain_suffix // []) | add // []) as $old_domains |
-      (.route.rules | map(select((.outbound // $out) == $out) | .rule_set // []) | add // []) as $old_sets |
-      (.route.rules | map(select((.outbound // $out) != $out))) as $others |
-      (($old_domains + $domains) | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)) as $new_domains |
-      ($old_sets | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)) as $new_sets |
-      .route.rules = (
-        $others +
-        (if (($new_domains | length) + ($new_sets | length)) > 0 then
-          [((if ($new_sets | length) > 0 then {rule_set:$new_sets} else {} end)
-            + (if ($new_domains | length) > 0 then {domain_suffix:$new_domains} else {} end)
-            + {action:"route", outbound:$out})]
-        else [] end)
-      )
-    ' "$CUSTOM_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CUSTOM_FILE"
-
-  elif [ "$RULE_TYPE" = "rule_set" ]; then
-    local i
-    for i in "${!VALIDATED_VALUES[@]}"; do
-      local RS_NAME="${VALIDATED_VALUES[$i]}"
-      local RS_URL="${RULE_SET_URLS[$i]}"
-
-      jq_exec --arg tag "$RS_NAME" --arg url "$RS_URL" '
-        .route.rule_set = (.route.rule_set // []) |
-        .route.rule_set |= (
-          if any(.[]; .tag == $tag) then .
-          else . + [{"tag": $tag, "type": "remote", "format": "binary", "url": $url}]
-          end
-        )
-      ' "$CUSTOM_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CUSTOM_FILE"
-    done
-
-    local RS_NAMES_JSON
-    RS_NAMES_JSON=$(printf '%s\n' "${VALIDATED_VALUES[@]}" | jq_exec -R . | jq_exec -s 'reduce .[] as $x ([]; if index($x) then . else . + [$x] end)')
-
-    jq_exec --argjson names "$RS_NAMES_JSON" --arg out "$OUTBOUND" '
-      .route.rules = (.route.rules // []) |
-      (.route.rules | map(select((.outbound // $out) == $out) | .domain_suffix // []) | add // []) as $old_domains |
-      (.route.rules | map(select((.outbound // $out) == $out) | .rule_set // []) | add // []) as $old_sets |
-      (.route.rules | map(select((.outbound // $out) != $out))) as $others |
-      ($old_domains | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)) as $new_domains |
-      (($old_sets + $names) | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)) as $new_sets |
-      .route.rules = (
-        $others +
-        (if (($new_domains | length) + ($new_sets | length)) > 0 then
-          [((if ($new_sets | length) > 0 then {rule_set:$new_sets} else {} end)
-            + (if ($new_domains | length) > 0 then {domain_suffix:$new_domains} else {} end)
-            + {action:"route", outbound:$out})]
-        else [] end)
-      )
-    ' "$CUSTOM_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CUSTOM_FILE"
-  fi
-
-  custom_route_compact_rules
-
-  info " $(text 161) "
-  hint " $(text 112) "
-  restart_service_or_warn Sing-box sing-box || true
-}
-
-custom_route_csv_to_array() {
-  local _input="$1"
-  local -n _out_array="$2"
-  _out_array=()
-
-  mapfile -t _out_array < <(
-    printf '%s\n' "$_input" |
-      sed 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/\^\[\[[0-9;?]*[A-Za-z]//g; s/[，、；;|]/,/g; s/[[:space:]]//g; s/,/\n/g; /^$/d'
-  )
-}
-
-custom_route_items_json() {
-  local CUSTOM_FILE="${WORK_DIR}/conf/08_custom_route.json"
-  jq_exec -c '
-    [.route.rules[]?] as $rules |
-    reduce range(0; ($rules | length)) as $i ([];
-      ($rules[$i]) as $r |
-      .
-      + [($r.rule_set[]? | {rule_index:$i,type:"rule_set",match:.,outbound:($r.outbound // "warp-ep")})]
-      + [($r.domain_suffix[]? | {rule_index:$i,type:"domain_suffix",match:.,outbound:($r.outbound // "warp-ep")})]
-      + (if (($r.rule_set? == null) and ($r.domain_suffix? == null)) then [{rule_index:$i,type:"unknown",match:"N/A",outbound:($r.outbound // "warp-ep")}] else [] end)
-    ) | .[]
-  ' "$CUSTOM_FILE" 2>/dev/null
-}
-
-custom_route_view() {
-  local CUSTOM_FILE="${WORK_DIR}/conf/08_custom_route.json"
-
-  if [ ! -s "$CUSTOM_FILE" ]; then
-    hint " $(text 162) "
-    return 1
-  fi
-
-  local ROUTE_ITEMS=()
-  mapfile -t ROUTE_ITEMS < <(custom_route_items_json)
-
-  if [ "${#ROUTE_ITEMS[@]}" -eq 0 ]; then
-    hint " $(text 162) "
-    return 1
-  fi
-
-  hint "\n $(text 167) \n"
-  printf "  %-4s %-16s %s\n" "#" "Type" "Match"
-  printf "  %-4s %-16s %s\n" "---" "---------------" "---------------------------------------"
-
-  local IDX=0
-  local ITEM TYPE MATCH
-  for ITEM in "${ROUTE_ITEMS[@]}"; do
-    ((IDX++)) || true
-    TYPE=$(jq_exec -r '.type' <<< "$ITEM")
-    MATCH=$(jq_exec -r '.match' <<< "$ITEM")
-    printf "  %-4s %-16s %s\n" "$IDX" "$TYPE" "$MATCH"
-  done
-
-  echo ""
-  return 0
-}
-
-custom_route_delete() {
-  local CUSTOM_FILE="${WORK_DIR}/conf/08_custom_route.json"
-
-  custom_route_view || return
-
-  local ROUTE_ITEMS=()
-  mapfile -t ROUTE_ITEMS < <(custom_route_items_json)
-  [ "${#ROUTE_ITEMS[@]}" -eq 0 ] && info " $(text 135) " && return
-
-  reading " $(text 163) " DELETE_INPUT
-  [ -z "$DELETE_INPUT" ] && info " $(text 135) " && return
-
-  local DELETE_NUMS=()
-  custom_route_csv_to_array "$DELETE_INPUT" DELETE_NUMS
-
-  local DELETE_ITEM_LINES=()
-  local NUM
-  for NUM in "${DELETE_NUMS[@]}"; do
-    NUM=$(sed 's/[^0-9]//g' <<< "$NUM")
-    if [[ "$NUM" =~ ^[0-9]+$ ]] && [ "$NUM" -ge 1 ] && [ "$NUM" -le "${#ROUTE_ITEMS[@]}" ]; then
-      DELETE_ITEM_LINES+=("${ROUTE_ITEMS[$((NUM - 1))]}")
-    fi
-  done
-
-  [ "${#DELETE_ITEM_LINES[@]}" -eq 0 ] && info " $(text 135) " && return
-
-  local DELETE_ITEMS_JSON TMP_FILE
-  DELETE_ITEMS_JSON=$(printf '%s\n' "${DELETE_ITEM_LINES[@]}" | jq_exec -s 'unique_by(.rule_index, .type, .match)')
-  TMP_FILE="${CUSTOM_FILE}.tmp"
-
-  jq_exec --argjson del "$DELETE_ITEMS_JSON" '
-    .route.rules |= (
-      [.[]?] as $rules |
-      reduce range(0; ($rules | length)) as $idx ([];
-        ($rules[$idx]) as $rule |
-        ($del | map(select(.rule_index == $idx and .type == "domain_suffix") | .match)) as $remove_domains |
-        ($del | map(select(.rule_index == $idx and .type == "rule_set") | .match)) as $remove_sets |
-        ($rule
-          | if .domain_suffix? != null then .domain_suffix = ([.domain_suffix[]? as $v | select(($remove_domains | index($v)) | not) | $v]) else . end
-          | if .rule_set? != null then .rule_set = ([.rule_set[]? as $v | select(($remove_sets | index($v)) | not) | $v]) else . end
-          | if ((.domain_suffix // []) | length) == 0 then del(.domain_suffix) else . end
-          | if ((.rule_set // []) | length) == 0 then del(.rule_set) else . end
-        ) as $new_rule |
-        if (($new_rule.domain_suffix? != null) or ($new_rule.rule_set? != null)) then
-          . + [$new_rule]
-        elif ($del | any(.rule_index == $idx and .type == "unknown")) then
-          .
-        else
-          . + [$new_rule]
-        end
-      )
-    )
-  ' "$CUSTOM_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CUSTOM_FILE"
-
-  custom_route_compact_rules
-
-  jq_exec '
-    (.route.rules | [.[]? | .rule_set // [] | .[]] | unique) as $used |
-    .route.rule_set |= [.[]? | select(.tag as $t | $used | index($t) | not | not)]
-  ' "$CUSTOM_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CUSTOM_FILE"
-
-  local REMAINING
-  REMAINING=$(jq_exec '.route.rules | length' "$CUSTOM_FILE" 2>/dev/null)
-  if [ "${REMAINING:-0}" -eq 0 ]; then
-    rm -f "$CUSTOM_FILE"
-  fi
-
-  info " $(text 164) "
-  hint " $(text 112) "
-  restart_service_or_warn Sing-box sing-box || true
-}
-
-custom_route_menu() {
-  while true; do
-    CUSTOM_ROUTE_COUNT=$(custom_route_count)
-    hint "\n $(text 154) \n"
-    hint " $(text 155) "
-    hint ""
-    reading " $(text 24) " CUSTOM_ROUTE_CHOICE
-
-    case "$CUSTOM_ROUTE_CHOICE" in
-      1 ) custom_route_add ;;
-      2 ) custom_route_view ;;
-      3 ) custom_route_delete ;;
-      0 ) return ;;
-      * ) info " $(text 135) " && return ;;
-    esac
-  done
-}
-
-# ===================== 自定义路由规则 END =====================
 
 # 输入 Reality 密钥
 input_reality_key() {
@@ -3186,7 +2985,7 @@ cmd_systemctl() {
   local _action=$1 _service=${2:-systemctl} _log_file _rc=0 _runlevel_rc=0
 
   if [[ "$_service" = 'sing-box' && "$_action" =~ ^(enable|restart)$ ]]; then
-    custom_route_migrate_actions
+    routing_publish || return 1
   fi
 
   _log_file=$(service_command_log_file "$_service" "$_action")
@@ -3575,20 +3374,7 @@ sing-box_variables() {
   calc_install_steps
   INSTALL_PROTOCOLS=("${_saved_protocols[@]}")
 
-  if grep -qi 'cloudflare' <<< "$ASNORG4$ASNORG6"; then
-    if grep -qi 'cloudflare' <<< "$ASNORG6" && [ -n "$WAN4" ] && ! grep -qi 'cloudflare' <<< "$ASNORG4"; then
-      SERVER_IP_DEFAULT=$WAN4
-    elif grep -qi 'cloudflare' <<< "$ASNORG4" && [ -n "$WAN6" ] && ! grep -qi 'cloudflare' <<< "$ASNORG6"; then
-      SERVER_IP_DEFAULT=$WAN6
-    else
-      local a=6
-      until [ -n "$SERVER_IP" ]; do
-        ((a--)) || true
-        [ "$a" = 0 ] && error "\n $(text 3) \n"
-        reading "\n $(text 46) " SERVER_IP
-      done
-    fi
-  elif [ -n "$WAN4" ]; then
+  if [ -n "$WAN4" ]; then
     SERVER_IP_DEFAULT=$WAN4
   elif [ -n "$WAN6" ]; then
     SERVER_IP_DEFAULT=$WAN6
@@ -3682,17 +3468,13 @@ sing-box_variables() {
       ;;
   esac
 
-  # 检测是否解锁 chatGPT
-  CHATGPT_OUT=warp-ep;
-  [ "$(check_chatgpt $(grep -oE '[46]' <<< "$STRATEGY"))" = 'unlock' ] && CHATGPT_OUT=direct
-
   # 如果选择有 b j k 这些 reality 协议，自定义 reality 公私钥，如果没有则自动生成
   if [ "$NONINTERACTIVE_INSTALL" != 'noninteractive_install' ] && array_contains_any INSTALL_PROTOCOLS b j k; then
     (( STEP_NUM++ )) || true
     input_reality_key
   fi
 
-  # 如选择有 c. hysteria2 时，先选择 Realm / WARP，再选择是否使用端口跳跃。
+  # 如选择有 c. hysteria2 时，先选择 Realm，再选择是否使用端口跳跃。
   # 这三项属于 Hysteria2 子选项，不计入安装总步骤，也不显示步骤编号。
   if array_contains c "${INSTALL_PROTOCOLS[@]}"; then
     input_hy2_realm
@@ -4594,7 +4376,8 @@ http {
 # 生成 sing-box 配置文件
 sing-box_json() {
   local IS_CHANGE=$1
-  mkdir -p ${WORK_DIR}/conf ${WORK_DIR}/logs ${WORK_DIR}/subscribe
+  mkdir -p ${WORK_DIR}/conf ${WORK_DIR}/logs ${WORK_DIR}/subscribe "$CUSTOM_DIR" "$STATE_DIR"
+  routing_migrate_legacy || failure_error " Routing configuration migration failed. " "Custom directory: ${CUSTOM_DIR}"
 
   # 判断是否为新安装，不为 change 就是新安装
   if [ "$IS_CHANGE" = 'change' ]; then
@@ -4611,97 +4394,6 @@ sing-box_json() {
         "level":"${LOG_LEVEL}",
         "output":"${WORK_DIR}/logs/box.log",
         "timestamp":true
-    }
-}
-EOF
-
-    # 生成 outbound 配置
-    cat > ${WORK_DIR}/conf/01_outbounds.json << EOF
-{
-    "outbounds":[
-        {
-            "type":"direct",
-            "tag":"direct"
-        }
-    ]
-}
-EOF
-
-    # 生成 endpoint 配置
-    cat > ${WORK_DIR}/conf/02_endpoints.json << EOF
-{
-    "endpoints":[
-        {
-            "type":"wireguard",
-            "tag":"warp-ep",
-            "mtu":1400,
-            "address":[
-                "172.16.0.2/32",
-                "2606:4700:110:8a36:df92:102a:9602:fa18/128"
-            ],
-            "private_key":"YFYOAdbw1bKTHlNNi+aEjBM3BO7unuFC5rOkMRAz9XY=",
-            "peers": [
-              {
-                "address": "engage.cloudflareclient.com",
-                "port":2408,
-                "public_key":"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-                "allowed_ips": [
-                  "0.0.0.0/0",
-                  "::/0"
-                ],
-                "reserved":[
-                    78,
-                    135,
-                    76
-                ]
-              }
-            ]
-        }
-    ]
-}
-EOF
-
-    # 生成 route 配置
-    cat > ${WORK_DIR}/conf/03_route.json << EOF
-{
-    "route":{
-        "default_http_client": "http-client-direct",
-        "rule_set":[
-            {
-                "tag":"geosite-openai",
-                "type":"remote",
-                "format":"binary",
-                "url":"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs"
-            }
-        ],
-        "rules":[
-            {
-                "action": "sniff"
-            },
-            {
-                "action": "resolve",
-                "domain":[
-                    "api.openai.com"
-                ],
-                "strategy": "prefer_ipv4"
-            },
-            {
-                "action": "resolve",
-                "rule_set":[
-                    "geosite-openai"
-                ],
-                "strategy": "prefer_ipv6"
-            },
-            {
-                "domain":[
-                    "api.openai.com"
-                ],
-                "rule_set":[
-                    "geosite-openai"
-                ],
-                "outbound":"${CHATGPT_OUT}"
-            }
-        ]
     }
 }
 EOF
@@ -4873,7 +4565,6 @@ EOF_REALM
     ]
 }
 EOF
-    [ "$IS_HY2_WARP" = 'is_hy2_warp' ] && sync_hy2_warp_route enable || sync_hy2_warp_route disable
   fi
 
   # 生成 Tuic V5 配置
@@ -5458,7 +5149,7 @@ EOF
 
 # 获取原有各协议的参数，先清空所有的 key-value
 fetch_nodes_value() {
-  unset NODE_NAME PORT_XTLS_REALITY UUID TLS_SERVER REALITY_PRIVATE REALITY_PUBLIC PORT_HYSTERIA2 HY2_REALM_ID IS_HY2_REALM IS_HY2_WARP PORT_TUIC TUIC_PASSWORD TUIC_CONGESTION_CONTROL PORT_SHADOWTLS SHADOWTLS_PASSWORD SHADOWSOCKS_METHOD PORT_SHADOWSOCKS PORT_TROJAN TROJAN_PASSWORD PORT_VMESS_WS VMESS_WS_PATH WS_SERVER_IP WS_SERVER_IP_SHOW VMESS_HOST_DOMAIN CDN CDN_PORT PORT_VLESS_WS VLESS_WS_PATH VLESS_HOST_DOMAIN PORT_H2_REALITY PORT_GRPC_REALITY ARGO_DOMAIN PORT_ANYTLS PORT_NAIVE SELF_SIGNED_FINGERPRINT_SHA256 SELF_SIGNED_FINGERPRINT_BASE64
+  unset NODE_NAME PORT_XTLS_REALITY UUID TLS_SERVER REALITY_PRIVATE REALITY_PUBLIC PORT_HYSTERIA2 HY2_REALM_ID IS_HY2_REALM PORT_TUIC TUIC_PASSWORD TUIC_CONGESTION_CONTROL PORT_SHADOWTLS SHADOWTLS_PASSWORD SHADOWSOCKS_METHOD PORT_SHADOWSOCKS PORT_TROJAN TROJAN_PASSWORD PORT_VMESS_WS VMESS_WS_PATH WS_SERVER_IP WS_SERVER_IP_SHOW VMESS_HOST_DOMAIN CDN CDN_PORT PORT_VLESS_WS VLESS_WS_PATH VLESS_HOST_DOMAIN PORT_H2_REALITY PORT_GRPC_REALITY ARGO_DOMAIN PORT_ANYTLS PORT_NAIVE SELF_SIGNED_FINGERPRINT_SHA256 SELF_SIGNED_FINGERPRINT_BASE64
 
   # 获取公共数据
   ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && SERVER_IP=$(awk -F '"' '/"WS_SERVER_IP_SHOW"/{print $4; exit}' ${WORK_DIR}/conf/*-ws*inbounds.json) || SERVER_IP=$(grep -A1 '"tag"' ${WORK_DIR}/list | sed -E '/-ws(-tls)*",$/{N;d}' | awk -F '"' '/"server"/{count++; if (count == 1) {print $4; exit}}')
@@ -5508,9 +5199,6 @@ fetch_nodes_value() {
       IS_HY2_REALM=is_hy2_realm
       HY2_REALM_ID=$(awk -F '"' '/"realm_id"[[:space:]]*:/{print $4; exit}' <<< "$JSON")
       HY2_REALM_ID=${HY2_REALM_ID:-${UUID[12]}}
-    fi
-    if [ -s ${WORK_DIR}/conf/03_route.json ] && [ -n "${NODE_NAME[12]}" ] && grep -q '"outbound"[[:space:]]*:[[:space:]]*"warp-ep"' ${WORK_DIR}/conf/03_route.json && grep -q "${NODE_NAME[12]} ${NODE_TAG[1]}" ${WORK_DIR}/conf/03_route.json; then
-      IS_HY2_WARP=is_hy2_warp
     fi
     check_port_hopping_nat
   fi
@@ -5824,9 +5512,8 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
     tar -czf "${WORK_DIR}/backup/conf.$(date +%Y%m%d%H%M%S).tar.gz" -C "$WORK_DIR" conf subscribe list nginx.conf 2>/dev/null || true
   fi
 
-  [ -s "${WORK_DIR}/conf/08_custom_route.json" ] && cp "${WORK_DIR}/conf/08_custom_route.json" "$TEMP_DIR/08_custom_route.json"
+  routing_migrate_legacy || failure_error " Routing configuration migration failed. " "Custom directory: ${CUSTOM_DIR}"
   rm -f "${WORK_DIR}"/conf/[0-9][0-9]_*.json "${WORK_DIR}"/conf/[1-2][0-9]_*.json "${WORK_DIR}"/subscribe/* "${WORK_DIR}/list" "${WORK_DIR}/nginx.conf"
-  [ -s "$TEMP_DIR/08_custom_route.json" ] && cp "$TEMP_DIR/08_custom_route.json" "${WORK_DIR}/conf/08_custom_route.json"
   if [ "$IS_ARGO" != 'is_argo' ]; then
     rm -f "$ARGO_DAEMON_FILE" "${WORK_DIR}/tunnel.json" "${WORK_DIR}/tunnel.yml"
     [ "$SYSTEM" = 'Alpine' ] || systemctl daemon-reload >/dev/null 2>&1 || true
@@ -6877,7 +6564,7 @@ change_protocols() {
     fi
     [ -z "${PORT_HOPPING_START}${PORT_HOPPING_END}" ] && input_hopping_port
   else
-    unset PORT_HYSTERIA2 IS_HY2_REALM IS_HY2_WARP HY2_REALM_ID
+    unset PORT_HYSTERIA2 IS_HY2_REALM HY2_REALM_ID
   fi
 
   # 获取 Tuic V5 端口
@@ -6996,20 +6683,7 @@ change_protocols() {
 
   # 如之前没有 ws，现新增的 ws，则确认服务器 IP 和输入 cdn
   if [[ "${#CDN[@]}" = '0' && ( "$ARGO_READY" = 'argo_ready' || "$ORIGIN_READY" = 'origin_ready' ) ]]; then
-    if grep -qi 'cloudflare' <<< "$ASNORG4$ASNORG6"; then
-      if grep -qi 'cloudflare' <<< "$ASNORG6" && [ -n "$WAN4" ] && ! grep -qi 'cloudflare' <<< "$ASNORG4"; then
-        SERVER_IP_DEFAULT=$WAN4
-      elif grep -qi 'cloudflare' <<< "$ASNORG4" && [ -n "$WAN6" ] && ! grep -qi 'cloudflare' <<< "$ASNORG6"; then
-        SERVER_IP_DEFAULT=$WAN6
-      else
-        local a=6
-        until [ -n "$SERVER_IP" ]; do
-          ((a--)) || true
-          [ "$a" = 0 ] && error "\n $(text 3) \n"
-          reading "\n $(text 46) " SERVER_IP
-        done
-      fi
-    elif [ -n "$WAN4" ]; then
+    if [ -n "$WAN4" ]; then
       SERVER_IP_DEFAULT=$WAN4
     elif [ -n "$WAN6" ]; then
       SERVER_IP_DEFAULT=$WAN6
@@ -7264,7 +6938,7 @@ protocol_edit_node_name() {
   OLD_TAG="${OLD_NAME} ${NODE_TAG[IDX]}"
   NEW_TAG="${NEW_NAME} ${NODE_TAG[IDX]}"
   literal_replace_file "$FILE" "$OLD_TAG" "$NEW_TAG"
-  [ -s "${WORK_DIR}/conf/03_route.json" ] && literal_replace_file "${WORK_DIR}/conf/03_route.json" "$OLD_TAG" "$NEW_TAG"
+  [ -s "${CUSTOM_DIR}/03_route.json" ] && literal_replace_file "${CUSTOM_DIR}/03_route.json" "$OLD_TAG" "$NEW_TAG"
   protocol_restart_export
 }
 
@@ -7415,25 +7089,11 @@ protocol_toggle_hy2_realm() {
   HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies 2>/dev/null)
   if grep -q 'realm-opts' <<< "$HY2_LINE"; then
     set_hy2_realm_config disable
-    sync_hy2_warp_route disable
   else
     fetch_nodes_value
     IS_HY2_REALM=is_hy2_realm
     HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
-    input_hy2_warp
     set_hy2_realm_config enable
-    [ "$IS_HY2_WARP" = 'is_hy2_warp' ] && sync_hy2_warp_route enable || sync_hy2_warp_route disable
-  fi
-  protocol_restart_export
-}
-
-protocol_toggle_hy2_warp() {
-  fetch_nodes_value
-  [ "$IS_HY2_REALM" = 'is_hy2_realm' ] || error " Hysteria2 Realm $(text 26) "
-  if [ "$IS_HY2_WARP" = 'is_hy2_warp' ]; then
-    sync_hy2_warp_route disable
-  else
-    sync_hy2_warp_route enable
   fi
   protocol_restart_export
 }
@@ -7636,7 +7296,7 @@ protocol_print_summary() {
     c )
       info " SNI: ${TLS_NOW:-N/A} ($(menu_text '全局' 'global'))"
       info " Hysteria2 $(menu_text '带宽' 'bandwidth'): ${HY2_UP:-200}/${HY2_DOWN:-1000} Mbps"
-      info " Realm: ${IS_HY2_REALM:-off}   WARP: ${IS_HY2_WARP:-off}   Realm ID: ${HY2_REALM_ID:-N/A}"
+      info " Realm: ${IS_HY2_REALM:-off}   Realm ID: ${HY2_REALM_ID:-N/A}"
       info " Port Hopping: ${HY2_PORT_HOPPING_RANGE:-disabled}"
       ;;
     d )
@@ -7694,11 +7354,10 @@ protocol_detail_menu() {
         c )
           hint " 5. $(menu_text '修改 Hysteria2 带宽' 'Change Hysteria2 bandwidth')"
           hint " 6. $(menu_text '开启 / 关闭 Realm' 'Toggle Realm')"
-          hint " 7. $(menu_text '开启 / 关闭 WARP 辅助 Realm' 'Toggle WARP-assisted Realm')"
-          hint " 8. $(menu_text '修改 Realm ID' 'Change Realm ID')"
-          hint " 9. $(menu_text '修改端口跳跃' 'Change Port Hopping')"
-          hint " 10. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
-          hint " 11. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          hint " 7. $(menu_text '修改 Realm ID' 'Change Realm ID')"
+          hint " 8. $(menu_text '修改端口跳跃' 'Change Port Hopping')"
+          hint " 9. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
+          hint " 10. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
           ;;
         d )
           hint " 5. $(menu_text '修改 Tuic 密码' 'Change Tuic password')"
@@ -7765,32 +7424,29 @@ protocol_detail_menu() {
       7 )
         case "$CODE" in
           b|j|k ) menu_edit_server_ip ;;
-          c ) protocol_toggle_hy2_warp ;;
+          c ) protocol_edit_hy2_realm_id ;;
           d|e ) menu_edit_tls_server ;;
           h|i ) protocol_edit_ws_cdn_port "$CODE" ;;
         esac
         ;;
       8 )
         case "$CODE" in
-          c ) protocol_edit_hy2_realm_id ;;
+          c ) protocol_edit_hy2_hopping ;;
           d|e ) menu_edit_server_ip ;;
           h|i ) protocol_edit_ws_domain "$CODE" ;;
         esac
         ;;
       9 )
         case "$CODE" in
-          c ) protocol_edit_hy2_hopping ;;
+          c ) menu_edit_tls_server ;;
           h|i ) protocol_edit_ws_origin_ip "$CODE" ;;
         esac
         ;;
       10 )
         case "$CODE" in
-          c ) menu_edit_tls_server ;;
+          c ) menu_edit_server_ip ;;
           h|i ) change_start_port "$CODE"; menu_pause ;;
         esac
-        ;;
-      11 )
-        [ "$CODE" = c ] && menu_edit_server_ip
         ;;
       * )
         warning " $(text 36) "
@@ -8150,8 +7806,8 @@ menu() {
   clear
   echo -e "======================================================================================================================\n"
   info " $(text 17): $VERSION\n $(text 18): $(text 1)\n $(text 19):\n\t $(text 20): $SYS\n\t $(text 21): $(uname -r)\n\t $(text 22): $SING_BOX_ARCH\n\t $(text 23): $VIRT "
-  info "\t IPv4: $WAN4 $WARPSTATUS4 $COUNTRY4  $ASNORG4 "
-  info "\t IPv6: $WAN6 $WARPSTATUS6 $COUNTRY6  $ASNORG6 "
+  info "\t IPv4: $WAN4 $COUNTRY4  $ASNORG4 "
+  info "\t IPv6: $WAN6 $COUNTRY6  $ASNORG6 "
   # 对齐显示：中文双宽字符按字符数补空格，英文按最长状态词 "Not install"(11字符) 定宽
   _sv() {
     local s="$1"
@@ -8275,8 +7931,6 @@ docker_prepare_env() {
 
   docker_bool "$HY2_REALM" && IS_HY2_REALM=is_hy2_realm
   docker_bool "$REALM" && IS_HY2_REALM=is_hy2_realm
-  docker_bool "$HY2_WARP" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
-  docker_bool "$REALM_WARP" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
   IS_HOPPING=${IS_HOPPING:-no_hopping}
 
   if [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]]; then
@@ -8298,7 +7952,7 @@ docker_prepare_env() {
 }
 
 docker_download_assets() {
-  mkdir -p "$TEMP_DIR" "$WORK_DIR"/{cert,conf,subscribe,logs}
+  mkdir -p "$TEMP_DIR" "$WORK_DIR"/{cert,conf,custom,state,subscribe,logs}
   check_cdn
   check_arch
 
@@ -8477,6 +8131,7 @@ docker_install() {
   ssl_certificate "$TLS_SERVER_DEFAULT"
   sing-box_json
   docker_copy_assets
+  routing_publish || failure_error " Routing configuration check failed. " "Custom directory: ${CUSTOM_DIR}"
   [ -n "$PORT_NGINX" ] && export_nginx_conf_file
   docker_start_quicktunnel_for_export
   export_list install
@@ -8549,7 +8204,18 @@ Expected file: ${SB_BIN}"
     error " Failed to restart sing-box after rollback. "
   fi
 }
-# Docker entrypoint.
+# Docker entrypoint and in-container configuration checker.
+case "${1:-}" in
+  check )
+    routing_migrate_legacy || exit 1
+    routing_check && info " Routing configuration is valid. " || exit 1
+    exit 0
+    ;;
+  reload )
+    error " Docker mode publishes custom routing only at container startup. Run: docker restart sing-box "
+    ;;
+esac
+
 while getopts ":Vv" OPTNAME; do
   case "${OPTNAME,,}" in
     v ) ACTION=update ;;
