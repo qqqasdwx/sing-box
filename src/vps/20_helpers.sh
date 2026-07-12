@@ -2030,10 +2030,35 @@ custom_route_compact_rules() {
       (if (($domains | length) + ($sets | length)) > 0 then
         [((if ($sets | length) > 0 then {rule_set:$sets} else {} end)
           + (if ($domains | length) > 0 then {domain_suffix:$domains} else {} end)
-          + {outbound:"warp-ep"})]
+          + {action:"route", outbound:"warp-ep"})]
       else [] end)
     )
   ' "$CUSTOM_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CUSTOM_FILE"
+}
+
+custom_route_migrate_actions() {
+  local CUSTOM_FILE="${WORK_DIR}/conf/08_custom_route.json"
+  local TMP_FILE="${CUSTOM_FILE}.tmp"
+  local NEEDS_MIGRATION
+  [ ! -s "$CUSTOM_FILE" ] && return
+
+  NEEDS_MIGRATION=$(jq_exec -r 'any(.route.rules[]?; .outbound? == "warp-ep" and .action? == null)' "$CUSTOM_FILE" 2>/dev/null) ||
+    failure_error "\n $(text 173) \n" "File: $CUSTOM_FILE"
+  [ "$NEEDS_MIGRATION" != 'true' ] && return
+
+  if ! jq_exec '
+    .route.rules |= map(
+      if .outbound? == "warp-ep" and .action? == null then
+        . + {action:"route"}
+      else
+        .
+      end
+    )
+  ' "$CUSTOM_FILE" > "$TMP_FILE"; then
+    rm -f "$TMP_FILE"
+    failure_error "\n $(text 174) \n" "File: $CUSTOM_FILE"
+  fi
+  mv "$TMP_FILE" "$CUSTOM_FILE"
 }
 
 # 通过 GitHub API 校验 rule_set 是否存在，返回下载 URL
@@ -2171,7 +2196,7 @@ custom_route_add() {
         (if (($new_domains | length) + ($new_sets | length)) > 0 then
           [((if ($new_sets | length) > 0 then {rule_set:$new_sets} else {} end)
             + (if ($new_domains | length) > 0 then {domain_suffix:$new_domains} else {} end)
-            + {outbound:$out})]
+            + {action:"route", outbound:$out})]
         else [] end)
       )
     ' "$CUSTOM_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CUSTOM_FILE"
@@ -2207,7 +2232,7 @@ custom_route_add() {
         (if (($new_domains | length) + ($new_sets | length)) > 0 then
           [((if ($new_sets | length) > 0 then {rule_set:$new_sets} else {} end)
             + (if ($new_domains | length) > 0 then {domain_suffix:$new_domains} else {} end)
-            + {outbound:$out})]
+            + {action:"route", outbound:$out})]
         else [] end)
       )
     ' "$CUSTOM_FILE" > "$TMP_FILE" && mv "$TMP_FILE" "$CUSTOM_FILE"

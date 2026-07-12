@@ -250,6 +250,11 @@ check_install() {
 # 为了适配 alpine，定义 cmd_systemctl 的函数
 cmd_systemctl() {
   local _action=$1 _service=${2:-systemctl} _log_file _rc=0 _runlevel_rc=0
+
+  if [[ "$_service" = 'sing-box' && "$_action" =~ ^(enable|restart)$ ]]; then
+    custom_route_migrate_actions
+  fi
+
   _log_file=$(service_command_log_file "$_service" "$_action")
   : > "$_log_file" 2>/dev/null || true
 

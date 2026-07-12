@@ -1,16 +1,17 @@
 # 与上游的行为差异
 
-本次 review 基线，日期：2026-07-05。
+本次 review 基线，日期：2026-07-12。
 
-- 上游：`fscarmen/sing-box@3dfbec421510806564cbe2071cf101614f759842`
+- 上游：`fscarmen/sing-box@c62368ebccf27eedbd044e5c33c0c16e3ea3effd`
 - 下游：`qqqasdwx/sing-box@main`
 
-本次 review 已移植上游 `6bb22b3`、`53ce0dc`、`5dfd0cd` 和 `3dfbec4` 中适用于本仓库的变化。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
+本次 review 已移植上游 `6bb22b3`、`53ce0dc`、`5dfd0cd`、`3dfbec4` 和 `c62368e` 中适用于本仓库的变化。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
 
 ## Review 结果
 
 - VPS 安装脚本刻意尽量保持与上游一致。目前观察到的差异主要是仓库归属链接、`force_version` 来源，以及生成的 `sb` 快捷命令地址。
 - Docker 行为刻意与上游不同：本仓库的 Docker 入口复用 VPS 的协议生成逻辑，而不是继续维护一份独立手写实现。
+- 本次 review 已移植上游 `c62368e`，自定义 `warp-ep` 路由规则会显式写入 `action: route`；本仓库还会在 VPS 启用或重启 sing-box 前迁移已有旧格式规则。
 - 本次 review 已移植上游 `6bb22b3`、`53ce0dc`、`5dfd0cd` 和 `3dfbec4`，包括客户端 TLS 指纹、部分导出配置热更新、服务端 IP 修改修复、协议变更 UUID 保留、Hysteria2 Realm UX、v2rayN Realm `Finalmask` 输出、端口跳跃目标解析和 Hysteria2 sing-box JSON 输出修复。
 - 早前 review 已移植上游 `803cfa7` 与 `2ca9504`，包括 `nginx.conf` UUID 提取修复、Throne 订阅输出、客户端订阅 TLS 安全参数调整和 V2rayN Trojan 输出改进。
 - 早前 review 发现并修复了两个迁移问题：
