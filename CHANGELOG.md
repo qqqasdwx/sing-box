@@ -2,6 +2,12 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-07-12
+
+- 移植上游 `c62368e`：自定义 `warp-ep` 路由规则显式写入 `action: route`，兼容 sing-box 1.14.0-alpha.38 及以上版本。
+- VPS 在启用或重启 sing-box 前会自动迁移已有 `08_custom_route.json` 旧格式规则，避免升级主程序后因缺少路由动作而启动失败。
+- 更新上游审查基线到 `fscarmen/sing-box@c62368ebccf27eedbd044e5c33c0c16e3ea3effd`。
+
 ## 2026-07-05
 
 - 移植上游 `3dfbec4`：客户端订阅 TLS 指纹默认改为 `chrome` 并支持 `FINGER_PRINT` 配置，v2rayN Hysteria2 Realm 输出增加 `Finalmask`，Realm 菜单显示改为明确的开启/关闭动作。
