@@ -76,7 +76,45 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
 
 节点名称优先级：单协议节点名 > 全局 `NODE_NAME_CONFIRM` > 默认主机名。支持的单协议变量包括 `NODE_NAME_XTLS_REALITY`、`NODE_NAME_HYSTERIA2`、`NODE_NAME_TUIC`、`NODE_NAME_SHADOWTLS`、`NODE_NAME_SHADOWSOCKS`、`NODE_NAME_TROJAN`、`NODE_NAME_VMESS_WS`、`NODE_NAME_VLESS_WS`、`NODE_NAME_H2_REALITY`、`NODE_NAME_GRPC_REALITY`、`NODE_NAME_ANYTLS`、`NODE_NAME_NAIVE`。
 
-已安装后，`sb -d` 还可以管理自定义 `warp-ep` 出站路由规则。规则写入 `/etc/sing-box/conf/08_custom_route.json`，支持按 `domain_suffix` 或远程 `.srs` `rule_set` 将匹配流量分流到 WARP endpoint。
+## 自定义出站与路由
+
+安装时会生成两份唯一源配置：
+
+- `/etc/sing-box/custom/03_route.json`：完整的 `route` 配置。
+- `/etc/sing-box/custom/04_outbounds.json`：完整的 `outbounds` 配置。
+
+默认配置包含 SagerNet 的 `geosite-google` 和 `geosite-openai` 两个远程规则集，更新周期使用 sing-box 默认值。`api.openai.com` 优先解析 IPv4，OpenAI 与 Google 规则集优先解析 IPv6，两者最终都明确使用 `direct` 出站。项目不内置 WARP，也不执行 OpenAI 可用性检测。sing-box 不直接读取 `custom/`；脚本会把两份源配置合并为 `/etc/sing-box/conf/03_routing.json`。修改后先检查，再发布并热重载：
+
+```sh
+sb check
+sb reload
+```
+
+`sb check` 会在临时目录中连同其余 `conf/` 文件执行完整的 `sing-box check`，不修改当前运行配置。`sb reload` 只有在同样的检查成功后才原子替换运行配置并发送 HUP；检查失败时，当前配置和进程不变。开机或服务重启只读取最后一次成功发布的 `conf/`。旧版的 `01_outbounds.json`、`03_route.json` 和 `08_custom_route.json` 会在首次检查、重载或更新时迁移到 `custom/`。项目不再内置 WARP endpoint；升级时会删除所有引用旧 `warp-ep` 的路由和旧 endpoint，Hysteria2 Realm 与 STUN 功能不受影响。
+
+例如，AetherCloud DynamicV6 网关运行后，可在 `04_outbounds.json` 的数组中保留 `direct` 并增加 SOCKS5 出站：
+
+```json
+{
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "socks",
+      "tag": "aethercloud",
+      "server": "fd53:ac::2",
+      "server_port": 1080,
+      "version": "5",
+      "username": "aethercloud",
+      "password": "replace-with-the-generated-password"
+    }
+  ]
+}
+```
+
+然后在 `03_route.json` 中把需要分流的规则设为 `"outbound": "aethercloud"`。使用 `fd53:ac::2:1080` 可以让 SOCKS5 TCP 控制连接和 UDP relay 都走 IPv6；宿主机发布的 `127.0.0.1:11080` 只适合手工 TCP 测试。
 
 ## Docker 使用
 
@@ -92,6 +130,7 @@ Compose 示例见 [docker-compose.example.yml](docker-compose.example.yml)。示
 
 ```sh
 docker run -d --name sing-box --network host --restart unless-stopped \
+  -v "$PWD/custom:/sing-box/custom" \
   -e LANGUAGE=c \
   -e CHOOSE_PROTOCOLS=bcf \
   -e START_PORT=8881 \
@@ -104,10 +143,20 @@ docker run -d --name sing-box --network host --restart unless-stopped \
   ghcr.io/qqqasdwx/sing-box:latest
 ```
 
+Docker 模式把宿主机 `./custom` 挂载到 `/sing-box/custom`。首次启动会在空目录中生成与 VPS 相同的默认文件；每次容器启动都会先合并配置并执行完整检查，失败时容器会明确退出，不会回退到其他配置。修改后使用：
+
+```sh
+docker exec sing-box sb check
+docker restart sing-box
+```
+
+Docker 不做在线重载；重启的是 sing-box 容器，不是 Docker daemon。`conf/03_routing.json` 是容器内的运行产物，不需要持久化。
+
 固定 Argo 示例：
 
 ```sh
 docker run -d --name sing-box --network host --restart unless-stopped \
+  -v "$PWD/custom:/sing-box/custom" \
   -e LANGUAGE=c \
   -e CHOOSE_PROTOCOLS=a \
   -e START_PORT=8881 \

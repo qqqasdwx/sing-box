@@ -1,7 +1,8 @@
 # 生成 sing-box 配置文件
 sing-box_json() {
   local IS_CHANGE=$1
-  mkdir -p ${WORK_DIR}/conf ${WORK_DIR}/logs ${WORK_DIR}/subscribe
+  mkdir -p ${WORK_DIR}/conf ${WORK_DIR}/logs ${WORK_DIR}/subscribe "$CUSTOM_DIR" "$STATE_DIR"
+  routing_migrate_legacy || failure_error " Routing configuration migration failed. " "Custom directory: ${CUSTOM_DIR}"
 
   # 判断是否为新安装，不为 change 就是新安装
   if [ "$IS_CHANGE" = 'change' ]; then
@@ -18,97 +19,6 @@ sing-box_json() {
         "level":"${LOG_LEVEL}",
         "output":"${WORK_DIR}/logs/box.log",
         "timestamp":true
-    }
-}
-EOF
-
-    # 生成 outbound 配置
-    cat > ${WORK_DIR}/conf/01_outbounds.json << EOF
-{
-    "outbounds":[
-        {
-            "type":"direct",
-            "tag":"direct"
-        }
-    ]
-}
-EOF
-
-    # 生成 endpoint 配置
-    cat > ${WORK_DIR}/conf/02_endpoints.json << EOF
-{
-    "endpoints":[
-        {
-            "type":"wireguard",
-            "tag":"warp-ep",
-            "mtu":1400,
-            "address":[
-                "172.16.0.2/32",
-                "2606:4700:110:8a36:df92:102a:9602:fa18/128"
-            ],
-            "private_key":"YFYOAdbw1bKTHlNNi+aEjBM3BO7unuFC5rOkMRAz9XY=",
-            "peers": [
-              {
-                "address": "engage.cloudflareclient.com",
-                "port":2408,
-                "public_key":"bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-                "allowed_ips": [
-                  "0.0.0.0/0",
-                  "::/0"
-                ],
-                "reserved":[
-                    78,
-                    135,
-                    76
-                ]
-              }
-            ]
-        }
-    ]
-}
-EOF
-
-    # 生成 route 配置
-    cat > ${WORK_DIR}/conf/03_route.json << EOF
-{
-    "route":{
-        "default_http_client": "http-client-direct",
-        "rule_set":[
-            {
-                "tag":"geosite-openai",
-                "type":"remote",
-                "format":"binary",
-                "url":"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs"
-            }
-        ],
-        "rules":[
-            {
-                "action": "sniff"
-            },
-            {
-                "action": "resolve",
-                "domain":[
-                    "api.openai.com"
-                ],
-                "strategy": "prefer_ipv4"
-            },
-            {
-                "action": "resolve",
-                "rule_set":[
-                    "geosite-openai"
-                ],
-                "strategy": "prefer_ipv6"
-            },
-            {
-                "domain":[
-                    "api.openai.com"
-                ],
-                "rule_set":[
-                    "geosite-openai"
-                ],
-                "outbound":"${CHATGPT_OUT}"
-            }
-        ]
     }
 }
 EOF
@@ -280,7 +190,6 @@ EOF_REALM
     ]
 }
 EOF
-    [ "$IS_HY2_WARP" = 'is_hy2_warp' ] && sync_hy2_warp_route enable || sync_hy2_warp_route disable
   fi
 
   # 生成 Tuic V5 配置
@@ -865,7 +774,7 @@ EOF
 
 # 获取原有各协议的参数，先清空所有的 key-value
 fetch_nodes_value() {
-  unset NODE_NAME PORT_XTLS_REALITY UUID TLS_SERVER REALITY_PRIVATE REALITY_PUBLIC PORT_HYSTERIA2 HY2_REALM_ID IS_HY2_REALM IS_HY2_WARP PORT_TUIC TUIC_PASSWORD TUIC_CONGESTION_CONTROL PORT_SHADOWTLS SHADOWTLS_PASSWORD SHADOWSOCKS_METHOD PORT_SHADOWSOCKS PORT_TROJAN TROJAN_PASSWORD PORT_VMESS_WS VMESS_WS_PATH WS_SERVER_IP WS_SERVER_IP_SHOW VMESS_HOST_DOMAIN CDN CDN_PORT PORT_VLESS_WS VLESS_WS_PATH VLESS_HOST_DOMAIN PORT_H2_REALITY PORT_GRPC_REALITY ARGO_DOMAIN PORT_ANYTLS PORT_NAIVE SELF_SIGNED_FINGERPRINT_SHA256 SELF_SIGNED_FINGERPRINT_BASE64
+  unset NODE_NAME PORT_XTLS_REALITY UUID TLS_SERVER REALITY_PRIVATE REALITY_PUBLIC PORT_HYSTERIA2 HY2_REALM_ID IS_HY2_REALM PORT_TUIC TUIC_PASSWORD TUIC_CONGESTION_CONTROL PORT_SHADOWTLS SHADOWTLS_PASSWORD SHADOWSOCKS_METHOD PORT_SHADOWSOCKS PORT_TROJAN TROJAN_PASSWORD PORT_VMESS_WS VMESS_WS_PATH WS_SERVER_IP WS_SERVER_IP_SHOW VMESS_HOST_DOMAIN CDN CDN_PORT PORT_VLESS_WS VLESS_WS_PATH VLESS_HOST_DOMAIN PORT_H2_REALITY PORT_GRPC_REALITY ARGO_DOMAIN PORT_ANYTLS PORT_NAIVE SELF_SIGNED_FINGERPRINT_SHA256 SELF_SIGNED_FINGERPRINT_BASE64
 
   # 获取公共数据
   ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && SERVER_IP=$(awk -F '"' '/"WS_SERVER_IP_SHOW"/{print $4; exit}' ${WORK_DIR}/conf/*-ws*inbounds.json) || SERVER_IP=$(grep -A1 '"tag"' ${WORK_DIR}/list | sed -E '/-ws(-tls)*",$/{N;d}' | awk -F '"' '/"server"/{count++; if (count == 1) {print $4; exit}}')
@@ -915,9 +824,6 @@ fetch_nodes_value() {
       IS_HY2_REALM=is_hy2_realm
       HY2_REALM_ID=$(awk -F '"' '/"realm_id"[[:space:]]*:/{print $4; exit}' <<< "$JSON")
       HY2_REALM_ID=${HY2_REALM_ID:-${UUID[12]}}
-    fi
-    if [ -s ${WORK_DIR}/conf/03_route.json ] && [ -n "${NODE_NAME[12]}" ] && grep -q '"outbound"[[:space:]]*:[[:space:]]*"warp-ep"' ${WORK_DIR}/conf/03_route.json && grep -q "${NODE_NAME[12]} ${NODE_TAG[1]}" ${WORK_DIR}/conf/03_route.json; then
-      IS_HY2_WARP=is_hy2_warp
     fi
     check_port_hopping_nat
   fi

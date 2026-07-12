@@ -252,7 +252,7 @@ cmd_systemctl() {
   local _action=$1 _service=${2:-systemctl} _log_file _rc=0 _runlevel_rc=0
 
   if [[ "$_service" = 'sing-box' && "$_action" =~ ^(enable|restart)$ ]]; then
-    custom_route_migrate_actions
+    routing_publish || return 1
   fi
 
   _log_file=$(service_command_log_file "$_service" "$_action")
@@ -641,20 +641,7 @@ sing-box_variables() {
   calc_install_steps
   INSTALL_PROTOCOLS=("${_saved_protocols[@]}")
 
-  if grep -qi 'cloudflare' <<< "$ASNORG4$ASNORG6"; then
-    if grep -qi 'cloudflare' <<< "$ASNORG6" && [ -n "$WAN4" ] && ! grep -qi 'cloudflare' <<< "$ASNORG4"; then
-      SERVER_IP_DEFAULT=$WAN4
-    elif grep -qi 'cloudflare' <<< "$ASNORG4" && [ -n "$WAN6" ] && ! grep -qi 'cloudflare' <<< "$ASNORG6"; then
-      SERVER_IP_DEFAULT=$WAN6
-    else
-      local a=6
-      until [ -n "$SERVER_IP" ]; do
-        ((a--)) || true
-        [ "$a" = 0 ] && error "\n $(text 3) \n"
-        reading "\n $(text 46) " SERVER_IP
-      done
-    fi
-  elif [ -n "$WAN4" ]; then
+  if [ -n "$WAN4" ]; then
     SERVER_IP_DEFAULT=$WAN4
   elif [ -n "$WAN6" ]; then
     SERVER_IP_DEFAULT=$WAN6
@@ -748,17 +735,13 @@ sing-box_variables() {
       ;;
   esac
 
-  # 检测是否解锁 chatGPT
-  CHATGPT_OUT=warp-ep;
-  [ "$(check_chatgpt $(grep -oE '[46]' <<< "$STRATEGY"))" = 'unlock' ] && CHATGPT_OUT=direct
-
   # 如果选择有 b j k 这些 reality 协议，自定义 reality 公私钥，如果没有则自动生成
   if [ "$NONINTERACTIVE_INSTALL" != 'noninteractive_install' ] && array_contains_any INSTALL_PROTOCOLS b j k; then
     (( STEP_NUM++ )) || true
     input_reality_key
   fi
 
-  # 如选择有 c. hysteria2 时，先选择 Realm / WARP，再选择是否使用端口跳跃。
+  # 如选择有 c. hysteria2 时，先选择 Realm，再选择是否使用端口跳跃。
   # 这三项属于 Hysteria2 子选项，不计入安装总步骤，也不显示步骤编号。
   if array_contains c "${INSTALL_PROTOCOLS[@]}"; then
     input_hy2_realm

@@ -80,8 +80,6 @@ docker_prepare_env() {
 
   docker_bool "$HY2_REALM" && IS_HY2_REALM=is_hy2_realm
   docker_bool "$REALM" && IS_HY2_REALM=is_hy2_realm
-  docker_bool "$HY2_WARP" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
-  docker_bool "$REALM_WARP" && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
   IS_HOPPING=${IS_HOPPING:-no_hopping}
 
   if [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]]; then
@@ -103,7 +101,7 @@ docker_prepare_env() {
 }
 
 docker_download_assets() {
-  mkdir -p "$TEMP_DIR" "$WORK_DIR"/{cert,conf,subscribe,logs}
+  mkdir -p "$TEMP_DIR" "$WORK_DIR"/{cert,conf,custom,state,subscribe,logs}
   check_cdn
   check_arch
 
@@ -282,6 +280,7 @@ docker_install() {
   ssl_certificate "$TLS_SERVER_DEFAULT"
   sing-box_json
   docker_copy_assets
+  routing_publish || failure_error " Routing configuration check failed. " "Custom directory: ${CUSTOM_DIR}"
   [ -n "$PORT_NGINX" ] && export_nginx_conf_file
   docker_start_quicktunnel_for_export
   export_list install

@@ -21,6 +21,21 @@ if [[ -n "$CONFIG_FILE" && -s "$CONFIG_FILE" ]]; then
 fi
 
 check_root
+
+case "${1:-}" in
+  check )
+    routing_migrate_legacy || exit 1
+    routing_check && info " Routing configuration is valid. " || exit 1
+    exit 0
+    ;;
+  reload )
+    check_system_info
+    routing_migrate_legacy || exit 1
+    routing_reload && info " Routing configuration published and reloaded. " || exit 1
+    exit 0
+    ;;
+esac
+
 select_language
 check_system_info
 check_brutal
@@ -270,9 +285,6 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --HY2_REALM|--REALM )
       ((z++)); [[ "${ALL_PARAMETER[z],,}" =~ ^(true|1|y|yes)$ ]] && IS_HY2_REALM=is_hy2_realm
-      ;;
-    --HY2_WARP|--REALM_WARP|--WARP_REALM )
-      ((z++)); [[ "${ALL_PARAMETER[z],,}" =~ ^(true|1|y|yes)$ ]] && IS_HY2_WARP=is_hy2_warp && IS_HY2_REALM=is_hy2_realm
       ;;
     --REALITY_PRIVATE )
       ((z++)); REALITY_PRIVATE=${ALL_PARAMETER[z]}

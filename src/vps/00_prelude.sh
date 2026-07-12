@@ -9,6 +9,8 @@ GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
 # 各变量默认值
 TEMP_DIR='/tmp/sing-box'
 WORK_DIR='/etc/sing-box'
+CUSTOM_DIR="${WORK_DIR}/custom"
+STATE_DIR="${WORK_DIR}/state"
 FIREWALL_STATE_DIR="${WORK_DIR}/firewall"
 SERVICE_FIREWALL_STATE_FILE="${FIREWALL_STATE_DIR}/service_ports.list"
 START_PORT_DEFAULT='8881'

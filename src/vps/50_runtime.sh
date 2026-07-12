@@ -161,9 +161,8 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
     tar -czf "${WORK_DIR}/backup/conf.$(date +%Y%m%d%H%M%S).tar.gz" -C "$WORK_DIR" conf subscribe list nginx.conf 2>/dev/null || true
   fi
 
-  [ -s "${WORK_DIR}/conf/08_custom_route.json" ] && cp "${WORK_DIR}/conf/08_custom_route.json" "$TEMP_DIR/08_custom_route.json"
+  routing_migrate_legacy || failure_error " Routing configuration migration failed. " "Custom directory: ${CUSTOM_DIR}"
   rm -f "${WORK_DIR}"/conf/[0-9][0-9]_*.json "${WORK_DIR}"/conf/[1-2][0-9]_*.json "${WORK_DIR}"/subscribe/* "${WORK_DIR}/list" "${WORK_DIR}/nginx.conf"
-  [ -s "$TEMP_DIR/08_custom_route.json" ] && cp "$TEMP_DIR/08_custom_route.json" "${WORK_DIR}/conf/08_custom_route.json"
   if [ "$IS_ARGO" != 'is_argo' ]; then
     rm -f "$ARGO_DAEMON_FILE" "${WORK_DIR}/tunnel.json" "${WORK_DIR}/tunnel.yml"
     [ "$SYSTEM" = 'Alpine' ] || systemctl daemon-reload >/dev/null 2>&1 || true
@@ -1214,7 +1213,7 @@ change_protocols() {
     fi
     [ -z "${PORT_HOPPING_START}${PORT_HOPPING_END}" ] && input_hopping_port
   else
-    unset PORT_HYSTERIA2 IS_HY2_REALM IS_HY2_WARP HY2_REALM_ID
+    unset PORT_HYSTERIA2 IS_HY2_REALM HY2_REALM_ID
   fi
 
   # 获取 Tuic V5 端口
@@ -1333,20 +1332,7 @@ change_protocols() {
 
   # 如之前没有 ws，现新增的 ws，则确认服务器 IP 和输入 cdn
   if [[ "${#CDN[@]}" = '0' && ( "$ARGO_READY" = 'argo_ready' || "$ORIGIN_READY" = 'origin_ready' ) ]]; then
-    if grep -qi 'cloudflare' <<< "$ASNORG4$ASNORG6"; then
-      if grep -qi 'cloudflare' <<< "$ASNORG6" && [ -n "$WAN4" ] && ! grep -qi 'cloudflare' <<< "$ASNORG4"; then
-        SERVER_IP_DEFAULT=$WAN4
-      elif grep -qi 'cloudflare' <<< "$ASNORG4" && [ -n "$WAN6" ] && ! grep -qi 'cloudflare' <<< "$ASNORG6"; then
-        SERVER_IP_DEFAULT=$WAN6
-      else
-        local a=6
-        until [ -n "$SERVER_IP" ]; do
-          ((a--)) || true
-          [ "$a" = 0 ] && error "\n $(text 3) \n"
-          reading "\n $(text 46) " SERVER_IP
-        done
-      fi
-    elif [ -n "$WAN4" ]; then
+    if [ -n "$WAN4" ]; then
       SERVER_IP_DEFAULT=$WAN4
     elif [ -n "$WAN6" ]; then
       SERVER_IP_DEFAULT=$WAN6
@@ -1601,7 +1587,7 @@ protocol_edit_node_name() {
   OLD_TAG="${OLD_NAME} ${NODE_TAG[IDX]}"
   NEW_TAG="${NEW_NAME} ${NODE_TAG[IDX]}"
   literal_replace_file "$FILE" "$OLD_TAG" "$NEW_TAG"
-  [ -s "${WORK_DIR}/conf/03_route.json" ] && literal_replace_file "${WORK_DIR}/conf/03_route.json" "$OLD_TAG" "$NEW_TAG"
+  [ -s "${CUSTOM_DIR}/03_route.json" ] && literal_replace_file "${CUSTOM_DIR}/03_route.json" "$OLD_TAG" "$NEW_TAG"
   protocol_restart_export
 }
 
@@ -1752,25 +1738,11 @@ protocol_toggle_hy2_realm() {
   HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies 2>/dev/null)
   if grep -q 'realm-opts' <<< "$HY2_LINE"; then
     set_hy2_realm_config disable
-    sync_hy2_warp_route disable
   else
     fetch_nodes_value
     IS_HY2_REALM=is_hy2_realm
     HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
-    input_hy2_warp
     set_hy2_realm_config enable
-    [ "$IS_HY2_WARP" = 'is_hy2_warp' ] && sync_hy2_warp_route enable || sync_hy2_warp_route disable
-  fi
-  protocol_restart_export
-}
-
-protocol_toggle_hy2_warp() {
-  fetch_nodes_value
-  [ "$IS_HY2_REALM" = 'is_hy2_realm' ] || error " Hysteria2 Realm $(text 26) "
-  if [ "$IS_HY2_WARP" = 'is_hy2_warp' ]; then
-    sync_hy2_warp_route disable
-  else
-    sync_hy2_warp_route enable
   fi
   protocol_restart_export
 }
@@ -1973,7 +1945,7 @@ protocol_print_summary() {
     c )
       info " SNI: ${TLS_NOW:-N/A} ($(menu_text '全局' 'global'))"
       info " Hysteria2 $(menu_text '带宽' 'bandwidth'): ${HY2_UP:-200}/${HY2_DOWN:-1000} Mbps"
-      info " Realm: ${IS_HY2_REALM:-off}   WARP: ${IS_HY2_WARP:-off}   Realm ID: ${HY2_REALM_ID:-N/A}"
+      info " Realm: ${IS_HY2_REALM:-off}   Realm ID: ${HY2_REALM_ID:-N/A}"
       info " Port Hopping: ${HY2_PORT_HOPPING_RANGE:-disabled}"
       ;;
     d )
@@ -2031,11 +2003,10 @@ protocol_detail_menu() {
         c )
           hint " 5. $(menu_text '修改 Hysteria2 带宽' 'Change Hysteria2 bandwidth')"
           hint " 6. $(menu_text '开启 / 关闭 Realm' 'Toggle Realm')"
-          hint " 7. $(menu_text '开启 / 关闭 WARP 辅助 Realm' 'Toggle WARP-assisted Realm')"
-          hint " 8. $(menu_text '修改 Realm ID' 'Change Realm ID')"
-          hint " 9. $(menu_text '修改端口跳跃' 'Change Port Hopping')"
-          hint " 10. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
-          hint " 11. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          hint " 7. $(menu_text '修改 Realm ID' 'Change Realm ID')"
+          hint " 8. $(menu_text '修改端口跳跃' 'Change Port Hopping')"
+          hint " 9. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
+          hint " 10. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
           ;;
         d )
           hint " 5. $(menu_text '修改 Tuic 密码' 'Change Tuic password')"
@@ -2102,32 +2073,29 @@ protocol_detail_menu() {
       7 )
         case "$CODE" in
           b|j|k ) menu_edit_server_ip ;;
-          c ) protocol_toggle_hy2_warp ;;
+          c ) protocol_edit_hy2_realm_id ;;
           d|e ) menu_edit_tls_server ;;
           h|i ) protocol_edit_ws_cdn_port "$CODE" ;;
         esac
         ;;
       8 )
         case "$CODE" in
-          c ) protocol_edit_hy2_realm_id ;;
+          c ) protocol_edit_hy2_hopping ;;
           d|e ) menu_edit_server_ip ;;
           h|i ) protocol_edit_ws_domain "$CODE" ;;
         esac
         ;;
       9 )
         case "$CODE" in
-          c ) protocol_edit_hy2_hopping ;;
+          c ) menu_edit_tls_server ;;
           h|i ) protocol_edit_ws_origin_ip "$CODE" ;;
         esac
         ;;
       10 )
         case "$CODE" in
-          c ) menu_edit_tls_server ;;
+          c ) menu_edit_server_ip ;;
           h|i ) change_start_port "$CODE"; menu_pause ;;
         esac
-        ;;
-      11 )
-        [ "$CODE" = c ] && menu_edit_server_ip
         ;;
       * )
         warning " $(text 36) "
@@ -2487,8 +2455,8 @@ menu() {
   clear
   echo -e "======================================================================================================================\n"
   info " $(text 17): $VERSION\n $(text 18): $(text 1)\n $(text 19):\n\t $(text 20): $SYS\n\t $(text 21): $(uname -r)\n\t $(text 22): $SING_BOX_ARCH\n\t $(text 23): $VIRT "
-  info "\t IPv4: $WAN4 $WARPSTATUS4 $COUNTRY4  $ASNORG4 "
-  info "\t IPv6: $WAN6 $WARPSTATUS6 $COUNTRY6  $ASNORG6 "
+  info "\t IPv4: $WAN4 $COUNTRY4  $ASNORG4 "
+  info "\t IPv6: $WAN6 $COUNTRY6  $ASNORG6 "
   # 对齐显示：中文双宽字符按字符数补空格，英文按最长状态词 "Not install"(11字符) 定宽
   _sv() {
     local s="$1"
