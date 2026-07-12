@@ -1,0 +1,9 @@
+.git
+.github
+README.md
+aethercloud-v6
+aethercloud-v6.env.example
+aethercloud-v6.service
+install.sh
+uninstall.sh
+tests
