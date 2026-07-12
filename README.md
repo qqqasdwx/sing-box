@@ -33,6 +33,17 @@ The installer creates `/etc/aethercloud-v6.env` with a random SOCKS5 password,
 pulls `ghcr.io/qqqasdwx/sing-box:aethercloud`, and starts
 `aethercloud-v6.service`.
 
+To test an image built from the checkout instead of pulling GHCR, use a local
+tag and explicitly skip the pull:
+
+```sh
+sudo docker build -t aethercloud-v6:local .
+sudo AETHERCLOUD_IMAGE=aethercloud-v6:local AETHERCLOUD_SKIP_PULL=true ./install.sh
+```
+
+On later reinstalls the image name is read from `/etc/aethercloud-v6.env`, but
+`AETHERCLOUD_SKIP_PULL=true` must still be passed when that name is only local.
+
 Useful commands:
 
 ```sh
@@ -65,6 +76,20 @@ IPv4 SOCKS5 control connection is not suitable for sing-box IPv6 UDP relay.
 
 The main sing-box configuration remains responsible for geosite/geoip rules
 and selecting this outbound.
+
+With the `qqqasdwx/sing-box` main Docker image, keep the `direct` object and
+add this object to the `outbounds` array in the bind-mounted
+`custom/04_outbounds.json`. Select the `aethercloud` tag from rules in
+`custom/03_route.json`, then validate and restart the main container:
+
+```sh
+docker exec sing-box sb check
+docker restart sing-box
+```
+
+The main container must use host networking, or otherwise have IPv6 reachability
+to the AetherCloud Docker network and `fd53:ac::2`. Do not persist or edit its
+generated `conf/03_routing.json` directly.
 
 ## Configuration
 
