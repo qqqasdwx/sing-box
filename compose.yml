@@ -1,6 +1,6 @@
 services:
   gateway:
-    image: ${AETHERCLOUD_IMAGE:-ghcr.io/qqqasdwx/sing-box:aethercloud}
+    image: ${AETHERCLOUD_IMAGE:-ghcr.io/qqqasdwx/aethercloud-v6:latest}
     container_name: ${AETHERCLOUD_CONTAINER:-aethercloud-v6}
     restart: unless-stopped
     cpus: ${AETHERCLOUD_CPUS:-1}

@@ -29,13 +29,16 @@ bash <(curl -fsSL https://raw.githubusercontent.com/qqqasdwx/sing-box/aetherclou
 
 安装器会自动检测宿主机父接口、上游路由器 MAC 和 VM UUID，在
 `/opt/aethercloud-v6/` 中生成 `.env` 和 `compose.yml`，然后拉取
-`ghcr.io/qqqasdwx/sing-box:aethercloud` 并执行 `docker compose up -d`。安装器
+`ghcr.io/qqqasdwx/aethercloud-v6:latest` 并执行 `docker compose up -d`。安装器
 执行结束后不保留任何宿主机服务，容器的开机自启和故障重启由 Docker 负责。
 
 以后升级时重新执行同一条命令即可。安装器会重新检测并写入最新的父接口、上游
 路由器 MAC 和 VM UUID，同时保留用户配置和 SOCKS5 密码，然后拉取最新镜像并
 重建容器。安装完成后，终端会输出一份包含实际用户名和密码的 sing-box 出站
 JSON，可直接复制到 `custom/04_outbounds.json`。
+
+旧版官方镜像 `ghcr.io/qqqasdwx/sing-box:aethercloud` 会在重新安装时自动迁移到
+独立镜像；通过 `AETHERCLOUD_IMAGE` 配置的其他自定义镜像不会被替换。
 
 仅在开发测试时，如需使用当前工作目录构建的镜像，而不是从 GHCR 拉取，可以使用
 本地标签并明确跳过拉取：

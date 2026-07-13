@@ -50,5 +50,9 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:aethercloud
-            ghcr.io/${{ github.repository }}:aethercloud-${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/aethercloud-v6:latest
+            ghcr.io/${{ github.repository_owner }}/aethercloud-v6:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=AetherCloud DynamicV6 gateway
