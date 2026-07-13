@@ -11,6 +11,7 @@ systemctl disable --now aethercloud-v6.service >/dev/null 2>&1 || true
 /usr/local/sbin/aethercloud-v6 remove-network >/dev/null 2>&1 || true
 rm -f /etc/systemd/system/aethercloud-v6.service
 rm -f /usr/local/sbin/aethercloud-v6
+rm -f /usr/local/sbin/aethercloud-v6-uninstall
 systemctl daemon-reload
 
 printf 'AetherCloud gateway removed. Configuration remains at /etc/aethercloud-v6.env.\n'
