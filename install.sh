@@ -106,6 +106,24 @@ print_sing_box_outbound() {
   printf '}\n'
 }
 
+wait_for_gateway() {
+  local container=${AETHERCLOUD_CONTAINER:-aethercloud-v6}
+  local health='' attempt
+
+  for ((attempt = 0; attempt < 90; attempt++)); do
+    health=$(docker inspect -f \
+      '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \
+      "$container" 2>/dev/null || true)
+    [ "$health" = healthy ] && return 0
+    systemctl is-active --quiet aethercloud-v6.service || break
+    sleep 1
+  done
+
+  systemctl status aethercloud-v6.service --no-pager --full >&2 || true
+  docker logs --tail 100 "$container" >&2 2>/dev/null || true
+  fatal "AetherCloud gateway did not become healthy (last status: ${health:-absent})"
+}
+
 [ "${EUID:-$(id -u)}" -eq 0 ] || fatal 'run this installer as root'
 command -v docker >/dev/null 2>&1 || fatal 'Docker is required'
 command -v systemctl >/dev/null 2>&1 || fatal 'systemd is required'
@@ -144,5 +162,6 @@ fi
 systemctl daemon-reload
 systemctl enable aethercloud-v6.service >/dev/null
 systemctl restart aethercloud-v6.service
+wait_for_gateway
 printf 'AetherCloud gateway installed. Run: aethercloud-v6 status\n'
 print_sing_box_outbound
