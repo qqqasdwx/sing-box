@@ -9,7 +9,6 @@ readonly LEGACY_RUNNER='/usr/local/sbin/aethercloud-v6'
 readonly LEGACY_UNINSTALLER='/usr/local/sbin/aethercloud-v6-uninstall'
 readonly LEGACY_UNIT_FILE='/etc/systemd/system/aethercloud-v6.service'
 readonly DEFAULT_IMAGE='ghcr.io/qqqasdwx/aethercloud-v6:latest'
-readonly LEGACY_DEFAULT_IMAGE='ghcr.io/qqqasdwx/sing-box:aethercloud'
 readonly SOURCE_BASE="${AETHERCLOUD_SOURCE_BASE:-https://raw.githubusercontent.com/qqqasdwx/sing-box/aethercloud}"
 
 SCRIPT_DIR=''
@@ -235,14 +234,7 @@ fi
 
 # shellcheck disable=SC1090
 . "$ENV_FILE"
-stored_image=${AETHERCLOUD_IMAGE:-}
-if [ -n "$image_override" ]; then
-  AETHERCLOUD_IMAGE=$image_override
-elif [ -z "$stored_image" ] || [ "$stored_image" = "$LEGACY_DEFAULT_IMAGE" ]; then
-  AETHERCLOUD_IMAGE=$DEFAULT_IMAGE
-else
-  AETHERCLOUD_IMAGE=$stored_image
-fi
+AETHERCLOUD_IMAGE=${image_override:-${AETHERCLOUD_IMAGE:-$DEFAULT_IMAGE}}
 AETHERCLOUD_PARENT=${parent_override:-$(detect_parent)}
 [ -n "$AETHERCLOUD_PARENT" ] || fatal 'unable to detect the parent interface'
 ip link show dev "$AETHERCLOUD_PARENT" >/dev/null 2>&1 ||

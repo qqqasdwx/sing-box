@@ -37,9 +37,6 @@ bash <(curl -fsSL https://raw.githubusercontent.com/qqqasdwx/sing-box/aetherclou
 重建容器。安装完成后，终端会输出一份包含实际用户名和密码的 sing-box 出站
 JSON，可直接复制到 `custom/04_outbounds.json`。
 
-旧版官方镜像 `ghcr.io/qqqasdwx/sing-box:aethercloud` 会在重新安装时自动迁移到
-独立镜像；通过 `AETHERCLOUD_IMAGE` 配置的其他自定义镜像不会被替换。
-
 仅在开发测试时，如需使用当前工作目录构建的镜像，而不是从 GHCR 拉取，可以使用
 本地标签并明确跳过拉取：
 
