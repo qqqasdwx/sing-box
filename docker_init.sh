@@ -2275,13 +2275,13 @@ routing_default_route() {
         "tag": "geosite-google",
         "type": "remote",
         "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-google.srs"
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/google.srs"
       },
       {
         "tag": "geosite-openai",
         "type": "remote",
         "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs"
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/openai.srs"
       }
     ],
     "rules": [
@@ -2415,7 +2415,7 @@ routing_migrate_legacy() {
           tag:"geosite-google",
           type:"remote",
           format:"binary",
-          url:"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-google.srs"
+          url:"https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/google.srs"
         }]
       end |
       .route.rules = (.route.rules // []) |

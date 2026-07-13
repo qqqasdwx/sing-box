@@ -1,0 +1,13 @@
+{
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "direct",
+      "tag": "direct-v6",
+      "inet6_bind_address": "2001:db8::10"
+    }
+  ]
+}

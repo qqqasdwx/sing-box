@@ -1,0 +1,13 @@
+{
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "direct",
+      "tag": "direct-v4",
+      "inet4_bind_address": "192.0.2.10"
+    }
+  ]
+}

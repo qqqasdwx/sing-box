@@ -1,0 +1,17 @@
+{
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "socks",
+      "tag": "aethercloud",
+      "server": "fd53:ac::2",
+      "server_port": 1080,
+      "version": "5",
+      "username": "aethercloud",
+      "password": "replace-with-the-generated-password"
+    }
+  ]
+}

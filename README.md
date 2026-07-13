@@ -19,7 +19,7 @@
 ## 分支与发布模型
 
 - `main`：实际开发分支，包含模块化源码、工具脚本和 Actions。
-- `release`：自动生成，只保留运行产物和发布说明，例如 `sing-box.sh`、`docker_init.sh`、`Dockerfile`、`README.md`、`CHANGELOG.md`、`BEHAVIOR_DIFFS.md`。
+- `release`：自动生成，只保留运行产物、发布说明和 `examples/` 配置示例，例如 `sing-box.sh`、`docker_init.sh`、`Dockerfile`、`README.md`、`CHANGELOG.md`、`BEHAVIOR_DIFFS.md`。
 - `upstream-main`：镜像 `fscarmen/main`，只作为对比和移植参考。
 
 不要直接改 `release`。所有变更都应提交到 `main`，由 Action 生成发布分支和镜像。
@@ -83,7 +83,7 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
 - `/etc/sing-box/custom/03_route.json`：完整的 `route` 配置。
 - `/etc/sing-box/custom/04_outbounds.json`：完整的 `outbounds` 配置。
 
-默认配置包含 SagerNet 的 `geosite-google` 和 `geosite-openai` 两个远程规则集，更新周期使用 sing-box 默认值。`api.openai.com` 优先解析 IPv4，OpenAI 与 Google 规则集优先解析 IPv6，两者最终都明确使用 `direct` 出站。项目不内置 WARP，也不执行 OpenAI 可用性检测。sing-box 不直接读取 `custom/`；脚本会把两份源配置合并为 `/etc/sing-box/conf/03_routing.json`。修改后先检查，再发布并热重载：
+新生成的默认配置包含 MetaCubeX `sing` 分支的 `geosite-google` 和 `geosite-openai` 两个远程规则集，更新周期使用 sing-box 默认值。`api.openai.com` 优先解析 IPv4，OpenAI 与 Google 规则集优先解析 IPv6，两者最终都明确使用 `direct` 出站。已有 `custom/` 文件属于用户配置，更新脚本不会替换其中的规则集 URL。项目不内置 WARP，也不执行 OpenAI 可用性检测。sing-box 不直接读取 `custom/`；脚本会把两份源配置合并为 `/etc/sing-box/conf/03_routing.json`。修改后先检查，再发布并热重载：
 
 ```sh
 sb check
@@ -92,29 +92,13 @@ sb reload
 
 `sb check` 会在临时目录中连同其余 `conf/` 文件执行完整的 `sing-box check`，不修改当前运行配置。`sb reload` 只有在同样的检查成功后才原子替换运行配置并发送 HUP；检查失败时，当前配置和进程不变。开机或服务重启只读取最后一次成功发布的 `conf/`。旧版的 `01_outbounds.json`、`03_route.json` 和 `08_custom_route.json` 会在首次检查、重载或更新时迁移到 `custom/`。项目不再内置 WARP endpoint；升级时会删除所有引用旧 `warp-ep` 的路由和旧 endpoint，Hysteria2 Realm 与 STUN 功能不受影响。
 
-例如，AetherCloud DynamicV6 网关运行后，可在 `04_outbounds.json` 的数组中保留 `direct` 并增加 SOCKS5 出站：
+完整配置见 [路由示例索引](examples/routing/README.md)：
 
-```json
-{
-  "outbounds": [
-    {
-      "type": "direct",
-      "tag": "direct"
-    },
-    {
-      "type": "socks",
-      "tag": "aethercloud",
-      "server": "fd53:ac::2",
-      "server_port": 1080,
-      "version": "5",
-      "username": "aethercloud",
-      "password": "replace-with-the-generated-password"
-    }
-  ]
-}
-```
+- [Google 全系使用指定 IPv4](examples/routing/google-v4/README.md)
+- [Google 全系使用宿主机原生 IPv6](examples/routing/google-native-v6/README.md)
+- [Google 全系使用 AetherCloud DynamicV6](examples/routing/google-aethercloud-v6/README.md)
 
-然后在 `03_route.json` 中把需要分流的规则设为 `"outbound": "aethercloud"`。使用 `fd53:ac::2:1080` 可以让 SOCKS5 TCP 控制连接和 UDP relay 都走 IPv6；宿主机发布的 `127.0.0.1:11080` 只适合手工 TCP 测试。
+示例按场景提供完整的 `03_route.json` 和 `04_outbounds.json`，不会改变默认安装行为。
 
 ## Docker 使用
 
@@ -181,6 +165,7 @@ docker run -d --name sing-box --network host --restart unless-stopped \
 tools/bundle.sh
 bash -n sing-box.sh docker_init.sh
 tools/bundle.sh --check
+find examples/routing -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty
 ```
 
 本地生成发布目录：
