@@ -1,0 +1,76 @@
+{
+  "route": {
+    "default_http_client": "http-client-direct",
+    "rule_set": [
+      {
+        "tag": "geosite-google",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/google.srs"
+      },
+      {
+        "tag": "geoip-google",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/google.srs"
+      },
+      {
+        "tag": "geosite-openai",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/openai.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "resolve",
+        "domain": [
+          "api.openai.com"
+        ],
+        "strategy": "prefer_ipv4"
+      },
+      {
+        "action": "resolve",
+        "rule_set": [
+          "geosite-openai"
+        ],
+        "strategy": "prefer_ipv6"
+      },
+      {
+        "action": "resolve",
+        "rule_set": [
+          "geosite-google"
+        ],
+        "strategy": "ipv6_only"
+      },
+      {
+        "domain": [
+          "api.openai.com"
+        ],
+        "rule_set": [
+          "geosite-openai"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "geosite-google"
+        ],
+        "action": "route",
+        "outbound": "direct-v6"
+      },
+      {
+        "ip_version": 6,
+        "rule_set": [
+          "geoip-google"
+        ],
+        "action": "route",
+        "outbound": "direct-v6"
+      }
+    ]
+  }
+}

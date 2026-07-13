@@ -7,6 +7,7 @@ on:
       - "tools/**"
       - "sing-box.sh"
       - "docker_init.sh"
+      - "examples/**"
       - ".github/workflows/bundle.yml"
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - "tools/**"
       - "sing-box.sh"
       - "docker_init.sh"
+      - "examples/**"
       - ".github/workflows/bundle.yml"
 
 jobs:
@@ -32,3 +34,6 @@ jobs:
 
       - name: Check shell syntax
         run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh
+
+      - name: Check routing examples
+        run: find examples/routing -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty

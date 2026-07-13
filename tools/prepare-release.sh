@@ -33,4 +33,6 @@ for file in "${release_files[@]}"; do
   cp "$ROOT_DIR/$file" "$DEST_DIR/$file"
 done
 
+cp -a "$ROOT_DIR/examples" "$DEST_DIR/examples"
+
 printf 'Prepared release tree: %s\n' "$DEST_DIR"

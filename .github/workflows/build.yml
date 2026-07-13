@@ -17,6 +17,7 @@ on:
       - "LICENSE"
       - "config.conf"
       - "force_version"
+      - "examples/**"
       - ".github/workflows/build.yml"
 
 permissions:
@@ -49,6 +50,9 @@ jobs:
 
       - name: Check shell syntax
         run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh
+
+      - name: Check routing examples
+        run: find examples/routing -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty
 
       - name: Prepare release tree
         run: tools/prepare-release.sh "$RELEASE_DIR"
