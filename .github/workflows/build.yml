@@ -25,9 +25,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          bash -n aethercloud-agent.sh aethercloud-v6 healthcheck.sh install.sh uninstall.sh
-          shellcheck aethercloud-agent.sh aethercloud-v6 healthcheck.sh install.sh uninstall.sh
+          bash -n aethercloud-agent.sh healthcheck.sh install.sh uninstall.sh
+          shellcheck aethercloud-agent.sh healthcheck.sh install.sh uninstall.sh
           python3 -m py_compile tests/socks5_udp_dns.py tests/socks5_udp_ntp.py
+          docker compose --env-file aethercloud-v6.env.example -f compose.yml config >/dev/null
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4.0.0

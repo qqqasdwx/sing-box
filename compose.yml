@@ -1,0 +1,59 @@
+services:
+  gateway:
+    image: ${AETHERCLOUD_IMAGE:-ghcr.io/qqqasdwx/sing-box:aethercloud}
+    container_name: ${AETHERCLOUD_CONTAINER:-aethercloud-v6}
+    restart: unless-stopped
+    cpus: ${AETHERCLOUD_CPUS:-1}
+    mem_limit: ${AETHERCLOUD_MEMORY:-128m}
+    pids_limit: 128
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - SETGID
+      - SETUID
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: "0"
+      net.ipv6.conf.default.disable_ipv6: "0"
+    ports:
+      - "127.0.0.1:${AETHERCLOUD_SOCKS_PORT:-11080}:1080/tcp"
+      - "127.0.0.1:${AETHERCLOUD_SOCKS_PORT:-11080}:1080/udp"
+    environment:
+      AETHERCLOUD_ROUTER_MAC: ${AETHERCLOUD_ROUTER_MAC}
+      AETHERCLOUD_CONTROL_IPV4: ${AETHERCLOUD_CONTAINER_IPV4:-172.30.53.2}
+      AETHERCLOUD_CONTROL_IPV6: ${AETHERCLOUD_CONTAINER_IPV6:-fd53:ac::2}
+      AETHERCLOUD_WAN_BOOTSTRAP_IPV6: ${AETHERCLOUD_WAN_BOOTSTRAP_IPV6:-fd53:ac:ffff::2}
+      DYNAMICV6_VM_UUID: ${DYNAMICV6_VM_UUID}
+      SOCKS_USERNAME: ${AETHERCLOUD_SOCKS_USERNAME:-aethercloud}
+      SOCKS_PASSWORD: ${AETHERCLOUD_SOCKS_PASSWORD}
+    networks:
+      control:
+        ipv4_address: ${AETHERCLOUD_CONTAINER_IPV4:-172.30.53.2}
+        ipv6_address: ${AETHERCLOUD_CONTAINER_IPV6:-fd53:ac::2}
+      wan:
+        ipv6_address: ${AETHERCLOUD_WAN_BOOTSTRAP_IPV6:-fd53:ac:ffff::2}
+
+networks:
+  control:
+    name: ${AETHERCLOUD_DOCKER_NETWORK:-aethercloud-v6-net}
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: ${AETHERCLOUD_IPV4_SUBNET:-172.30.53.0/24}
+          gateway: ${AETHERCLOUD_IPV4_GATEWAY:-172.30.53.1}
+        - subnet: ${AETHERCLOUD_IPV6_SUBNET:-fd53:ac::/64}
+          gateway: ${AETHERCLOUD_IPV6_GATEWAY:-fd53:ac::1}
+  wan:
+    name: ${AETHERCLOUD_WAN_NETWORK:-aethercloud-v6-wan}
+    driver: ipvlan
+    driver_opts:
+      parent: ${AETHERCLOUD_PARENT}
+      ipvlan_mode: l2
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: ${AETHERCLOUD_WAN_IPV6_SUBNET:-fd53:ac:ffff::/64}

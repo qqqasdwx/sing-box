@@ -2,16 +2,20 @@
 set -Eeuo pipefail
 
 readonly API_BASE='https://billing.aethercloud.io/api/dynamicv6/vm'
-readonly WAN_INTERFACE='wan0'
 readonly ROUTE_TABLE='16000'
 readonly RULE_PREF='16000'
 readonly MTU='1280'
 readonly STATE_DIR='/run/aethercloud'
 readonly POLL_INTERVAL='120'
+readonly CONTROL_IPV4="${AETHERCLOUD_CONTROL_IPV4:-172.30.53.2}"
+readonly CONTROL_BOOTSTRAP_IPV6="${AETHERCLOUD_CONTROL_IPV6:-fd53:ac::2}"
+readonly WAN_BOOTSTRAP_IPV6="${AETHERCLOUD_WAN_BOOTSTRAP_IPV6:-fd53:ac:ffff::2}"
 
 SOCKD_PID=''
 CURRENT_CIDR=''
 CURRENT_GATEWAY=''
+CONTROL_INTERFACE=''
+WAN_INTERFACE=''
 
 log() {
   printf '[aethercloud] %s\n' "$*"
@@ -60,17 +64,39 @@ fi
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
 
+find_interface_by_address() {
+  local target=${1%/*} path interface address
+  for path in /sys/class/net/*; do
+    interface=${path##*/}
+    [ "$interface" = lo ] && continue
+    while read -r address; do
+      [ "${address%/*}" = "$target" ] && {
+        printf '%s\n' "$interface"
+        return 0
+      }
+    done < <(ip -6 -o addr show dev "$interface" scope global 2>/dev/null | awk '{print $4}')
+  done
+  return 1
+}
+
 wait_for_wan() {
+  local control_interface wan_interface
   for _ in $(seq 1 60); do
-    if ip link show dev "$WAN_INTERFACE" >/dev/null 2>&1 &&
-      [ -e "$STATE_DIR/host-ready" ]; then
+    if control_interface=$(find_interface_by_address "$CONTROL_BOOTSTRAP_IPV6") &&
+      wan_interface=$(find_interface_by_address "$WAN_BOOTSTRAP_IPV6") &&
+      [ "$control_interface" != "$wan_interface" ]; then
+      CONTROL_INTERFACE=$control_interface
+      WAN_INTERFACE=$wan_interface
       ip link set dev "$WAN_INTERFACE" mtu "$MTU"
       ip link set dev "$WAN_INTERFACE" up
+      printf '%s\n' "$CONTROL_INTERFACE" > "$STATE_DIR/control_interface"
+      printf '%s\n' "$WAN_INTERFACE" > "$STATE_DIR/wan_interface"
+      log "interfaces ready: control=$CONTROL_INTERFACE wan=$WAN_INTERFACE"
       return 0
     fi
     sleep 1
   done
-  fatal "$WAN_INTERFACE was not attached within 60 seconds"
+  fatal "unable to find the Docker ipvlan interface within 60 seconds"
 }
 
 api_request() {
@@ -143,6 +169,7 @@ configure_lease() {
   ip link set dev "$WAN_INTERFACE" mtu "$MTU"
   ip link set dev "$WAN_INTERFACE" up
   ip -6 addr flush dev "$WAN_INTERFACE" scope global
+  ip -6 route flush dev "$WAN_INTERFACE" table main 2>/dev/null || true
   ip -6 addr add "$cidr" nodad dev "$WAN_INTERFACE"
   ip -6 neigh replace "$gateway" \
     lladdr "$AETHERCLOUD_ROUTER_MAC" nud permanent dev "$WAN_INTERFACE"
@@ -186,7 +213,10 @@ start_sockd() {
     wait "$SOCKD_PID" 2>/dev/null || true
   fi
 
-  sed "s/@AETHERCLOUD_IPV6@/$external_ip/" \
+  sed \
+    -e "s/@AETHERCLOUD_INTERNAL_IPV4@/$CONTROL_IPV4/" \
+    -e "s/@AETHERCLOUD_INTERNAL_IPV6@/${CONTROL_BOOTSTRAP_IPV6%/*}/" \
+    -e "s/@AETHERCLOUD_IPV6@/$external_ip/" \
     /etc/sockd.conf.template > "$STATE_DIR/sockd.conf"
   chmod 0600 "$STATE_DIR/sockd.conf"
 
