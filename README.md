@@ -80,6 +80,11 @@ docker compose restart
 
 geosite/geoip 规则以及何时选择此出站，仍由主 sing-box 配置负责。
 
+完整配置见 [sing-box 路由示例](examples/sing-box/README.md)：
+
+- [Google 全系强制使用 DynamicV6](examples/sing-box/google-all-v6/README.md)
+- [仅将 Google IPv6 分流到 DynamicV6](examples/sing-box/google-selective-v6/README.md)
+
 使用 `qqqasdwx/sing-box` 主项目的 Docker 镜像时，在绑定挂载的
 `custom/04_outbounds.json` 中保留 `direct` 对象，并将上述对象加入
 `outbounds` 数组。在 `custom/03_route.json` 的规则中选择 `aethercloud` 标签，

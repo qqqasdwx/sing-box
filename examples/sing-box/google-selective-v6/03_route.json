@@ -1,0 +1,94 @@
+{
+  "route": {
+    "default_http_client": "http-client-direct",
+    "rule_set": [
+      {
+        "tag": "geosite-google",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/google.srs"
+      },
+      {
+        "tag": "geoip-google",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/google.srs"
+      },
+      {
+        "tag": "geosite-openai",
+        "type": "remote",
+        "format": "binary",
+        "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/openai.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "resolve",
+        "domain": [
+          "api.openai.com"
+        ],
+        "strategy": "prefer_ipv4"
+      },
+      {
+        "action": "resolve",
+        "rule_set": [
+          "geosite-openai"
+        ],
+        "strategy": "prefer_ipv6"
+      },
+      {
+        "action": "resolve",
+        "rule_set": [
+          "geosite-google"
+        ],
+        "strategy": "prefer_ipv6"
+      },
+      {
+        "domain": [
+          "api.openai.com"
+        ],
+        "rule_set": [
+          "geosite-openai"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "rule_set": [
+              "geosite-google"
+            ]
+          },
+          {
+            "ip_cidr": [
+              "::/0"
+            ]
+          }
+        ],
+        "action": "route",
+        "outbound": "aethercloud"
+      },
+      {
+        "ip_version": 6,
+        "rule_set": [
+          "geoip-google"
+        ],
+        "action": "route",
+        "outbound": "aethercloud"
+      },
+      {
+        "rule_set": [
+          "geosite-google"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      }
+    ]
+  }
+}
