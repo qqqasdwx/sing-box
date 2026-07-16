@@ -5,7 +5,7 @@
 ## 2026-07-13
 
 - 新生成的默认 Google 与 OpenAI geosite 统一改用 MetaCubeX `sing` 分支，保持原有 DNS 偏好和 `direct` 出站行为不变；已有 `custom/` 文件不会被覆盖。
-- 新增按场景组织的路由示例，覆盖 Google 全系流量使用指定 IPv4、宿主机原生 IPv6 或 AetherCloud DynamicV6 出站。
+- 新增按场景组织的路由示例，覆盖 Google 全系流量使用指定 IPv4 或宿主机原生 IPv6 出站。
 - release 产物包含 `examples/`，CI 会检查所有路由示例 JSON。
 
 ## 2026-07-12

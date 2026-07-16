@@ -8,10 +8,8 @@
 
 - `google-v4`：Google 全系域名使用指定的宿主机 IPv4。
 - `google-native-v6`：Google 全系域名使用指定的宿主机原生 IPv6。
-- `google-aethercloud-v6`：Google 全系域名使用 AetherCloud DynamicV6
-  SOCKS5 网关。
 
-示例中的 `192.0.2.10`、`2001:db8::10` 和占位密码不能直接用于生产。
+示例中的 `192.0.2.10` 和 `2001:db8::10` 不能直接用于生产。
 复制前先备份现有 `custom/`，再按场景 README 替换必要字段。
 
 VPS 修改后执行：

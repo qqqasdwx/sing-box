@@ -96,7 +96,6 @@ sb reload
 
 - [Google 全系使用指定 IPv4](examples/routing/google-v4/README.md)
 - [Google 全系使用宿主机原生 IPv6](examples/routing/google-native-v6/README.md)
-- [Google 全系使用 AetherCloud DynamicV6](examples/routing/google-aethercloud-v6/README.md)
 
 示例按场景提供完整的 `03_route.json` 和 `04_outbounds.json`，不会改变默认安装行为。
 
