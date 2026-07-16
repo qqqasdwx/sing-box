@@ -18,6 +18,7 @@ on:
       - "config.conf"
       - "force_version"
       - "examples/**"
+      - "tests/**"
       - ".github/workflows/build.yml"
 
 permissions:
@@ -49,7 +50,10 @@ jobs:
           tools/bundle.sh --check
 
       - name: Check shell syntax
-        run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh
+        run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh tests/test-v2rayn-hy2.sh
+
+      - name: Test v2rayN Hysteria2 output
+        run: bash tests/test-v2rayn-hy2.sh
 
       - name: Check routing examples
         run: find examples/routing -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty

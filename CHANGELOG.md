@@ -2,6 +2,13 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-07-16
+
+- 选择性移植上游 `4f29ea5`：v2rayN Hysteria2 Realm 订阅改用 `ProtoExtraObj.Hy2RealmUrl`，同时保留 `Ports` 和 `HopInterval` 端口跳跃字段。
+- 新增 Realm 与端口跳跃四种组合的订阅 JSON 测试；VPS 和 Docker 共用同一生成逻辑。
+- 不移植上游 `BIND_INTERFACE` 菜单及误改的 `PORT_HOPPING_RANGE` 示例变量，继续使用 `custom/` 唯一配置源和 `HY2_PORT_HOPPING_RANGE`。
+- 更新上游跟踪基线到 `fscarmen/sing-box@4f29ea5c92707716fe5f0dfcccac12c5b5d63407`。
+
 ## 2026-07-13
 
 - 新生成的默认 Google 与 OpenAI geosite 统一改用 MetaCubeX `sing` 分支，保持原有 DNS 偏好和 `direct` 出站行为不变；已有 `custom/` 文件不会被覆盖。

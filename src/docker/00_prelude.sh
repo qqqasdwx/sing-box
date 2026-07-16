@@ -2,7 +2,7 @@
 
 # Docker keeps only container-specific defaults here. Protocol generation,
 # subscriptions, Argo parsing, and node export are shared with the VPS script.
-VERSION='v1.3.15 (2026.07.01)'
+VERSION='v1.3.16 (2026.07.16)'
 
 GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
 

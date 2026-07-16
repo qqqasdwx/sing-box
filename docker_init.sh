@@ -2,7 +2,7 @@
 
 # Docker keeps only container-specific defaults here. Protocol generation,
 # subscriptions, Argo parsing, and node export are shared with the VPS script.
-VERSION='v1.3.15 (2026.07.01)'
+VERSION='v1.3.16 (2026.07.16)'
 
 GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
 
@@ -45,8 +45,8 @@ trap 'cleanup_temp; printf "\n"; exit 1' INT QUIT TERM
 mkdir -p "$TEMP_DIR"
 E[0]="Language:\n 1. English (default) \n 2. 简体中文"
 C[0]="${E[0]}"
-E[1]="1. Added Hysteria2 Realm support for machines without public inbound access; 2. add v2rayN Finalmask field for hysteria2 realm subscription output"
-C[1]="1. 增加 Hysteria2 Realm 支持，适用于没有公网入口的机器; 2. v2rayN 订阅输出增加 Realm 的 Finalmask 字段"
+E[1]="Updated v2rayN Hysteria2 Realm subscriptions to ProtoExtraObj.Hy2RealmUrl while preserving port hopping settings"
+C[1]="v2rayN Hysteria2 Realm 订阅改用 ProtoExtraObj.Hy2RealmUrl，并保留端口跳跃设置"
 E[2]="Downloading Sing-box. Please wait a seconds ..."
 C[2]="下载 Sing-box 中，请稍等 ..."
 E[3]="Input errors up to 5 times.The script is aborted."
@@ -5349,6 +5349,53 @@ fetch_quicktunnel_domain() {
   [ -s ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json ] && sed -i "s/VMESS_HOST_DOMAIN.*/VMESS_HOST_DOMAIN\": \"$ARGO_DOMAIN\"/" ${WORK_DIR}/conf/17_${NODE_TAG[6]}_inbounds.json
   [ -s ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json ] && sed -i "s/\"server_name\":.*/\"server_name\": \"$ARGO_DOMAIN\",/" ${WORK_DIR}/conf/18_${NODE_TAG[7]}_inbounds.json
 }
+# shellcheck shell=bash
+
+build_v2rayn_hysteria2_json() {
+  local remarks="$1"
+  local address="$2"
+  local port="$3"
+  local password="$4"
+  local server_name="$5"
+  local certificate="$6"
+  local up_mbps="$7"
+  local down_mbps="$8"
+  local realm_url="${9:-}"
+  local hopping_ports="${10:-}"
+
+  jq_exec -cn \
+    --arg remarks "$remarks" \
+    --arg address "$address" \
+    --argjson port "$port" \
+    --arg password "$password" \
+    --arg server_name "$server_name" \
+    --arg certificate "$certificate" \
+    --argjson up_mbps "$up_mbps" \
+    --argjson down_mbps "$down_mbps" \
+    --arg realm_url "$realm_url" \
+    --arg hopping_ports "$hopping_ports" '
+      {
+        ConfigType: 7,
+        ConfigVersion: 4,
+        Remarks: $remarks,
+        Address: $address,
+        Port: $port,
+        Password: $password,
+        StreamSecurity: "tls",
+        AllowInsecure: "false",
+        Sni: $server_name,
+        Cert: $certificate,
+        ProtoExtraObj: (
+          {
+            UpMbps: $up_mbps,
+            DownMbps: $down_mbps
+          }
+          + (if $realm_url == "" then {} else {Hy2RealmUrl: $realm_url} end)
+          + (if $hopping_ports == "" then {} else {Ports: $hopping_ports, HopInterval: "30s"} end)
+        )
+      }
+    '
+}
 # 安装 sing-box 全家桶
 install_sing-box() {
   sing-box_variables
@@ -5822,17 +5869,29 @@ http3://$(echo -n "${UUID[22]}:${UUID[22]}@${SERVER_IP_2}:${PORT_NAIVE}" | base6
 vless://${UUID[11]}@${SERVER_IP_1}:${PORT_XTLS_REALITY}?encryption=none${VISION_FLOW}&security=reality&sni=${TLS_SERVER}&fp=${FINGER_PRINT}&pbk=${REALITY_PUBLIC[11]}&type=tcp&headerType=none#${NODE_NAME[11]// /%20}%20${NODE_TAG[0]}"
 
   if [ -n "$PORT_HYSTERIA2" ]; then
-    [[ -n "$PORT_HOPPING_START" && -n "$PORT_HOPPING_END" ]] && local V2RAYN_PARAMS=",\"Ports\":\"${PORT_HOPPING_START}-${PORT_HOPPING_END}\",\"HopInterval\":\"30s\""
-    local REALM_PARAMS=""
-    [ "$IS_HY2_REALM" = 'is_hy2_realm' ] && REALM_PARAMS=",\"Finalmask\":\"{\\n        \\\"udp\\\": [\\n            {\\n                \\\"type\\\": \\\"realm\\\",\\n                \\\"settings\\\": {\\n                    \\\"url\\\": \\\"realm://public@realm.hy2.io:443/${UUID[12]}\\\",\\n                    \\\"stunServers\\\": [\\n                        \\\"stun.nextcloud.com:3478\\\",\\n                        \\\"stun.sip.us:3478\\\",\\n                        \\\"turn.cloudflare.com:3478\\\",\\n                        \\\"global.stun.twilio.com:3478\\\"\\n                    ]\\n                }\\n            }\\n        ],\\n        \\\"quicParams\\\": {\\n            \\\"congestion\\\": \\\"bbr\\\"\\n        }\\n    }\""
-
-    local HY2_JSON_1="{\"ConfigType\":7,\"ConfigVersion\":4,\"Remarks\":\"${NODE_NAME[12]} ${NODE_TAG[1]}\",\"Address\":\"${SERVER_IP}\",\"Port\":${PORT_HYSTERIA2},\"Password\":\"${UUID[12]}\",\"StreamSecurity\":\"tls\",\"AllowInsecure\":\"false\",\"Sni\":\"${TLS_SERVER}\",\"Cert\":\"${CERT_URL_2}\""
-    local HY2_JSON_2=",\"ProtoExtraObj\":{\"UpMbps\":${HY2_UP:-200},\"DownMbps\":${HY2_DOWN:-1000}"
-    local HY2_JSON_3="}}"
-    local CLEAN_V2RAYN_PARAMS="${V2RAYN_PARAMS:-}"
+    local HY2_REALM_URL=""
+    local HY2_HOPPING_PORTS=""
+    local HY2_V2RAYN_JSON
+    if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+      HY2_REALM_URL="realm://public@realm.hy2.io:443/${UUID[12]}?stun=stun.nextcloud.com:3478&stun=stun.sip.us:3478&stun=turn.cloudflare.com:3478&stun=global.stun.twilio.com:3478"
+    fi
+    if [ -n "$PORT_HOPPING_START" ] && [ -n "$PORT_HOPPING_END" ]; then
+      HY2_HOPPING_PORTS="${PORT_HOPPING_START}-${PORT_HOPPING_END}"
+    fi
+    HY2_V2RAYN_JSON=$(build_v2rayn_hysteria2_json \
+      "${NODE_NAME[12]} ${NODE_TAG[1]}" \
+      "$SERVER_IP" \
+      "$PORT_HYSTERIA2" \
+      "${UUID[12]}" \
+      "$TLS_SERVER" \
+      "$CERT_URL_2" \
+      "${HY2_UP:-200}" \
+      "${HY2_DOWN:-1000}" \
+      "$HY2_REALM_URL" \
+      "$HY2_HOPPING_PORTS") || return 1
     local V2RAYN_SUBSCRIBE+="
 ----------------------------
-v2rayn://hysteria2/$(printf "%s%s%s%s%s\n" "$HY2_JSON_1" "$REALM_PARAMS" "${HY2_JSON_2%$'\n'*}" "${CLEAN_V2RAYN_PARAMS%$'\n'*}" "$HY2_JSON_3" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
+v2rayn://hysteria2/$(printf '%s' "$HY2_V2RAYN_JSON" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
   fi
 
   [ -n "$PORT_TUIC" ] && local V2RAYN_SUBSCRIBE+="

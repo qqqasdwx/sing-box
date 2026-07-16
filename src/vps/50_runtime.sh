@@ -471,17 +471,29 @@ http3://$(echo -n "${UUID[22]}:${UUID[22]}@${SERVER_IP_2}:${PORT_NAIVE}" | base6
 vless://${UUID[11]}@${SERVER_IP_1}:${PORT_XTLS_REALITY}?encryption=none${VISION_FLOW}&security=reality&sni=${TLS_SERVER}&fp=${FINGER_PRINT}&pbk=${REALITY_PUBLIC[11]}&type=tcp&headerType=none#${NODE_NAME[11]// /%20}%20${NODE_TAG[0]}"
 
   if [ -n "$PORT_HYSTERIA2" ]; then
-    [[ -n "$PORT_HOPPING_START" && -n "$PORT_HOPPING_END" ]] && local V2RAYN_PARAMS=",\"Ports\":\"${PORT_HOPPING_START}-${PORT_HOPPING_END}\",\"HopInterval\":\"30s\""
-    local REALM_PARAMS=""
-    [ "$IS_HY2_REALM" = 'is_hy2_realm' ] && REALM_PARAMS=",\"Finalmask\":\"{\\n        \\\"udp\\\": [\\n            {\\n                \\\"type\\\": \\\"realm\\\",\\n                \\\"settings\\\": {\\n                    \\\"url\\\": \\\"realm://public@realm.hy2.io:443/${UUID[12]}\\\",\\n                    \\\"stunServers\\\": [\\n                        \\\"stun.nextcloud.com:3478\\\",\\n                        \\\"stun.sip.us:3478\\\",\\n                        \\\"turn.cloudflare.com:3478\\\",\\n                        \\\"global.stun.twilio.com:3478\\\"\\n                    ]\\n                }\\n            }\\n        ],\\n        \\\"quicParams\\\": {\\n            \\\"congestion\\\": \\\"bbr\\\"\\n        }\\n    }\""
-
-    local HY2_JSON_1="{\"ConfigType\":7,\"ConfigVersion\":4,\"Remarks\":\"${NODE_NAME[12]} ${NODE_TAG[1]}\",\"Address\":\"${SERVER_IP}\",\"Port\":${PORT_HYSTERIA2},\"Password\":\"${UUID[12]}\",\"StreamSecurity\":\"tls\",\"AllowInsecure\":\"false\",\"Sni\":\"${TLS_SERVER}\",\"Cert\":\"${CERT_URL_2}\""
-    local HY2_JSON_2=",\"ProtoExtraObj\":{\"UpMbps\":${HY2_UP:-200},\"DownMbps\":${HY2_DOWN:-1000}"
-    local HY2_JSON_3="}}"
-    local CLEAN_V2RAYN_PARAMS="${V2RAYN_PARAMS:-}"
+    local HY2_REALM_URL=""
+    local HY2_HOPPING_PORTS=""
+    local HY2_V2RAYN_JSON
+    if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+      HY2_REALM_URL="realm://public@realm.hy2.io:443/${UUID[12]}?stun=stun.nextcloud.com:3478&stun=stun.sip.us:3478&stun=turn.cloudflare.com:3478&stun=global.stun.twilio.com:3478"
+    fi
+    if [ -n "$PORT_HOPPING_START" ] && [ -n "$PORT_HOPPING_END" ]; then
+      HY2_HOPPING_PORTS="${PORT_HOPPING_START}-${PORT_HOPPING_END}"
+    fi
+    HY2_V2RAYN_JSON=$(build_v2rayn_hysteria2_json \
+      "${NODE_NAME[12]} ${NODE_TAG[1]}" \
+      "$SERVER_IP" \
+      "$PORT_HYSTERIA2" \
+      "${UUID[12]}" \
+      "$TLS_SERVER" \
+      "$CERT_URL_2" \
+      "${HY2_UP:-200}" \
+      "${HY2_DOWN:-1000}" \
+      "$HY2_REALM_URL" \
+      "$HY2_HOPPING_PORTS") || return 1
     local V2RAYN_SUBSCRIBE+="
 ----------------------------
-v2rayn://hysteria2/$(printf "%s%s%s%s%s\n" "$HY2_JSON_1" "$REALM_PARAMS" "${HY2_JSON_2%$'\n'*}" "${CLEAN_V2RAYN_PARAMS%$'\n'*}" "$HY2_JSON_3" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
+v2rayn://hysteria2/$(printf '%s' "$HY2_V2RAYN_JSON" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
   fi
 
   [ -n "$PORT_TUIC" ] && local V2RAYN_SUBSCRIBE+="
