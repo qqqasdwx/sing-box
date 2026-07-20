@@ -37,7 +37,8 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 if [ -e "$ENV_FILE" ]; then
-  printf 'AetherCloud gateway removed. Configuration remains at %s.\n' "$ENV_FILE"
+  printf 'AetherCloud gateway removed. Configuration and lease slots remain under %s.\n' \
+    "$INSTALL_DIR"
 elif [ -e "$LEGACY_ENV_FILE" ]; then
   printf 'AetherCloud gateway removed. Configuration remains at %s.\n' \
     "$LEGACY_ENV_FILE"

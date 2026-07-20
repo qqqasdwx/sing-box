@@ -1,2 +1,3 @@
 *.env
 !aethercloud-v6.env.example
+state/

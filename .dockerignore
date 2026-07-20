@@ -7,3 +7,4 @@ aethercloud-v6.service
 install.sh
 uninstall.sh
 tests
+state

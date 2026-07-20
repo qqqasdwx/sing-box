@@ -5,7 +5,7 @@
 `geoip-google` 也会选择相同出站。
 
 先按本分支根目录 README 部署网关，并确认宿主机可以访问
-`fd53:ac::2:1080`。编辑 `04_outbounds.json`，将占位密码替换为安装网关时
+`172.30.53.2:1080`。编辑 `04_outbounds.json`，将占位密码替换为安装网关时
 终端输出的实际密码。
 
 IPv4 字面地址无法通过 IPv6-only DynamicV6 出口转换成 IPv6；直接访问 Google

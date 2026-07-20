@@ -27,6 +27,7 @@ jobs:
           sudo apt-get install -y shellcheck
           bash -n aethercloud-agent.sh healthcheck.sh install.sh uninstall.sh
           shellcheck aethercloud-agent.sh healthcheck.sh install.sh uninstall.sh
+          bash tests/slot_mapping.sh
           python3 -m py_compile tests/socks5_udp_dns.py tests/socks5_udp_ntp.py
           find examples/sing-box -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty
           docker compose --env-file aethercloud-v6.env.example -f compose.yml config >/dev/null

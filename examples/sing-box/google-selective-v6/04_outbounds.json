@@ -7,7 +7,7 @@
     {
       "type": "socks",
       "tag": "aethercloud",
-      "server": "fd53:ac::2",
+      "server": "172.30.53.2",
       "server_port": 1080,
       "version": "5",
       "username": "aethercloud",

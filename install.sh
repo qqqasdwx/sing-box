@@ -15,7 +15,11 @@ SCRIPT_DIR=''
 SOURCE_DIR=''
 SOURCE_TEMP=''
 LEGACY_CONFIG_PRESENT=false
+LEGACY_IPV6_CONTROL=false
 [ -e "$LEGACY_CONFIG_FILE" ] && LEGACY_CONFIG_PRESENT=true
+[ -r "$COMPOSE_FILE" ] &&
+  grep -q 'AETHERCLOUD_CONTROL_IPV6' "$COMPOSE_FILE" &&
+  LEGACY_IPV6_CONTROL=true
 if [ -n "${BASH_SOURCE[0]:-}" ]; then
   if ! SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd); then
     SCRIPT_DIR=''
@@ -70,23 +74,8 @@ detect_parent() {
   ip -4 route show default | awk '{print $5; exit}'
 }
 
-detect_router_mac() {
-  local parent=$1 gateway mac
-  gateway=$(ip -6 route show default dev "$parent" 2>/dev/null |
-    awk '{for (i = 1; i <= NF; i++) if ($i == "via") {print $(i + 1); exit}}')
-  [ -n "$gateway" ] || fatal "no IPv6 default gateway on $parent"
-
-  if command -v ping >/dev/null 2>&1; then
-    ping -6 -c 1 -W 2 -I "$parent" "$gateway" >/dev/null 2>&1 || true
-  fi
-  mac=$(ip -6 neigh show to "$gateway" dev "$parent" 2>/dev/null |
-    awk '{for (i = 1; i <= NF; i++) if ($i == "lladdr") {print $(i + 1); exit}}')
-  [ -n "$mac" ] || fatal "unable to resolve the router MAC for $gateway"
-  printf '%s\n' "$mac"
-}
-
 detect_vm_uuid() {
-  [ -r /sys/class/dmi/id/product_uuid ] || fatal 'unable to detect the VM UUID'
+  [ -r /sys/class/dmi/id/product_uuid ] || return 1
   tr '[:upper:]' '[:lower:]' < /sys/class/dmi/id/product_uuid | tr -d '[:space:]'
 }
 
@@ -168,22 +157,52 @@ json_escape() {
   printf '%s' "$escaped"
 }
 
-print_sing_box_outbound() {
-  local server username password
-  server=$(json_escape "${AETHERCLOUD_CONTAINER_IPV6:-fd53:ac::2}")
+print_sing_box_outbounds() {
+  local container server username password record slot port tag
+  local -a active_slots=()
+  container=${AETHERCLOUD_CONTAINER:-aethercloud-v6}
+  server=$(json_escape "${AETHERCLOUD_CONTAINER_IPV4:-172.30.53.2}")
   username=$(json_escape "${AETHERCLOUD_SOCKS_USERNAME:-aethercloud}")
   password=$(json_escape "${AETHERCLOUD_SOCKS_PASSWORD:-}")
 
-  printf '\n可复制到 sing-box custom/04_outbounds.json 的出站配置：\n\n'
-  printf '{\n'
-  printf '  "type": "socks",\n'
-  printf '  "tag": "aethercloud",\n'
-  printf '  "server": "%s",\n' "$server"
-  printf '  "server_port": 1080,\n'
-  printf '  "version": "5",\n'
-  printf '  "username": "%s",\n' "$username"
-  printf '  "password": "%s"\n' "$password"
-  printf '}\n'
+  mapfile -t active_slots < <(docker exec "$container" jq -r \
+    '.slots[] | [.slot, .socks_port] | @tsv' \
+    /run/aethercloud/active-leases.json)
+  [ "${#active_slots[@]}" -gt 0 ] || fatal 'gateway has no active lease slots'
+
+  printf '\n可复制到 sing-box custom/04_outbounds.json 的 SOCKS 出站对象：\n'
+  for record in "${active_slots[@]}"; do
+    IFS=$'\t' read -r slot port <<< "$record"
+    if [ "$slot" -eq 0 ]; then
+      tag='aethercloud'
+    else
+      tag="aethercloud-$((slot + 1))"
+    fi
+    printf '\n{\n'
+    printf '  "type": "socks",\n'
+    printf '  "tag": "%s",\n' "$tag"
+    printf '  "server": "%s",\n' "$server"
+    printf '  "server_port": %s,\n' "$port"
+    printf '  "version": "5",\n'
+    printf '  "username": "%s",\n' "$username"
+    printf '  "password": "%s"\n' "$password"
+    printf '}\n'
+  done
+}
+
+print_legacy_ipv6_notice() {
+  local forwarding=''
+  [ "$LEGACY_IPV6_CONTROL" = true ] || return 0
+
+  printf '\n升级提示：sing-box SOCKS 出站地址已从 fd53:ac::2 改为 172.30.53.2。\n'
+  printf '请更新 custom/04_outbounds.json 后执行 sb reload，或重启 sing-box 容器。\n'
+  if [ -r /proc/sys/net/ipv6/conf/all/forwarding ]; then
+    forwarding=$(< /proc/sys/net/ipv6/conf/all/forwarding)
+  fi
+  if [ "$forwarding" = 1 ]; then
+    printf 'WARNING: 宿主机 IPv6 forwarding 仍为 1；旧 IPv6 bridge 可能留下了该状态。\n' >&2
+    printf 'WARNING: 请检查 IPv6 默认路由，并按 README 的旧版升级说明处理。\n' >&2
+  fi
 }
 
 wait_for_gateway() {
@@ -211,9 +230,9 @@ prepare_source_dir
 
 image_override=${AETHERCLOUD_IMAGE:-}
 parent_override=${AETHERCLOUD_PARENT:-}
-router_mac_override=${AETHERCLOUD_ROUTER_MAC:-}
 vm_uuid_override=${DYNAMICV6_VM_UUID:-}
-mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/state"
+chmod 0700 "$INSTALL_DIR/state"
 install -m 0644 "$SOURCE_DIR/compose.yml" "$COMPOSE_FILE"
 
 if [ ! -e "$ENV_FILE" ]; then
@@ -234,13 +253,17 @@ fi
 
 # shellcheck disable=SC1090
 . "$ENV_FILE"
+stored_parent=${AETHERCLOUD_PARENT:-}
+stored_vm_uuid=${DYNAMICV6_VM_UUID:-}
 AETHERCLOUD_IMAGE=${image_override:-${AETHERCLOUD_IMAGE:-$DEFAULT_IMAGE}}
-AETHERCLOUD_PARENT=${parent_override:-$(detect_parent)}
+AETHERCLOUD_PARENT=${parent_override:-$(detect_parent || true)}
+[ -n "$AETHERCLOUD_PARENT" ] || AETHERCLOUD_PARENT=$stored_parent
 [ -n "$AETHERCLOUD_PARENT" ] || fatal 'unable to detect the parent interface'
 ip link show dev "$AETHERCLOUD_PARENT" >/dev/null 2>&1 ||
   fatal "parent interface does not exist: $AETHERCLOUD_PARENT"
-AETHERCLOUD_ROUTER_MAC=${router_mac_override:-$(detect_router_mac "$AETHERCLOUD_PARENT")}
-DYNAMICV6_VM_UUID=${vm_uuid_override:-$(detect_vm_uuid)}
+DYNAMICV6_VM_UUID=${vm_uuid_override:-$(detect_vm_uuid || true)}
+[ -n "$DYNAMICV6_VM_UUID" ] || DYNAMICV6_VM_UUID=$stored_vm_uuid
+[ -n "$DYNAMICV6_VM_UUID" ] || fatal 'unable to detect the VM UUID'
 AETHERCLOUD_SOCKS_PASSWORD=${AETHERCLOUD_SOCKS_PASSWORD:-}
 [ -n "$AETHERCLOUD_SOCKS_PASSWORD" ] || fatal 'AETHERCLOUD_SOCKS_PASSWORD is required'
 case "$AETHERCLOUD_IMAGE" in
@@ -249,7 +272,6 @@ esac
 
 set_env_value AETHERCLOUD_IMAGE "$AETHERCLOUD_IMAGE"
 set_env_value AETHERCLOUD_PARENT "$AETHERCLOUD_PARENT"
-set_env_value AETHERCLOUD_ROUTER_MAC "$AETHERCLOUD_ROUTER_MAC"
 set_env_value DYNAMICV6_VM_UUID "$DYNAMICV6_VM_UUID"
 
 # Reload the normalized values written above.
@@ -259,9 +281,11 @@ migrate_legacy_runtime
 if [ "${AETHERCLOUD_SKIP_PULL:-false}" != true ]; then
   compose pull
 fi
+compose down --remove-orphans
 compose up -d --remove-orphans --force-recreate
 wait_for_gateway
 [ "$LEGACY_CONFIG_PRESENT" = false ] || rm -f "$LEGACY_CONFIG_FILE"
 
 printf 'AetherCloud gateway is healthy. Compose directory: %s\n' "$INSTALL_DIR"
-print_sing_box_outbound
+print_legacy_ipv6_notice
+print_sing_box_outbounds
