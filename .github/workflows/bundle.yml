@@ -35,13 +35,21 @@ jobs:
           tools/bundle.sh --check
 
       - name: Check shell syntax
-        run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh tests/test-v2rayn-hy2.sh tests/test-safe-reload.sh
+        run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh tests/test-v2rayn-hy2.sh tests/test-safe-reload.sh tests/test-local-assets.sh tests/test-certificate-reuse.sh tests/test-routing-validation.sh
 
       - name: Test v2rayN Hysteria2 output
         run: bash tests/test-v2rayn-hy2.sh
 
       - name: Test safe reload behavior
         run: bash tests/test-safe-reload.sh
+
+      - name: Test certificate reuse and routing references
+        run: |
+          bash tests/test-certificate-reuse.sh
+          bash tests/test-routing-validation.sh
+
+      - name: Test local assets and dependency policy
+        run: bash tests/test-local-assets.sh
 
       - name: Check routing examples
         run: find examples/routing -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty

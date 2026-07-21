@@ -70,7 +70,6 @@ docker_prepare_env() {
   NODE_NAME_CONFIRM=${NODE_NAME_CONFIRM:-"$NODE_NAME"}
   apply_custom_node_names
   normalize_log_level
-  normalize_ntp_config
   normalize_finger_print
   TLS_SERVER_DEFAULT=${TLS_SERVER:-"$TLS_SERVER_DEFAULT"}
 
@@ -121,30 +120,20 @@ Expected file: ${SB_BIN}"
   chmod +x "$TEMP_DIR/sing-box"
   rm -rf "$SB_DIR"
 
-  info " Downloading jq, qrencode, cloudflared, and subscription templates "
+  local ASSET_LABEL='jq'
+  [ "$IS_ARGO" = 'is_argo' ] && ASSET_LABEL+=' and cloudflared'
+  info " Downloading ${ASSET_LABEL} "
   wget --no-check-certificate --continue -qO "$TEMP_DIR/jq" \
     "${GH_PROXY}https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" && chmod +x "$TEMP_DIR/jq"
-  wget --no-check-certificate --continue -qO "$TEMP_DIR/qrencode" \
-    "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" && chmod +x "$TEMP_DIR/qrencode"
-  wget --no-check-certificate --continue -qO "$TEMP_DIR/cloudflared" \
-    "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" && chmod +x "$TEMP_DIR/cloudflared"
-  wget --no-check-certificate --continue -qO "$TEMP_DIR/clash" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash"
-  wget --no-check-certificate --continue -qO "$TEMP_DIR/clash2" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash2"
-  wget --no-check-certificate --continue -qO "$TEMP_DIR/sing-box-template" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box"
+  if [ "$IS_ARGO" = 'is_argo' ]; then
+    wget --no-check-certificate --continue -qO "$TEMP_DIR/cloudflared" \
+      "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" && chmod +x "$TEMP_DIR/cloudflared"
+  fi
 
-  [ -x "$TEMP_DIR/jq" ] &&
-    [ -x "$TEMP_DIR/qrencode" ] &&
-    [ -x "$TEMP_DIR/cloudflared" ] &&
-    [ -s "$TEMP_DIR/clash" ] &&
-    [ -s "$TEMP_DIR/clash2" ] &&
-    [ -s "$TEMP_DIR/sing-box-template" ] || failure_error " Dependency download failed. " "Expected files:
-$TEMP_DIR/jq
-$TEMP_DIR/qrencode
-$TEMP_DIR/cloudflared
-$TEMP_DIR/clash
-$TEMP_DIR/clash2
-$TEMP_DIR/sing-box-template
-Architecture: jq=${JQ_ARCH:-unknown}, qrencode=${QRENCODE_ARCH:-unknown}, cloudflared=${ARGO_ARCH:-unknown}"
+  [ -x "$TEMP_DIR/jq" ] || failure_error " Dependency download failed. " "Expected file: $TEMP_DIR/jq
+Architecture: jq=${JQ_ARCH:-unknown}"
+  [ "$IS_ARGO" != 'is_argo' ] || [ -x "$TEMP_DIR/cloudflared" ] || failure_error " Dependency download failed. " "Expected file: $TEMP_DIR/cloudflared
+Architecture: cloudflared=${ARGO_ARCH:-unknown}"
 }
 
 check_install() {
@@ -224,8 +213,12 @@ docker_prepare_argo() {
 }
 
 docker_copy_assets() {
-  cp -f "$TEMP_DIR/sing-box" "$TEMP_DIR/jq" "$TEMP_DIR/qrencode" "$WORK_DIR/"
-  [ -x "$TEMP_DIR/cloudflared" ] && cp -f "$TEMP_DIR/cloudflared" "$WORK_DIR/"
+  cp -f "$TEMP_DIR/sing-box" "$TEMP_DIR/jq" "$WORK_DIR/"
+  if [ "$IS_ARGO" = 'is_argo' ]; then
+    cp -f "$TEMP_DIR/cloudflared" "$WORK_DIR/"
+  else
+    rm -f "${WORK_DIR}/cloudflared"
+  fi
   [ -s "$TEMP_DIR/tunnel.json" ] && cp -f "$TEMP_DIR/tunnel.json" "$WORK_DIR/"
   [ -s "$TEMP_DIR/tunnel.yml" ] && cp -f "$TEMP_DIR/tunnel.yml" "$WORK_DIR/"
   echo "${L^^}" > "${WORK_DIR}/language"
@@ -277,7 +270,7 @@ docker_install() {
   rm -f "${WORK_DIR}"/conf/* "${WORK_DIR}"/subscribe/* "${WORK_DIR}/list"
   sing-box_variables
   docker_prepare_argo
-  ssl_certificate "$TLS_SERVER_DEFAULT"
+  ssl_certificate "$TLS_SERVER_DEFAULT" reuse_existing
   sing-box_json
   docker_copy_assets
   routing_publish || failure_error " Routing configuration check failed. " "Custom directory: ${CUSTOM_DIR}"

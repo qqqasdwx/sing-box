@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.17 (2026.07.21)'
+VERSION='v1.3.18 (2026.07.21)'
 
-# Github 反代加速代理
-GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
+# 可选 GitHub URL 前缀；默认直连，不自动选择第三方代理。
+GH_PROXY=${GH_PROXY:-}
 
 # 各变量默认值
 TEMP_DIR='/tmp/sing-box'
@@ -15,10 +15,6 @@ FIREWALL_STATE_DIR="${WORK_DIR}/firewall"
 SERVICE_FIREWALL_STATE_FILE="${FIREWALL_STATE_DIR}/service_ports.list"
 START_PORT_DEFAULT='8881'
 LOG_LEVEL_DEFAULT='error'
-NTP_ENABLED_DEFAULT='true'
-NTP_SERVER_DEFAULT='time.apple.com'
-NTP_SERVER_PORT_DEFAULT='123'
-NTP_INTERVAL_DEFAULT='60m'
 MIN_PORT=100
 MAX_PORT=65520
 MIN_HOPPING_PORT=10000
@@ -28,7 +24,6 @@ PROTOCOL_LIST=("XTLS + reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "tr
 NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess-ws" "vless-ws-tls" "h2-reality" "grpc-reality" "anytls" "naive")
 CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
 CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org" "cf.090227.xyz")
-SUBSCRIBE_TEMPLATE="https://raw.githubusercontent.com/fscarmen/client_template/main"
 DEFAULT_NEWEST_VERSION='1.13.0-rc.4'
 FINGER_PRINT_DEFAULT='chrome'
 STEP_NUM=0      # 当前步骤编号（安装流程中动态递增）

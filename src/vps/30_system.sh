@@ -8,13 +8,13 @@ check_arch() {
 
   case "$(uname -m)" in
     aarch64|arm64 )
-      SING_BOX_ARCH=arm64${IS_MUSL}; JQ_ARCH=arm64; QRENCODE_ARCH=arm64; ARGO_ARCH=arm64
+      SING_BOX_ARCH=arm64${IS_MUSL}; JQ_ARCH=arm64; ARGO_ARCH=arm64
       ;;
     x86_64|amd64 )
-      SING_BOX_ARCH=amd64${IS_MUSL}; JQ_ARCH=amd64; QRENCODE_ARCH=amd64; ARGO_ARCH=amd64
+      SING_BOX_ARCH=amd64${IS_MUSL}; JQ_ARCH=amd64; ARGO_ARCH=amd64
       ;;
     armv7l )
-      SING_BOX_ARCH=armv7${IS_MUSL}; JQ_ARCH=armhf; QRENCODE_ARCH=arm; ARGO_ARCH=arm
+      SING_BOX_ARCH=armv7${IS_MUSL}; JQ_ARCH=armhf; ARGO_ARCH=arm
       ;;
     * )
       error " $(text 25) "
@@ -62,7 +62,11 @@ download_sing_box_binary() {
 check_install() {
   local PS_LIST=$(ps -eo pid,args | grep -E "$WORK_DIR.*([s]ing-box|[c]loudflared|[n]ginx)" | sed 's/^[ ]\+//g')
 
-  [[ "$IS_SUB" = 'is_sub' || -s ${WORK_DIR}/subscribe/qr ]] && IS_SUB=is_sub || IS_SUB=no_sub
+  if [ "$IS_SUB" = 'is_sub' ] || installed_subscription_enabled; then
+    IS_SUB=is_sub
+  else
+    IS_SUB=no_sub
+  fi
   if ls ${WORK_DIR}/conf/*${NODE_TAG[1]}_inbounds.json >/dev/null 2>&1; then
     check_port_hopping_nat
     [ -n "$PORT_HOPPING_END" ] && IS_HOPPING=is_hopping || IS_HOPPING=no_hopping
@@ -133,14 +137,6 @@ check_install() {
     fi
   fi
 
-  # 并发下载订阅模板 (clash, clash2, sing-box-template)，在新安装和更换协议时会用到
-  {
-    download_file "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash" "$TEMP_DIR/clash" "${SUBSCRIBE_TEMPLATE}/clash" &
-    download_file "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash2" "$TEMP_DIR/clash2" "${SUBSCRIBE_TEMPLATE}/clash2" &
-    download_file "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box" "$TEMP_DIR/sing-box-template" "${SUBSCRIBE_TEMPLATE}/sing-box" &
-    wait
-  } &
-
   # 如果有需要，后台静默下载 sing-box
   if [[ "${STATUS[0]}" = "$(text 26)" || "$CONFIG_UPDATE_INSTALL" = 'config_update_install' ]] && [ ! -s "$TEMP_DIR/sing-box" ]; then
     # 任务 1: 下载 sing-box
@@ -161,15 +157,6 @@ check_install() {
         download_file "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq"
         chmod +x "$TEMP_DIR/jq" 2>/dev/null || true
       }
-    } &
-
-    # 任务 3: 下载 qrencode
-    {
-      if [ -s "${WORK_DIR}/qrencode" ]; then
-        cp "${WORK_DIR}/qrencode" "$TEMP_DIR/qrencode" && chmod +x "$TEMP_DIR/qrencode"
-      else
-        download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" && chmod +x "$TEMP_DIR/qrencode"
-      fi
     } &
 
   elif [ "${STATUS[0]}" != "$(text 26)" ]; then
@@ -214,16 +201,7 @@ check_install() {
     fi
   fi
 
-  # 如果有需要，后台静默下载 cloudflared
-  if [[ "${STATUS[1]}" = "$(text 26)" || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && [ ! -s ${WORK_DIR}/cloudflared ]; then
-    {
-      download_file "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" && chmod +x "$TEMP_DIR/cloudflared"
-      "$TEMP_DIR/cloudflared" -v >/dev/null 2>&1 || {
-        download_file "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared"
-        chmod +x "$TEMP_DIR/cloudflared" 2>/dev/null || true
-      }
-    }&
-  elif [ "${STATUS[1]}" != "$(text 26)" ]; then
+  if [ "${STATUS[1]}" != "$(text 26)" ] && [ -x "${WORK_DIR}/cloudflared" ]; then
     # 查 Argo 进程号，运行时长和内存占用
     ARGO_VERSION=$(${WORK_DIR}/cloudflared -v | awk '{print $3}' | sed "s@^@Version: &@g")
     [ "${STATUS[1]}" = "$(text 28)" ] && ARGO_PID=$(awk '/cloudflared/{print $1}' <<< "$PS_LIST") && [[ "$ARGO_PID" =~ ^[0-9]+$ ]] && ARGO_MEMORY_USAGE="$(text 58): $(awk '/VmRSS/{printf "%.1f\n", $2/1024}' /proc/$ARGO_PID/status) MB"
@@ -449,7 +427,7 @@ check_system_info() {
 # 获取 sing-box 最新版本
 get_sing_box_version() {
   # FORCE_VERSION 用于在 sing-box 某个主程序出现 bug 时，强制为指定版本，以防止运行出错
-  local FORCE_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- ${GH_PROXY}https://raw.githubusercontent.com/qqqasdwx/sing-box/refs/heads/release/force_version | sed 's/^[vV]//g; s/\r//g')
+  local FORCE_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- "${GH_PROXY}https://raw.githubusercontent.com/qqqasdwx/sing-box/refs/heads/release/force_version" | sed 's/^[vV]//g; s/\r//g')
   if grep -q '.' <<< "$FORCE_VERSION"; then
     local RESULT_VERSION="$FORCE_VERSION"
   else
@@ -612,7 +590,6 @@ check_port_hopping_nat() {
 
 # 检测 IPv4 IPv6 信息
 check_system_ip() {
-  [ "$L" = 'C' ] && local IS_CHINESE='?lang=zh-CN'
   local DEFAULT_LOCAL_INTERFACE4=$(ip -4 route show default | awk '/default/ {for (i=0; i<NF; i++) if ($i=="dev") {print $(i+1); exit}}')
   local DEFAULT_LOCAL_INTERFACE6=$(ip -6 route show default | awk '/default/ {for (i=0; i<NF; i++) if ($i=="dev") {print $(i+1); exit}}')
   if [ -n "${DEFAULT_LOCAL_INTERFACE4}${DEFAULT_LOCAL_INTERFACE6}" ]; then
@@ -624,12 +601,12 @@ check_system_ip() {
 
   # 并行检测 IPv4 和 IPv6 信息
   {
-    local CHECK_IP4=$(wget $BIND_ADDRESS4 -4 -qO- --no-check-certificate --tries=2 --timeout=2 https://ip.cloudflare.now.cc${IS_CHINESE})
+    local CHECK_IP4=$(wget $BIND_ADDRESS4 -4 -qO- --no-check-certificate --tries=2 --timeout=2 https://www.cloudflare.com/cdn-cgi/trace)
     grep -q '.' <<< "$CHECK_IP4" && echo "$CHECK_IP4" > $TEMP_DIR/ip4.json
   }&
 
   {
-    local CHECK_IP6=$(wget $BIND_ADDRESS6 -6 -qO- --no-check-certificate --tries=2 --timeout=2 https://ip.cloudflare.now.cc${IS_CHINESE})
+    local CHECK_IP6=$(wget $BIND_ADDRESS6 -6 -qO- --no-check-certificate --tries=2 --timeout=2 https://www.cloudflare.com/cdn-cgi/trace)
     grep -q '.' <<< "$CHECK_IP6" && echo "$CHECK_IP6" > $TEMP_DIR/ip6.json
   }&
 
@@ -637,18 +614,14 @@ check_system_ip() {
 
   [ -s $TEMP_DIR/ip4.json ] &&
   local IP4_JSON=$(cat $TEMP_DIR/ip4.json) &&
-  WAN4=$(awk -F '"' '/"ip"/{print $4}' <<< "$IP4_JSON") &&
-  COUNTRY4=$(awk -F '"' '/"country"/{print $4}' <<< "$IP4_JSON") &&
-  EMOJI4=$(awk -F '"' '/"emoji"/{print $4}' <<< "$IP4_JSON") &&
-  ASNORG4=$(awk -F '"' '/"isp"/{print $4}' <<< "$IP4_JSON") &&
+  WAN4=$(awk -F '=' '$1 == "ip" {print $2}' <<< "$IP4_JSON") &&
+  COUNTRY4=$(awk -F '=' '$1 == "loc" {print $2}' <<< "$IP4_JSON") &&
   rm -f $TEMP_DIR/ip4.json
 
   [ -s $TEMP_DIR/ip6.json ] &&
   local IP6_JSON=$(cat $TEMP_DIR/ip6.json) &&
-  WAN6=$(awk -F '"' '/"ip"/{print $4}' <<< "$IP6_JSON") &&
-  COUNTRY6=$(awk -F '"' '/"country"/{print $4}' <<< "$IP6_JSON") &&
-  EMOJI6=$(awk -F '"' '/"emoji"/{print $4}' <<< "$IP6_JSON") &&
-  ASNORG6=$(awk -F '"' '/"isp"/{print $4}' <<< "$IP6_JSON") &&
+  WAN6=$(awk -F '=' '$1 == "ip" {print $2}' <<< "$IP6_JSON") &&
+  COUNTRY6=$(awk -F '=' '$1 == "loc" {print $2}' <<< "$IP6_JSON") &&
   rm -f $TEMP_DIR/ip6.json
 }
 
@@ -862,6 +835,14 @@ check_dependencies() {
   # 2. 基础通用依赖（不含防火墙，防火墙仅端口跳跃时按需安装）
   DEPS_CHECK+=("wget" "curl" "tar" "ss"  "ip"        "bash" "openssl" "ping")
   DEPS_INSTALL+=("wget" "curl" "tar" "iproute2" "iproute2" "bash" "openssl" "iputils-ping")
+
+  if [[ "$SYSTEM" =~ CentOS|Fedora ]]; then
+    DEPS_CHECK+=("xxd")
+    DEPS_INSTALL+=("vim-common")
+  else
+    DEPS_CHECK+=("xxd")
+    DEPS_INSTALL+=("xxd")
+  fi
 
   [ "$SYSTEM" != 'Alpine' ] && DEPS_CHECK+=("systemctl") && DEPS_INSTALL+=("systemctl")
 
@@ -1507,22 +1488,43 @@ EOF
 # 生成自签证书，区分使用 IPv4 / IPv6 / 域名
 # 默认同时更新 cert.pem(36500天) 和 cert_200.pem(200天)
 # 传参 naive_only 时，仅检测 cert_200.pem 是否缺失 / 过期 / SNI 不一致，符合条件才更新
+# 传参 reuse_existing 时，证书、私钥和 SNI 均匹配则完整复用，否则重新生成
+certificate_identity_valid() {
+  local CERT_FILE=$1 KEY_FILE=$2 TLS_SERVER=$3
+  local CERT_SNI CERT_PUBLIC KEY_PUBLIC
+
+  [ -s "$CERT_FILE" ] && [ -s "$KEY_FILE" ] || return 1
+  openssl x509 -checkend 0 -noout -in "$CERT_FILE" >/dev/null 2>&1 || return 1
+  CERT_SNI=$(openssl x509 -noout -ext subjectAltName -in "$CERT_FILE" 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
+  [ "$CERT_SNI" = "$TLS_SERVER" ] || return 1
+  CERT_PUBLIC=$(openssl x509 -pubkey -noout -in "$CERT_FILE" 2>/dev/null) || return 1
+  KEY_PUBLIC=$(openssl pkey -pubout -in "$KEY_FILE" 2>/dev/null) || return 1
+  [ "$CERT_PUBLIC" = "$KEY_PUBLIC" ]
+}
+
 ssl_certificate() {
   local TLS_SERVER="$1"
-  local CERT_MODE="$2"
+  local CERT_MODE=${2:-}
   local CERT_200_FILE="${WORK_DIR}/cert/cert_200.pem"
-  local CERT_200_SNI
 
-  [ ! -d ${WORK_DIR}/cert ] && mkdir -p ${WORK_DIR}/cert
+  [ ! -d "${WORK_DIR}/cert" ] && mkdir -p "${WORK_DIR}/cert"
 
-  if [ "$CERT_MODE" != 'naive_only' ]; then
-    openssl ecparam -genkey -name prime256v1 -out ${WORK_DIR}/cert/private.key
-  elif [ ! -s ${WORK_DIR}/cert/private.key ] || [ ! -s ${WORK_DIR}/cert/cert.pem ]; then
-    CERT_MODE=''
-    openssl ecparam -genkey -name prime256v1 -out ${WORK_DIR}/cert/private.key
+  if [ "$CERT_MODE" = 'reuse_existing' ]; then
+    if certificate_identity_valid "${WORK_DIR}/cert/cert.pem" "${WORK_DIR}/cert/private.key" "$TLS_SERVER"; then
+      CERT_MODE=naive_only
+    else
+      CERT_MODE=''
+    fi
   fi
 
-  cat > ${WORK_DIR}/cert/cert.conf << EOF
+  if [ "$CERT_MODE" != 'naive_only' ]; then
+    openssl ecparam -genkey -name prime256v1 -out "${WORK_DIR}/cert/private.key"
+  elif [ ! -s "${WORK_DIR}/cert/private.key" ] || [ ! -s "${WORK_DIR}/cert/cert.pem" ]; then
+    CERT_MODE=''
+    openssl ecparam -genkey -name prime256v1 -out "${WORK_DIR}/cert/private.key"
+  fi
+
+  cat > "${WORK_DIR}/cert/cert.conf" << EOF
 [req]
 distinguished_name = req_distinguished_name
 x509_extensions = v3_req
@@ -1539,16 +1541,15 @@ DNS = ${TLS_SERVER}
 EOF
 
   if [ "$CERT_MODE" != 'naive_only' ]; then
-    openssl req -new -x509 -days 36500 -key ${WORK_DIR}/cert/private.key -out ${WORK_DIR}/cert/cert.pem -config ${WORK_DIR}/cert/cert.conf -extensions v3_req
-    openssl req -new -x509 -days 200 -key ${WORK_DIR}/cert/private.key -out ${WORK_DIR}/cert/cert_200.pem -config ${WORK_DIR}/cert/cert.conf -extensions v3_req
+    openssl req -new -x509 -days 36500 -key "${WORK_DIR}/cert/private.key" -out "${WORK_DIR}/cert/cert.pem" -config "${WORK_DIR}/cert/cert.conf" -extensions v3_req
+    openssl req -new -x509 -days 200 -key "${WORK_DIR}/cert/private.key" -out "$CERT_200_FILE" -config "${WORK_DIR}/cert/cert.conf" -extensions v3_req
   else
-    CERT_200_SNI=$(openssl x509 -noout -ext subjectAltName -in "$CERT_200_FILE" 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
-    if [ ! -s "$CERT_200_FILE" ] || ! openssl x509 -checkend 0 -noout -in "$CERT_200_FILE" >/dev/null 2>&1 || [ "$CERT_200_SNI" != "$TLS_SERVER" ]; then
-      openssl req -new -x509 -days 200 -key ${WORK_DIR}/cert/private.key -out ${WORK_DIR}/cert/cert_200.pem -config ${WORK_DIR}/cert/cert.conf -extensions v3_req
+    if ! certificate_identity_valid "$CERT_200_FILE" "${WORK_DIR}/cert/private.key" "$TLS_SERVER"; then
+      openssl req -new -x509 -days 200 -key "${WORK_DIR}/cert/private.key" -out "$CERT_200_FILE" -config "${WORK_DIR}/cert/cert.conf" -extensions v3_req
     fi
   fi
 
-  rm -f ${WORK_DIR}/cert/cert.conf
+  rm -f "${WORK_DIR}/cert/cert.conf"
 }
 
 # Nginx 配置文件

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.17 (2026.07.21)'
+VERSION='v1.3.18 (2026.07.21)'
 
-# Github 反代加速代理
-GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
+# 可选 GitHub URL 前缀；默认直连，不自动选择第三方代理。
+GH_PROXY=${GH_PROXY:-}
 
 # 各变量默认值
 TEMP_DIR='/tmp/sing-box'
@@ -15,10 +15,6 @@ FIREWALL_STATE_DIR="${WORK_DIR}/firewall"
 SERVICE_FIREWALL_STATE_FILE="${FIREWALL_STATE_DIR}/service_ports.list"
 START_PORT_DEFAULT='8881'
 LOG_LEVEL_DEFAULT='error'
-NTP_ENABLED_DEFAULT='true'
-NTP_SERVER_DEFAULT='time.apple.com'
-NTP_SERVER_PORT_DEFAULT='123'
-NTP_INTERVAL_DEFAULT='60m'
 MIN_PORT=100
 MAX_PORT=65520
 MIN_HOPPING_PORT=10000
@@ -28,7 +24,6 @@ PROTOCOL_LIST=("XTLS + reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "tr
 NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess-ws" "vless-ws-tls" "h2-reality" "grpc-reality" "anytls" "naive")
 CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
 CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org" "cf.090227.xyz")
-SUBSCRIBE_TEMPLATE="https://raw.githubusercontent.com/fscarmen/client_template/main"
 DEFAULT_NEWEST_VERSION='1.13.0-rc.4'
 FINGER_PRINT_DEFAULT='chrome'
 STEP_NUM=0      # 当前步骤编号（安装流程中动态递增）
@@ -108,8 +103,6 @@ E[30]="Listen ports  (current: \${_val})"
 C[30]="监听端口  (当前: \${_val})"
 E[31]="Sync Sing-box to the latest version (sb -v)"
 C[31]="同步 Sing-box 至最新版本 (sb -v)"
-E[32]="Upgrade kernel, turn on BBR, change Linux system (sb -b)"
-C[32]="升级内核、安装BBR、DD脚本 (sb -b)"
 E[33]="Uninstall (sb -u)"
 C[33]="卸载 (sb -u)"
 E[34]="Install Sing-box"
@@ -152,16 +145,12 @@ E[53]="Please select or enter the preferred address (domain / IPv4 / [IPv6], opt
 C[53]="请选择或者填入优选地址（域名 / IPv4 / [IPv6]，可选 :端口），默认为 \${CDN_DOMAIN[0]}:"
 E[54]="Configuration check failed. The new sing-box version is incompatible with the current config; upgrade aborted."
 C[54]="配置检查失败，新版 sing-box 与当前配置不兼容，升级已中止。"
-E[55]="The script runs today: \$TODAY. Total: \$TOTAL"
-C[55]="脚本当天运行次数: \$TODAY，累计运行次数: \$TOTAL"
 E[56]="Process ID"
 C[56]="进程ID"
 E[57]="Selecting the ws return method:\n 1. Argo (default)\n 2. Origin rules"
 C[57]="选择 ws 的回源方式:\n 1. Argo (默认)\n 2. Origin rules"
 E[58]="Memory Usage"
 C[58]="内存占用"
-E[59]="Install ArgoX scripts (argo + xray) [https://github.com/fscarmen/argox]"
-C[59]="安装 ArgoX 脚本 (argo + xray) [https://github.com/fscarmen/argox]"
 E[60]="The order of the selected protocols and ports is as follows:"
 C[60]="选择的协议及端口次序如下:"
 E[61]="There are no replaceable Argo tunnels."
@@ -180,22 +169,18 @@ E[67]="(3/3) Confirm all protocols for reloading."
 C[67]="(3/3) 确认重装的所有协议"
 E[68]="Press [n] if there is an error, other keys to continue:"
 C[68]="如有错误请按 [n]，其他键继续:"
-E[69]="Install sba scripts (argo + sing-box) [https://github.com/fscarmen/sba]"
-C[69]="安装 sba 脚本 (argo + sing-box) [https://github.com/fscarmen/sba]"
 E[70]="Please enter the reality private key (privateKey), skip to generate randomly:"
 C[70]="请输入 reality 的密钥(privateKey)，跳过则随机生成:"
 E[71]="Create shortcut [ sb ] successfully."
 C[71]="创建快捷 [ sb ] 指令成功!"
-E[72]="Path to each client configuration file: ${WORK_DIR}/subscribe/\n The full template can be found at:\n https://github.com/chika0801/sing-box-examples/tree/main/Tun"
-C[72]="各客户端配置文件路径: ${WORK_DIR}/subscribe/\n 完整模板可参照:\n https://github.com/chika0801/sing-box-examples/tree/main/Tun"
+E[72]="Client configuration directory: ${WORK_DIR}/subscribe/\n Documentation:\n https://github.com/qqqasdwx/sing-box/blob/release/README.md"
+C[72]="客户端配置目录: ${WORK_DIR}/subscribe/\n 使用说明:\n https://github.com/qqqasdwx/sing-box/blob/release/README.md"
 E[73]="There is no protocol left, if you are sure please re-run [ sb -u ] to uninstall all."
 C[73]="没有协议剩下，如确定请重新执行 [ sb -u ] 卸载所有"
 E[74]="Keep protocols"
 C[74]="保留协议"
 E[75]="Add protocols"
 C[75]="新增协议"
-E[76]="Install TCP brutal"
-C[76]="安装 TCP brutal"
 E[77]="With sing-box installed, the script exits."
 C[77]="已安装 sing-box ，脚本退出"
 E[78]="Parameter [ $ERROR_PARAMETER ] error, script exits."
@@ -212,10 +197,10 @@ E[83]="Whether to uninstall Nginx [y/N] (default is N):"
 C[83]="是否卸载 Nginx [y/N] (默认为 N):"
 E[84]="Set SElinux: enforcing --> disabled"
 C[84]="设置 SElinux: enforcing --> disabled"
-E[85]="Please enter Argo Token, Argo Json or Cloudflare API\n\n [*] Token: Visit https://dash.cloudflare.com/ , Zero Trust > Networks > Connectors > Create a tunnel > Select Cloudflared\n\n [*] Json: Users can easily obtain it through the following website: https://fscarmen.cloudflare.now.cc\n\n [*] Cloudflare API: Visit https://dash.cloudflare.com/profile/api-tokens > Create Token > Create Custom Token > Add the following permissions:\n - Account > Cloudflare One Connectors: cloudflared > Edit\n - Zone > DNS > Edit\n\n - Account Resources: Include > Required Account\n - Zone Resources: Include > Specific zone > Argo Root Domain"
-C[85]="请输入 Argo Token, Argo Json 或者 Cloudflare API\n\n [*] Token: 访问 https://dash.cloudflare.com/ ，Zero Trust > 网络 > 连接器 > 创建隧道 > 选择 Cloudflared\n\n [*] Json: 用户通过以下网站轻松获取: https://fscarmen.cloudflare.now.cc\n\n [*] Cloudflare API: 访问 https://dash.cloudflare.com/profile/api-tokens > 创建令牌 > 创建自定义令牌 > 添加以下权限:\n - 帐户 > Cloudflare One连接器: Cloudflared > 编辑\n - 区域 > DNS > 编辑\n\n - 帐户资源: 包括 > 所需账户\n - 区域资源: 包括 > 特定区域 > 所需域名"
-E[86]="Argo authentication message does not match the rules, neither Token nor Json, script exits. Feedback:[https://github.com/fscarmen/sba/issues]"
-C[86]="Argo 认证信息不符合规则，既不是 Token，也是不是 Json，脚本退出，问题反馈:[https://github.com/fscarmen/sba/issues]"
+E[85]="Please enter Argo Token, Argo Json or Cloudflare API\n\n [*] Token: Visit https://dash.cloudflare.com/ , Zero Trust > Networks > Connectors > Create a tunnel > Select Cloudflared\n\n [*] Json: Use an existing Cloudflare Tunnel credential JSON provisioned through Cloudflare.\n\n [*] Cloudflare API: Visit https://dash.cloudflare.com/profile/api-tokens > Create Token > Create Custom Token > Add the following permissions:\n - Account > Cloudflare One Connectors: cloudflared > Edit\n - Zone > DNS > Edit\n\n - Account Resources: Include > Required Account\n - Zone Resources: Include > Specific zone > Argo Root Domain"
+C[85]="请输入 Argo Token、Argo Json 或 Cloudflare API\n\n [*] Token: 访问 https://dash.cloudflare.com/ ，Zero Trust > 网络 > 连接器 > 创建隧道 > 选择 Cloudflared\n\n [*] Json: 使用由 Cloudflare 提供的现有 Tunnel 凭据 JSON。\n\n [*] Cloudflare API: 访问 https://dash.cloudflare.com/profile/api-tokens > 创建令牌 > 创建自定义令牌 > 添加以下权限:\n - 帐户 > Cloudflare One连接器: Cloudflared > 编辑\n - 区域 > DNS > 编辑\n\n - 帐户资源: 包括 > 所需账户\n - 区域资源: 包括 > 特定区域 > 所需域名"
+E[86]="Argo authentication does not match a supported Token or Json format. Feedback: [https://github.com/qqqasdwx/sing-box/issues]"
+C[86]="Argo 认证信息不符合支持的 Token 或 Json 格式。问题反馈: [https://github.com/qqqasdwx/sing-box/issues]"
 E[87]="Please input the Argo domain (Default is temporary domain if left blank):"
 C[87]="请输入 Argo 域名 (如果没有，可以跳过以使用 Argo 临时域名):"
 E[88]="Please input the Argo domain (cannot be empty):"
@@ -274,8 +259,8 @@ E[114]="Invalid privateKey format: expected a 43-character base64url-encoded str
 C[114]="privateKey 私钥格式错误，应该为 43位 base64url 编码"
 E[115]="Quick install mode (all protocols + subscription) (sb -k)"
 C[115]="极速安装模式 (所有协议 + 订阅) (sb -l)"
-E[116]="Failed to generate publicKey from privateKey, using random privateKey"
-C[116]="从 privateKey 生成 publicKey 失败，将使用随机公私钥"
+E[116]="Failed to derive the Reality publicKey locally from privateKey"
+C[116]="无法在本机从 Reality privateKey 推导 publicKey"
 E[117]="Continue with quick fast tunnel"
 C[117]="使用临时隧道继续"
 E[118]="Please enter [Token, Json, API] value:"
@@ -290,8 +275,8 @@ E[122]="Invalid access token. Please roll at https://dash.cloudflare.com/profile
 C[122]="Token 访问令牌无效。请在 https://dash.cloudflare.com/profile/api-tokens 轮转，以重新获取"
 E[123]="Token zone resource failed. The tunnel root domain and the authorized domain of the token are inconsistent. Please go to https://dash.cloudflare.com/profile/api-tokens to re-authorize."
 C[123]="Token 区域资源获取失败，隧道的根域名和 Token 授权的域名不一致，请到 https://dash.cloudflare.com/profile/api-tokens 检查"
-E[124]="API does not have enough permissions. Please check at https://dash.cloudflare.com/profile/api-tokens\n\n [*] Token: Visit https://dash.cloudflare.com/ , Zero Trust > Networks > Connectors > Create a tunnel > Select Cloudflared\n\n [*] Json: Users can easily obtain it through the following website: https://fscarmen.cloudflare.now.cc\n\n [*] Cloudflare API: Visit https://dash.cloudflare.com/profile/api-tokens > Create Token > Create Custom Token > Add the following permissions:\n - Account > Cloudflare One Connectors: cloudflared > Edit\n - Zone > DNS > Edit\n\n - Account Resources: Include > Required Account\n - Zone Resources: Include > Specific zone > Argo Root Domain"
-C[124]="API 没有足够权限，请在 https://dash.cloudflare.com/profile/api-tokens 检查 Token 权限配置\n\n [*] Token: 访问 https://dash.cloudflare.com/ ，Zero Trust > 网络 > 连接器 > 创建隧道 > 选择 Cloudflared\n\n [*] Json: 用户通过以下网站轻松获取: https://fscarmen.cloudflare.now.cc\n\n [*] Cloudflare API: 访问 https://dash.cloudflare.com/profile/api-tokens > 创建令牌 > 创建自定义令牌 > 添加以下权限:\n - 帐户 > Cloudflare One连接器: Cloudflared > 编辑\n - 区域 > DNS > 编辑\n\n - 帐户资源: 包括 > 所需账户\n - 区域资源: 包括 > 特定区域 > 所需域名"
+E[124]="API does not have enough permissions. Check https://dash.cloudflare.com/profile/api-tokens\n\n Required permissions:\n - Account > Cloudflare One Connectors: cloudflared > Edit\n - Zone > DNS > Edit\n\n - Account Resources: Include > Required Account\n - Zone Resources: Include > Specific zone > Argo Root Domain"
+C[124]="API 权限不足，请在 https://dash.cloudflare.com/profile/api-tokens 检查 Token 权限\n\n 所需权限:\n - 帐户 > Cloudflare One连接器: Cloudflared > 编辑\n - 区域 > DNS > 编辑\n\n - 帐户资源: 包括 > 所需账户\n - 区域资源: 包括 > 特定区域 > 所需域名"
 E[125]="API execution failed. Response: \$RESPONSE"
 C[125]="执行 API 失败，返回: \$RESPONSE"
 E[126]="Network request URL structure is wrong. Missing Zone ID"
@@ -671,25 +656,6 @@ normalize_log_level() {
     trace|debug|info|warn|error|fatal|panic ) ;;
     * ) error " LOG_LEVEL must be one of: trace, debug, info, warn, error, fatal, panic. " ;;
   esac
-}
-
-normalize_ntp_config() {
-  NTP_ENABLED=${NTP_ENABLED:-"$NTP_ENABLED_DEFAULT"}
-  NTP_ENABLED=${NTP_ENABLED,,}
-  case "$NTP_ENABLED" in
-    true|1|y|yes|on ) NTP_ENABLED=true ;;
-    false|0|n|no|off ) NTP_ENABLED=false ;;
-    * ) error " NTP_ENABLED must be true or false. " ;;
-  esac
-
-  NTP_SERVER=${NTP_SERVER:-"$NTP_SERVER_DEFAULT"}
-  [[ "$NTP_SERVER" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$ ]] || error " NTP_SERVER contains invalid characters. "
-
-  NTP_SERVER_PORT=${NTP_SERVER_PORT:-"$NTP_SERVER_PORT_DEFAULT"}
-  [[ "$NTP_SERVER_PORT" =~ ^[1-9][0-9]{0,4}$ && "$NTP_SERVER_PORT" -le 65535 ]] || error " NTP_SERVER_PORT must be 1-65535. "
-
-  NTP_INTERVAL=${NTP_INTERVAL:-"$NTP_INTERVAL_DEFAULT"}
-  [[ "$NTP_INTERVAL" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]] || error " NTP_INTERVAL must be a duration like 30m, 60m, or 1h. "
 }
 
 normalize_finger_print() {
@@ -1088,28 +1054,25 @@ reality_public_from_private() {
   local _private_key=$1 _b64 _mod _priv_len _prefix_hex _priv_hex
   [ -n "$_private_key" ] || return 1
   valid_reality_private_format "$_private_key" || return 1
+  command -v xxd >/dev/null 2>&1 || return 1
 
-  if command -v xxd >/dev/null 2>&1; then
-    _b64=$(printf '%s' "$_private_key" | tr '_-' '/+')
-    _mod=$(( ${#_b64} % 4 ))
-    [ "$_mod" -eq 2 ] && _b64="${_b64}=="
-    [ "$_mod" -eq 3 ] && _b64="${_b64}="
-    [ "$_mod" -eq 1 ] && return 1
+  _b64=$(printf '%s' "$_private_key" | tr '_-' '/+')
+  _mod=$(( ${#_b64} % 4 ))
+  [ "$_mod" -eq 2 ] && _b64="${_b64}=="
+  [ "$_mod" -eq 3 ] && _b64="${_b64}="
+  [ "$_mod" -eq 1 ] && return 1
 
-    printf '%s' "$_b64" | base64 -d > "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || return 1
-    _priv_len=$(stat -c%s "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || stat -f%z "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null)
-    [ "$_priv_len" = 32 ] || return 1
+  printf '%s' "$_b64" | base64 -d > "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || return 1
+  _priv_len=$(stat -c%s "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || stat -f%z "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null)
+  [ "$_priv_len" = 32 ] || return 1
 
-    _prefix_hex="302e020100300506032b656e04220420"
-    _priv_hex=$(xxd -p -c 256 "${TEMP_DIR}/_X25519_PRIV_RAW" | tr -d '\n')
-    printf '%s%s' "$_prefix_hex" "$_priv_hex" | xxd -r -p > "${TEMP_DIR}/_X25519_PRIV_DER"
-    openssl pkcs8 -inform DER -in "${TEMP_DIR}/_X25519_PRIV_DER" -nocrypt -out "${TEMP_DIR}/_X25519_PRIV_PEM" 2>/dev/null || return 1
-    openssl pkey -in "${TEMP_DIR}/_X25519_PRIV_PEM" -pubout -outform DER > "${TEMP_DIR}/_X25519_PUB_DER" 2>/dev/null || return 1
-    tail -c 32 "${TEMP_DIR}/_X25519_PUB_DER" > "${TEMP_DIR}/_X25519_PUB_RAW"
-    base64 -w0 "${TEMP_DIR}/_X25519_PUB_RAW" | tr '+/' '-_' | sed -E 's/=+$//'
-  else
-    wget --no-check-certificate -qO- --tries=3 --timeout=2 "https://realitykey.cloudflare.now.cc/?privateKey=${_private_key}" | awk -F '"' '/publicKey/{print $4}'
-  fi
+  _prefix_hex="302e020100300506032b656e04220420"
+  _priv_hex=$(xxd -p -c 256 "${TEMP_DIR}/_X25519_PRIV_RAW" | tr -d '\n')
+  printf '%s%s' "$_prefix_hex" "$_priv_hex" | xxd -r -p > "${TEMP_DIR}/_X25519_PRIV_DER"
+  openssl pkcs8 -inform DER -in "${TEMP_DIR}/_X25519_PRIV_DER" -nocrypt -out "${TEMP_DIR}/_X25519_PRIV_PEM" 2>/dev/null || return 1
+  openssl pkey -in "${TEMP_DIR}/_X25519_PRIV_PEM" -pubout -outform DER > "${TEMP_DIR}/_X25519_PUB_DER" 2>/dev/null || return 1
+  tail -c 32 "${TEMP_DIR}/_X25519_PUB_DER" > "${TEMP_DIR}/_X25519_PUB_RAW"
+  base64 -w0 "${TEMP_DIR}/_X25519_PUB_RAW" | tr '+/' '-_' | sed -E 's/=+$//'
 }
 
 generate_reality_keypair() {
@@ -1191,6 +1154,11 @@ installed_argo_auth() {
   fi
 }
 
+installed_subscription_enabled() {
+  [ -s "${WORK_DIR}/nginx.conf" ] &&
+    grep -Fq 'map $http_user_agent $path1' "${WORK_DIR}/nginx.conf"
+}
+
 prepare_config_update_defaults() {
   local _selection _value
 
@@ -1201,7 +1169,7 @@ prepare_config_update_defaults() {
   fi
 
   [ -s "$ARGO_DAEMON_FILE" ] && IS_ARGO=is_argo
-  [ -s "${WORK_DIR}/subscribe/qr" ] && IS_SUB=is_sub
+  installed_subscription_enabled && IS_SUB=is_sub
 
   fetch_nodes_value
   normalize_ws_domain_mode
@@ -1405,12 +1373,14 @@ write_config_state_file() {
   config_state_set_line "$_tmp" CHOOSE_PROTOCOLS "$(shell_quote switch)" true
 
   config_state_set_line "$_tmp" LANGUAGE "$(shell_quote "${L,,}")" true
+  _active=false; [ -n "${GH_PROXY:-}" ] && _active=true
+  config_state_set_optional "$_tmp" GH_PROXY "$(shell_quote "${GH_PROXY:-}")" "$_active"
   config_state_set_line "$_tmp" START_PORT "$(config_value START_PORT "$START_PORT_DEFAULT")" true
   config_state_set_line "$_tmp" LOG_LEVEL "$(config_value LOG_LEVEL "$LOG_LEVEL_DEFAULT")" true
-  config_state_set_line "$_tmp" NTP_ENABLED "$(config_value NTP_ENABLED "$NTP_ENABLED_DEFAULT")" true
-  config_state_set_line "$_tmp" NTP_SERVER "$(config_value NTP_SERVER "$NTP_SERVER_DEFAULT")" true
-  config_state_set_line "$_tmp" NTP_SERVER_PORT "$(config_value NTP_SERVER_PORT "$NTP_SERVER_PORT_DEFAULT")" true
-  config_state_set_line "$_tmp" NTP_INTERVAL "$(config_value NTP_INTERVAL "$NTP_INTERVAL_DEFAULT")" true
+  config_state_comment_line "$_tmp" NTP_ENABLED
+  config_state_comment_line "$_tmp" NTP_SERVER
+  config_state_comment_line "$_tmp" NTP_SERVER_PORT
+  config_state_comment_line "$_tmp" NTP_INTERVAL
   _active=false; [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]] && _active=true
   config_state_set_optional "$_tmp" PORT_NGINX "$(config_value PORT_NGINX)" "$_active"
   config_state_set_line "$_tmp" SERVER_IP "$(config_value SERVER_IP)" true
@@ -1554,73 +1524,11 @@ json_number_value() {
   '
 }
 
-# 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
 check_cdn() {
-  local PROXY CODE PID CMD
-  local _WAIT_COUNT=40
-  local PIDS=()
-  local API_URL='https://api.github.com/repos/SagerNet/sing-box/releases'
-
-  # 确定下载工具：优先 wget，次选 curl
-  if command -v wget >/dev/null 2>&1; then
-    CMD='wget'
-  elif command -v curl >/dev/null 2>&1; then
-    CMD='curl'
-  else
-    GH_PROXY=''
-    return
-  fi
-
-  # 获取 HTTP 状态码
-  get_code() {
-    local url=$1
-    if [ "$CMD" = 'wget' ]; then
-      wget -qT5 -O /dev/null --server-response "$url" 2>&1 | awk '/HTTP\//{code=$2} END{print code}'
-    else
-      curl -skL -w "%{http_code}" "$url" -o /dev/null
-    fi
-  }
-
-  # 直连检测
-  CODE=$(get_code "$API_URL")
-  if [ "$CODE" = '200' ]; then
-    GH_PROXY=''
-    return
-  fi
-
-  # 并发探测代理
-  for PROXY in "${GITHUB_PROXY[@]}"; do
-    {
-      CODE=$(get_code "${PROXY}${API_URL}")
-      [ "$CODE" = '200' ] && [ ! -e "${TEMP_DIR}/cdn_proxy" ] && printf '%s' "$PROXY" > "${TEMP_DIR}/cdn_proxy"
-    } &
-    PIDS+=("$!")
-  done
-
-  # 等第一个返回 200 的代理，超时则回退为直连，避免无限等待卡死
-  while [ ! -e "${TEMP_DIR}/cdn_proxy" ] && [ "$_WAIT_COUNT" -gt 0 ]; do
-    sleep 0.05
-    (( _WAIT_COUNT-- )) || true
-  done
-
-  [ -e "${TEMP_DIR}/cdn_proxy" ] && GH_PROXY=$(cat "${TEMP_DIR}/cdn_proxy") || GH_PROXY=''
-
-  # 清理后台任务和临时文件
-  for PID in "${PIDS[@]}"; do kill "$PID" >/dev/null 2>&1 || true; done
-  for PID in "${PIDS[@]}"; do wait "$PID" 2>/dev/null || true; done
-  rm -f "${TEMP_DIR}/cdn_proxy"
-}
-
-# 脚本当天及累计运行次数统计
-statistics_of_run_times() {
-  local UPDATE_OR_GET=$1
-  local SCRIPT=$2
-  if grep -q 'update' <<< "$UPDATE_OR_GET"; then
-    { wget --no-check-certificate -qO- --timeout=3 "https://stat.cloudflare.now.cc/updateStats?script=${SCRIPT}" > $TEMP_DIR/statistics 2>/dev/null || true; }&
-  elif grep -q 'get' <<< "$UPDATE_OR_GET"; then
-    [ -s $TEMP_DIR/statistics ] && [[ $(cat $TEMP_DIR/statistics) =~ \"todayCount\":([0-9]+),\"totalCount\":([0-9]+) ]] && local TODAY="${BASH_REMATCH[1]}" && local TOTAL="${BASH_REMATCH[2]}" && rm -f $TEMP_DIR/statistics
-    hint "\n*******************************************\n\n $(text 55) \n"
-  fi
+  GH_PROXY=${GH_PROXY:-}
+  [ -z "$GH_PROXY" ] && return 0
+  [[ "$GH_PROXY" =~ ^https?://[^[:space:]]+$ ]] || error " GH_PROXY must be an HTTP(S) URL prefix. "
+  [[ "$GH_PROXY" == */ ]] || GH_PROXY="${GH_PROXY}/"
 }
 
 # 选择中英语言
@@ -2517,7 +2425,46 @@ routing_validate_candidate() {
     printf 'Sing-box binary not found: %s\n' "${WORK_DIR}/sing-box" >&2
     return 1
   }
+  routing_validate_outbound_references "$CANDIDATE_DIR" || return 1
   "${WORK_DIR}/sing-box" check -C "$CANDIDATE_DIR"
+}
+
+routing_validate_outbound_references() {
+  local CANDIDATE_DIR=$1 ROUTING_FILE MISSING_TAGS
+  ROUTING_FILE="${CANDIDATE_DIR}/03_routing.json"
+  [ -s "$ROUTING_FILE" ] || {
+    printf 'Candidate routing configuration not found: %s\n' "$ROUTING_FILE" >&2
+    return 1
+  }
+
+  MISSING_TAGS=$(jq_exec -r '
+    (
+      [.outbounds[]?.tag?, .endpoints[]?.tag?] |
+      map(select(type == "string" and length > 0)) |
+      unique
+    ) as $defined |
+    (
+      [
+        .route.rules[]? |
+        .. |
+        objects |
+        .outbound? |
+        select(type == "string")
+      ] + [
+        .route.final? |
+        select(type == "string")
+      ]
+    ) |
+    unique |
+    map(select(. as $tag | ($defined | index($tag) | not))) |
+    map(if length == 0 then "<empty>" else . end) |
+    join(", ")
+  ' "$ROUTING_FILE") || return 1
+
+  [ -z "$MISSING_TAGS" ] || {
+    printf 'Undefined route outbound/endpoint tag(s): %s\n' "$MISSING_TAGS" >&2
+    return 1
+  }
 }
 
 routing_check() {
@@ -2734,6 +2681,204 @@ change_argo() {
   export_nginx_conf_file
   export_list
 }
+# shellcheck shell=bash
+
+subscription_json_quote() {
+  local _jq=$1 _value=$2
+  "$_jq" -Rn --arg value "$_value" '$value'
+}
+
+write_clash_provider_config() {
+  local _output=$1 _node_name=$2 _provider_url=$3 _jq=$4
+  local _node_name_json _provider_url_json _rule_json
+  _node_name_json=$(subscription_json_quote "$_jq" "$_node_name") || return 1
+  _provider_url_json=$(subscription_json_quote "$_jq" "$_provider_url") || return 1
+  _rule_json=$(subscription_json_quote "$_jq" "MATCH,${_node_name}") || return 1
+
+  cat > "$_output" << EOF
+mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: info
+ipv6: true
+external-controller: 127.0.0.1:9090
+proxy-providers:
+  nodes:
+    type: http
+    url: ${_provider_url_json}
+    path: ./proxy-providers/sing-box.yaml
+    interval: 3600
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+proxy-groups:
+  - name: ${_node_name_json}
+    type: select
+    proxies:
+      - AUTO
+      - NODES
+      - DIRECT
+  - name: AUTO
+    type: url-test
+    use:
+      - nodes
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+  - name: NODES
+    type: select
+    use:
+      - nodes
+rules:
+  - ${_rule_json}
+EOF
+}
+
+write_clash_inline_config() {
+  local _output=$1 _proxies=$2 _jq=$3
+  shift 3
+  local _name _name_json
+  local _selector_entries='' _urltest_entries=''
+
+  for _name in "$@"; do
+    _name_json=$(subscription_json_quote "$_jq" "$_name") || return 1
+    _selector_entries+="      - ${_name_json}"$'\n'
+    _urltest_entries+="      - ${_name_json}"$'\n'
+  done
+
+  if [ -z "$_selector_entries" ]; then
+    _proxies='proxies: []'
+  fi
+
+  {
+    printf '%s\n' "$_proxies"
+    cat << EOF
+mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: info
+ipv6: true
+external-controller: 127.0.0.1:9090
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - AUTO
+${_selector_entries}      - DIRECT
+EOF
+    if [ -n "$_urltest_entries" ]; then
+      cat << EOF
+  - name: AUTO
+    type: url-test
+    proxies:
+${_urltest_entries}    url: https://www.gstatic.com/generate_204
+    interval: 300
+EOF
+    else
+      cat << 'EOF'
+  - name: AUTO
+    type: select
+    proxies:
+      - DIRECT
+EOF
+    fi
+    cat << 'EOF'
+rules:
+  - MATCH,PROXY
+EOF
+  } > "$_output"
+}
+
+write_sing_box_client_config() {
+  local _output=$1 _outbounds=$2 _nodes=$3 _jq=$4
+  local _tmp
+  _tmp=$(mktemp "${_output}.tmp.XXXXXX") || return 1
+
+  cat > "$_tmp" << EOF
+{
+  "log": {
+    "level": "warn",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "local",
+        "tag": "dns-local"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun-in",
+      "address": [
+        "172.19.0.1/30",
+        "fdfe:dcba:9876::1/126"
+      ],
+      "auto_route": true,
+      "strict_route": true
+    },
+    {
+      "type": "mixed",
+      "tag": "mixed-in",
+      "listen": "127.0.0.1",
+      "listen_port": 2080
+    }
+  ],
+  "outbounds": [
+    ${_outbounds}
+    {
+      "type": "selector",
+      "tag": "proxy",
+      "outbounds": [
+        ${_nodes}"auto",
+        "direct"
+      ],
+      "default": "auto"
+    },
+    {
+      "type": "urltest",
+      "tag": "auto",
+      "outbounds": [
+        ${_nodes%,}
+      ],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "10m"
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "ip_is_private": true,
+        "action": "route",
+        "outbound": "direct"
+      }
+    ],
+    "final": "proxy",
+    "auto_detect_interface": true
+  }
+}
+EOF
+
+  if "$_jq" . "$_tmp" > "$_output"; then
+    rm -f "$_tmp"
+    return 0
+  fi
+  rm -f "$_tmp" "$_output"
+  return 1
+}
 check_root() {
   [ "$(id -u)" != 0 ] && error "\n $(text 43) \n"
 }
@@ -2744,13 +2889,13 @@ check_arch() {
 
   case "$(uname -m)" in
     aarch64|arm64 )
-      SING_BOX_ARCH=arm64${IS_MUSL}; JQ_ARCH=arm64; QRENCODE_ARCH=arm64; ARGO_ARCH=arm64
+      SING_BOX_ARCH=arm64${IS_MUSL}; JQ_ARCH=arm64; ARGO_ARCH=arm64
       ;;
     x86_64|amd64 )
-      SING_BOX_ARCH=amd64${IS_MUSL}; JQ_ARCH=amd64; QRENCODE_ARCH=amd64; ARGO_ARCH=amd64
+      SING_BOX_ARCH=amd64${IS_MUSL}; JQ_ARCH=amd64; ARGO_ARCH=amd64
       ;;
     armv7l )
-      SING_BOX_ARCH=armv7${IS_MUSL}; JQ_ARCH=armhf; QRENCODE_ARCH=arm; ARGO_ARCH=arm
+      SING_BOX_ARCH=armv7${IS_MUSL}; JQ_ARCH=armhf; ARGO_ARCH=arm
       ;;
     * )
       error " $(text 25) "
@@ -2798,7 +2943,11 @@ download_sing_box_binary() {
 check_install() {
   local PS_LIST=$(ps -eo pid,args | grep -E "$WORK_DIR.*([s]ing-box|[c]loudflared|[n]ginx)" | sed 's/^[ ]\+//g')
 
-  [[ "$IS_SUB" = 'is_sub' || -s ${WORK_DIR}/subscribe/qr ]] && IS_SUB=is_sub || IS_SUB=no_sub
+  if [ "$IS_SUB" = 'is_sub' ] || installed_subscription_enabled; then
+    IS_SUB=is_sub
+  else
+    IS_SUB=no_sub
+  fi
   if ls ${WORK_DIR}/conf/*${NODE_TAG[1]}_inbounds.json >/dev/null 2>&1; then
     check_port_hopping_nat
     [ -n "$PORT_HOPPING_END" ] && IS_HOPPING=is_hopping || IS_HOPPING=no_hopping
@@ -2869,14 +3018,6 @@ check_install() {
     fi
   fi
 
-  # 并发下载订阅模板 (clash, clash2, sing-box-template)，在新安装和更换协议时会用到
-  {
-    download_file "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash" "$TEMP_DIR/clash" "${SUBSCRIBE_TEMPLATE}/clash" &
-    download_file "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/clash2" "$TEMP_DIR/clash2" "${SUBSCRIBE_TEMPLATE}/clash2" &
-    download_file "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box" "$TEMP_DIR/sing-box-template" "${SUBSCRIBE_TEMPLATE}/sing-box" &
-    wait
-  } &
-
   # 如果有需要，后台静默下载 sing-box
   if [[ "${STATUS[0]}" = "$(text 26)" || "$CONFIG_UPDATE_INSTALL" = 'config_update_install' ]] && [ ! -s "$TEMP_DIR/sing-box" ]; then
     # 任务 1: 下载 sing-box
@@ -2897,15 +3038,6 @@ check_install() {
         download_file "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-$JQ_ARCH" "$TEMP_DIR/jq"
         chmod +x "$TEMP_DIR/jq" 2>/dev/null || true
       }
-    } &
-
-    # 任务 3: 下载 qrencode
-    {
-      if [ -s "${WORK_DIR}/qrencode" ]; then
-        cp "${WORK_DIR}/qrencode" "$TEMP_DIR/qrencode" && chmod +x "$TEMP_DIR/qrencode"
-      else
-        download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" && chmod +x "$TEMP_DIR/qrencode"
-      fi
     } &
 
   elif [ "${STATUS[0]}" != "$(text 26)" ]; then
@@ -2950,16 +3082,7 @@ check_install() {
     fi
   fi
 
-  # 如果有需要，后台静默下载 cloudflared
-  if [[ "${STATUS[1]}" = "$(text 26)" || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && [ ! -s ${WORK_DIR}/cloudflared ]; then
-    {
-      download_file "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" && chmod +x "$TEMP_DIR/cloudflared"
-      "$TEMP_DIR/cloudflared" -v >/dev/null 2>&1 || {
-        download_file "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared"
-        chmod +x "$TEMP_DIR/cloudflared" 2>/dev/null || true
-      }
-    }&
-  elif [ "${STATUS[1]}" != "$(text 26)" ]; then
+  if [ "${STATUS[1]}" != "$(text 26)" ] && [ -x "${WORK_DIR}/cloudflared" ]; then
     # 查 Argo 进程号，运行时长和内存占用
     ARGO_VERSION=$(${WORK_DIR}/cloudflared -v | awk '{print $3}' | sed "s@^@Version: &@g")
     [ "${STATUS[1]}" = "$(text 28)" ] && ARGO_PID=$(awk '/cloudflared/{print $1}' <<< "$PS_LIST") && [[ "$ARGO_PID" =~ ^[0-9]+$ ]] && ARGO_MEMORY_USAGE="$(text 58): $(awk '/VmRSS/{printf "%.1f\n", $2/1024}' /proc/$ARGO_PID/status) MB"
@@ -3185,7 +3308,7 @@ check_system_info() {
 # 获取 sing-box 最新版本
 get_sing_box_version() {
   # FORCE_VERSION 用于在 sing-box 某个主程序出现 bug 时，强制为指定版本，以防止运行出错
-  local FORCE_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- ${GH_PROXY}https://raw.githubusercontent.com/qqqasdwx/sing-box/refs/heads/release/force_version | sed 's/^[vV]//g; s/\r//g')
+  local FORCE_VERSION=$(wget --no-check-certificate --tries=2 --timeout=3 -qO- "${GH_PROXY}https://raw.githubusercontent.com/qqqasdwx/sing-box/refs/heads/release/force_version" | sed 's/^[vV]//g; s/\r//g')
   if grep -q '.' <<< "$FORCE_VERSION"; then
     local RESULT_VERSION="$FORCE_VERSION"
   else
@@ -3348,7 +3471,6 @@ check_port_hopping_nat() {
 
 # 检测 IPv4 IPv6 信息
 check_system_ip() {
-  [ "$L" = 'C' ] && local IS_CHINESE='?lang=zh-CN'
   local DEFAULT_LOCAL_INTERFACE4=$(ip -4 route show default | awk '/default/ {for (i=0; i<NF; i++) if ($i=="dev") {print $(i+1); exit}}')
   local DEFAULT_LOCAL_INTERFACE6=$(ip -6 route show default | awk '/default/ {for (i=0; i<NF; i++) if ($i=="dev") {print $(i+1); exit}}')
   if [ -n "${DEFAULT_LOCAL_INTERFACE4}${DEFAULT_LOCAL_INTERFACE6}" ]; then
@@ -3360,12 +3482,12 @@ check_system_ip() {
 
   # 并行检测 IPv4 和 IPv6 信息
   {
-    local CHECK_IP4=$(wget $BIND_ADDRESS4 -4 -qO- --no-check-certificate --tries=2 --timeout=2 https://ip.cloudflare.now.cc${IS_CHINESE})
+    local CHECK_IP4=$(wget $BIND_ADDRESS4 -4 -qO- --no-check-certificate --tries=2 --timeout=2 https://www.cloudflare.com/cdn-cgi/trace)
     grep -q '.' <<< "$CHECK_IP4" && echo "$CHECK_IP4" > $TEMP_DIR/ip4.json
   }&
 
   {
-    local CHECK_IP6=$(wget $BIND_ADDRESS6 -6 -qO- --no-check-certificate --tries=2 --timeout=2 https://ip.cloudflare.now.cc${IS_CHINESE})
+    local CHECK_IP6=$(wget $BIND_ADDRESS6 -6 -qO- --no-check-certificate --tries=2 --timeout=2 https://www.cloudflare.com/cdn-cgi/trace)
     grep -q '.' <<< "$CHECK_IP6" && echo "$CHECK_IP6" > $TEMP_DIR/ip6.json
   }&
 
@@ -3373,18 +3495,14 @@ check_system_ip() {
 
   [ -s $TEMP_DIR/ip4.json ] &&
   local IP4_JSON=$(cat $TEMP_DIR/ip4.json) &&
-  WAN4=$(awk -F '"' '/"ip"/{print $4}' <<< "$IP4_JSON") &&
-  COUNTRY4=$(awk -F '"' '/"country"/{print $4}' <<< "$IP4_JSON") &&
-  EMOJI4=$(awk -F '"' '/"emoji"/{print $4}' <<< "$IP4_JSON") &&
-  ASNORG4=$(awk -F '"' '/"isp"/{print $4}' <<< "$IP4_JSON") &&
+  WAN4=$(awk -F '=' '$1 == "ip" {print $2}' <<< "$IP4_JSON") &&
+  COUNTRY4=$(awk -F '=' '$1 == "loc" {print $2}' <<< "$IP4_JSON") &&
   rm -f $TEMP_DIR/ip4.json
 
   [ -s $TEMP_DIR/ip6.json ] &&
   local IP6_JSON=$(cat $TEMP_DIR/ip6.json) &&
-  WAN6=$(awk -F '"' '/"ip"/{print $4}' <<< "$IP6_JSON") &&
-  COUNTRY6=$(awk -F '"' '/"country"/{print $4}' <<< "$IP6_JSON") &&
-  EMOJI6=$(awk -F '"' '/"emoji"/{print $4}' <<< "$IP6_JSON") &&
-  ASNORG6=$(awk -F '"' '/"isp"/{print $4}' <<< "$IP6_JSON") &&
+  WAN6=$(awk -F '=' '$1 == "ip" {print $2}' <<< "$IP6_JSON") &&
+  COUNTRY6=$(awk -F '=' '$1 == "loc" {print $2}' <<< "$IP6_JSON") &&
   rm -f $TEMP_DIR/ip6.json
 }
 
@@ -3598,6 +3716,14 @@ check_dependencies() {
   # 2. 基础通用依赖（不含防火墙，防火墙仅端口跳跃时按需安装）
   DEPS_CHECK+=("wget" "curl" "tar" "ss"  "ip"        "bash" "openssl" "ping")
   DEPS_INSTALL+=("wget" "curl" "tar" "iproute2" "iproute2" "bash" "openssl" "iputils-ping")
+
+  if [[ "$SYSTEM" =~ CentOS|Fedora ]]; then
+    DEPS_CHECK+=("xxd")
+    DEPS_INSTALL+=("vim-common")
+  else
+    DEPS_CHECK+=("xxd")
+    DEPS_INSTALL+=("xxd")
+  fi
 
   [ "$SYSTEM" != 'Alpine' ] && DEPS_CHECK+=("systemctl") && DEPS_INSTALL+=("systemctl")
 
@@ -4243,22 +4369,43 @@ EOF
 # 生成自签证书，区分使用 IPv4 / IPv6 / 域名
 # 默认同时更新 cert.pem(36500天) 和 cert_200.pem(200天)
 # 传参 naive_only 时，仅检测 cert_200.pem 是否缺失 / 过期 / SNI 不一致，符合条件才更新
+# 传参 reuse_existing 时，证书、私钥和 SNI 均匹配则完整复用，否则重新生成
+certificate_identity_valid() {
+  local CERT_FILE=$1 KEY_FILE=$2 TLS_SERVER=$3
+  local CERT_SNI CERT_PUBLIC KEY_PUBLIC
+
+  [ -s "$CERT_FILE" ] && [ -s "$KEY_FILE" ] || return 1
+  openssl x509 -checkend 0 -noout -in "$CERT_FILE" >/dev/null 2>&1 || return 1
+  CERT_SNI=$(openssl x509 -noout -ext subjectAltName -in "$CERT_FILE" 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
+  [ "$CERT_SNI" = "$TLS_SERVER" ] || return 1
+  CERT_PUBLIC=$(openssl x509 -pubkey -noout -in "$CERT_FILE" 2>/dev/null) || return 1
+  KEY_PUBLIC=$(openssl pkey -pubout -in "$KEY_FILE" 2>/dev/null) || return 1
+  [ "$CERT_PUBLIC" = "$KEY_PUBLIC" ]
+}
+
 ssl_certificate() {
   local TLS_SERVER="$1"
-  local CERT_MODE="$2"
+  local CERT_MODE=${2:-}
   local CERT_200_FILE="${WORK_DIR}/cert/cert_200.pem"
-  local CERT_200_SNI
 
-  [ ! -d ${WORK_DIR}/cert ] && mkdir -p ${WORK_DIR}/cert
+  [ ! -d "${WORK_DIR}/cert" ] && mkdir -p "${WORK_DIR}/cert"
 
-  if [ "$CERT_MODE" != 'naive_only' ]; then
-    openssl ecparam -genkey -name prime256v1 -out ${WORK_DIR}/cert/private.key
-  elif [ ! -s ${WORK_DIR}/cert/private.key ] || [ ! -s ${WORK_DIR}/cert/cert.pem ]; then
-    CERT_MODE=''
-    openssl ecparam -genkey -name prime256v1 -out ${WORK_DIR}/cert/private.key
+  if [ "$CERT_MODE" = 'reuse_existing' ]; then
+    if certificate_identity_valid "${WORK_DIR}/cert/cert.pem" "${WORK_DIR}/cert/private.key" "$TLS_SERVER"; then
+      CERT_MODE=naive_only
+    else
+      CERT_MODE=''
+    fi
   fi
 
-  cat > ${WORK_DIR}/cert/cert.conf << EOF
+  if [ "$CERT_MODE" != 'naive_only' ]; then
+    openssl ecparam -genkey -name prime256v1 -out "${WORK_DIR}/cert/private.key"
+  elif [ ! -s "${WORK_DIR}/cert/private.key" ] || [ ! -s "${WORK_DIR}/cert/cert.pem" ]; then
+    CERT_MODE=''
+    openssl ecparam -genkey -name prime256v1 -out "${WORK_DIR}/cert/private.key"
+  fi
+
+  cat > "${WORK_DIR}/cert/cert.conf" << EOF
 [req]
 distinguished_name = req_distinguished_name
 x509_extensions = v3_req
@@ -4275,16 +4422,15 @@ DNS = ${TLS_SERVER}
 EOF
 
   if [ "$CERT_MODE" != 'naive_only' ]; then
-    openssl req -new -x509 -days 36500 -key ${WORK_DIR}/cert/private.key -out ${WORK_DIR}/cert/cert.pem -config ${WORK_DIR}/cert/cert.conf -extensions v3_req
-    openssl req -new -x509 -days 200 -key ${WORK_DIR}/cert/private.key -out ${WORK_DIR}/cert/cert_200.pem -config ${WORK_DIR}/cert/cert.conf -extensions v3_req
+    openssl req -new -x509 -days 36500 -key "${WORK_DIR}/cert/private.key" -out "${WORK_DIR}/cert/cert.pem" -config "${WORK_DIR}/cert/cert.conf" -extensions v3_req
+    openssl req -new -x509 -days 200 -key "${WORK_DIR}/cert/private.key" -out "$CERT_200_FILE" -config "${WORK_DIR}/cert/cert.conf" -extensions v3_req
   else
-    CERT_200_SNI=$(openssl x509 -noout -ext subjectAltName -in "$CERT_200_FILE" 2>/dev/null | awk -F 'DNS:' '/DNS:/{gsub(/,.*/, "", $2); print $2}')
-    if [ ! -s "$CERT_200_FILE" ] || ! openssl x509 -checkend 0 -noout -in "$CERT_200_FILE" >/dev/null 2>&1 || [ "$CERT_200_SNI" != "$TLS_SERVER" ]; then
-      openssl req -new -x509 -days 200 -key ${WORK_DIR}/cert/private.key -out ${WORK_DIR}/cert/cert_200.pem -config ${WORK_DIR}/cert/cert.conf -extensions v3_req
+    if ! certificate_identity_valid "$CERT_200_FILE" "${WORK_DIR}/cert/private.key" "$TLS_SERVER"; then
+      openssl req -new -x509 -days 200 -key "${WORK_DIR}/cert/private.key" -out "$CERT_200_FILE" -config "${WORK_DIR}/cert/cert.conf" -extensions v3_req
     fi
   fi
 
-  rm -f ${WORK_DIR}/cert/cert.conf
+  rm -f "${WORK_DIR}/cert/cert.conf"
 }
 
 # Nginx 配置文件
@@ -4422,6 +4568,7 @@ http {
 sing-box_json() {
   local IS_CHANGE=$1
   mkdir -p ${WORK_DIR}/conf ${WORK_DIR}/logs ${WORK_DIR}/subscribe "$CUSTOM_DIR" "$STATE_DIR"
+  rm -f "${WORK_DIR}/conf/06_ntp.json"
   routing_migrate_legacy || failure_error " Routing configuration migration failed. " "Custom directory: ${CUSTOM_DIR}"
 
   # 判断是否为新安装，不为 change 就是新安装
@@ -4466,18 +4613,6 @@ EOF
             }
         ],
         "strategy": "${STRATEGY}"
-    }
-}
-EOF
-
-    # 内建的 NTP 客户端服务配置文件，这对于无法进行时间同步的环境很有用
-    cat > ${WORK_DIR}/conf/06_ntp.json << EOF
-{
-    "ntp": {
-        "enabled": ${NTP_ENABLED},
-        "server": "${NTP_SERVER}",
-        "server_port": ${NTP_SERVER_PORT},
-        "interval": "${NTP_INTERVAL}"
     }
 }
 EOF
@@ -5447,9 +5582,29 @@ build_v2rayn_hysteria2_json() {
       }
     '
 }
+prepare_cloudflared_asset() {
+  [ "$IS_ARGO" = 'is_argo' ] || return 0
+  [ -x "$TEMP_DIR/cloudflared" ] && return 0
+
+  if [ -x "${WORK_DIR}/cloudflared" ]; then
+    cp "${WORK_DIR}/cloudflared" "$TEMP_DIR/cloudflared"
+    chmod +x "$TEMP_DIR/cloudflared"
+    return 0
+  fi
+
+  download_file \
+    "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" \
+    "$TEMP_DIR/cloudflared" \
+    "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH"
+  chmod +x "$TEMP_DIR/cloudflared" 2>/dev/null || true
+}
+
 # 安装 sing-box 全家桶
 install_sing-box() {
   sing-box_variables
+  if [ "$IS_ARGO" = 'is_argo' ]; then
+    prepare_cloudflared_asset &
+  fi
   hint "\n $(text 2) "
   wait
   verify_command_or_fail "\n $(text 42) \n" "Version: ${ONLINE:-unknown}
@@ -5469,7 +5624,6 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
   sing-box_json
   echo "${L^^}" > ${WORK_DIR}/language
   cp "$TEMP_DIR/sing-box" "$TEMP_DIR/jq" "$WORK_DIR"
-  [ -x "$TEMP_DIR/qrencode" ] && cp "$TEMP_DIR/qrencode" "$WORK_DIR"
 
   # 生成 sing-box systemd 配置文件
   sing-box_systemd
@@ -5539,34 +5693,16 @@ prepare_config_update_assets() {
     fi
   fi
 
-  if [ ! -x "$TEMP_DIR/qrencode" ]; then
-    if [ -x "${WORK_DIR}/qrencode" ]; then
-      cp "${WORK_DIR}/qrencode" "$TEMP_DIR/qrencode"
-      chmod +x "$TEMP_DIR/qrencode"
-    else
-      download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH"
-      chmod +x "$TEMP_DIR/qrencode" 2>/dev/null || true
-    fi
-  fi
-
-  if [ "$IS_ARGO" = 'is_argo' ] && [ ! -x "$TEMP_DIR/cloudflared" ]; then
-    if [ -x "${WORK_DIR}/cloudflared" ]; then
-      cp "${WORK_DIR}/cloudflared" "$TEMP_DIR/cloudflared"
-      chmod +x "$TEMP_DIR/cloudflared"
-    else
-      download_file "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH"
-      chmod +x "$TEMP_DIR/cloudflared" 2>/dev/null || true
-    fi
-  fi
+  prepare_cloudflared_asset
 }
 
 install_from_config_update() {
   CONFIG_UPDATE_INSTALL=config_update_install
   prepare_config_update_defaults
   apply_config_file_options
+  [ "${CLI_GH_PROXY_SET:-false}" != true ] || GH_PROXY=$CLI_GH_PROXY
   apply_custom_node_names
   normalize_log_level
-  normalize_ntp_config
   normalize_finger_print
 
   # 预设默认值，允许 config.conf 只覆盖部分字段。
@@ -5617,11 +5753,10 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
     [ "$SYSTEM" = 'Alpine' ] || systemctl daemon-reload >/dev/null 2>&1 || true
   fi
 
-  ssl_certificate "$TLS_SERVER_DEFAULT"
+  ssl_certificate "$TLS_SERVER_DEFAULT" reuse_existing
   sing-box_json
   echo "${L^^}" > "${WORK_DIR}/language"
   cp "$TEMP_DIR/sing-box" "$TEMP_DIR/jq" "$WORK_DIR"
-  [ -x "$TEMP_DIR/qrencode" ] && cp "$TEMP_DIR/qrencode" "$WORK_DIR"
 
   sing-box_systemd
   [ "$IS_ARGO" = 'is_argo' ] && cp "$TEMP_DIR/cloudflared" "$WORK_DIR"
@@ -5811,26 +5946,28 @@ export_list() {
   $CLASH_ANYTLS
 "
 
-  echo -n "${CLASH_SUBSCRIBE}" | sed -E '/^[ ]*#|^--/d' | sed '/^$/d' > ${WORK_DIR}/subscribe/proxies
+  local CLASH_PROXIES
+  CLASH_PROXIES=$(printf '%s' "${CLASH_SUBSCRIBE}" | sed -E '/^[ ]*#|^--/d' | sed '/^$/d')
 
-  # 后台生成 clash 订阅配置文件
-  {
-    # 模板1: 使用 proxy providers
-    cat ${TEMP_DIR}/clash | sed "s#NODE_NAME#${NODE_NAME_CONFIRM}#g; s#PROXY_PROVIDERS_URL#$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/proxies#" > ${WORK_DIR}/subscribe/clash
+  local CLASH_PORTS=("$PORT_XTLS_REALITY" "$PORT_HYSTERIA2" "$PORT_TUIC" "$PORT_SHADOWTLS" "$PORT_SHADOWSOCKS" "$PORT_TROJAN" "$PORT_VMESS_WS" "$PORT_VLESS_WS" "$PORT_H2_REALITY" "$PORT_GRPC_REALITY" "$PORT_ANYTLS")
+  local CLASH_NAMES=("${NODE_NAME[11]} ${NODE_TAG[0]}" "${NODE_NAME[12]} ${NODE_TAG[1]}" "${NODE_NAME[13]} ${NODE_TAG[2]}" "${NODE_NAME[14]} ${NODE_TAG[3]}" "${NODE_NAME[15]} ${NODE_TAG[4]}" "${NODE_NAME[16]} ${NODE_TAG[5]}" "${NODE_NAME[17]} ${NODE_TAG[6]}" "${NODE_NAME[18]} ${NODE_TAG[7]}" "${NODE_NAME[19]} ${NODE_TAG[8]}" "${NODE_NAME[20]} ${NODE_TAG[9]}" "${NODE_NAME[21]} ${NODE_TAG[10]}")
+  local CLASH_ACTIVE_NAMES=() x
+  for x in "${!CLASH_PORTS[@]}"; do
+    [[ "${CLASH_PORTS[x]}" =~ ^[0-9]+$ ]] && CLASH_ACTIVE_NAMES+=("${CLASH_NAMES[x]}")
+  done
+  [ "${#CLASH_ACTIVE_NAMES[@]}" -gt 0 ] || CLASH_PROXIES='proxies: []'
+  printf '%s\n' "$CLASH_PROXIES" > ${WORK_DIR}/subscribe/proxies
 
-    # 模板2: 不使用 proxy providers
-    CLASH2_PORT=("$PORT_XTLS_REALITY" "$PORT_HYSTERIA2" "$PORT_TUIC" "$PORT_SHADOWTLS" "$PORT_SHADOWSOCKS" "$PORT_TROJAN" "$PORT_VMESS_WS" "$PORT_VLESS_WS" "$PORT_GRPC_REALITY" "$PORT_ANYTLS")
-    CLASH2_PROXY_INSERT=("$CLASH_XTLS_REALITY" "$CLASH_HYSTERIA2" "$CLASH_TUIC" "$CLASH_SHADOWTLS" "$CLASH_SHADOWSOCKS" "$CLASH_TROJAN" "$CLASH_VMESS_WS" "$CLASH_VLESS_WS" "$CLASH_GRPC_REALITY" "$CLASH_ANYTLS")
-    CLASH2_PROXY_GROUPS_INSERT=("- ${NODE_NAME[11]} ${NODE_TAG[0]}" "- ${NODE_NAME[12]} ${NODE_TAG[1]}" "- ${NODE_NAME[13]} ${NODE_TAG[2]}" "- ${NODE_NAME[14]} ${NODE_TAG[3]}" "- ${NODE_NAME[15]} ${NODE_TAG[4]}" "- ${NODE_NAME[16]} ${NODE_TAG[5]}" "- ${NODE_NAME[17]} ${NODE_TAG[6]}" "- ${NODE_NAME[18]} ${NODE_TAG[7]}" "- ${NODE_NAME[20]} ${NODE_TAG[9]}" "- ${NODE_NAME[21]} ${NODE_TAG[10]}")
-
-    CLASH2_YAML=$(cat ${TEMP_DIR}/clash2)
-    for x in "${!CLASH2_PORT[@]}"; do
-      [[ ${CLASH2_PORT[x]} =~ [0-9]+ ]] && { CLASH2_YAML=$(sed "/proxy-groups:/i\  ${CLASH2_PROXY_INSERT[x]}" <<< "$CLASH2_YAML"); CLASH2_YAML=$(sed -E "/- name: (♻️ 自动选择|📲 电报消息|💬 OpenAi|📹 油管视频|🎥 奈飞视频|📺 巴哈姆特|📺 哔哩哔哩|🌍 国外媒体|🌏 国内媒体|📢 谷歌FCM|Ⓜ️ 微软Bing|Ⓜ️ 微软云盘|Ⓜ️ 微软服务|🍎 苹果服务|🎮 游戏平台|🎶 网易音乐|🎯 全球直连)|^rules:$/i\      ${CLASH2_PROXY_GROUPS_INSERT[x]}" <<< "$CLASH2_YAML"); }
-    done
-    echo "$CLASH2_YAML" > ${WORK_DIR}/subscribe/clash2
-
-    rm -f ${TEMP_DIR}/clash{,2}
-  } &>/dev/null
+  write_clash_provider_config \
+    "${WORK_DIR}/subscribe/clash" \
+    "$NODE_NAME_CONFIRM" \
+    "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/proxies" \
+    "${WORK_DIR}/jq" || warning " Failed to generate Clash provider configuration. "
+  write_clash_inline_config \
+    "${WORK_DIR}/subscribe/clash2" \
+    "$CLASH_PROXIES" \
+    "${WORK_DIR}/jq" \
+    "${CLASH_ACTIVE_NAMES[@]}" || warning " Failed to generate inline Clash configuration. "
 
   # 生成 ShadowRocket 订阅配置文件
   [ -n "$PORT_XTLS_REALITY" ] && local SHADOWROCKET_SUBSCRIBE+="
@@ -6247,36 +6384,15 @@ naive+quic://${UUID[22]}:${UUID[22]}@${SERVER_IP_1}:${PORT_NAIVE}?congestion_con
   local OUTBOUND_REPLACE+=" { \"type\": \"naive\", \"tag\": \"${NODE_NAME[22]} ${NODE_TAG[11]} http2\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_NAIVE}, \"username\": \"${UUID[22]}\", \"password\": \"${UUID[22]}\", \"udp_over_tcp\": true, \"quic\": false, \"tls\": { \"enabled\": true, \"certificate\": [$(tr -d '\n' <<< "$CERT200_JSON")], \"server_name\": \"${TLS_SERVER}\" } }, { \"type\": \"naive\", \"tag\": \"${NODE_NAME[22]} ${NODE_TAG[11]} quic\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_NAIVE}, \"username\": \"${UUID[22]}\", \"password\": \"${UUID[22]}\", \"udp_over_tcp\": false, \"quic\": true, \"quic_congestion_control\": \"bbr\", \"tls\": { \"enabled\": true, \"certificate\": [$(tr -d '\n' <<< "$CERT200_JSON")], \"server_name\": \"${TLS_SERVER}\" } }," &&
   local NODE_REPLACE+="\"${NODE_NAME[22]} ${NODE_TAG[11]} http2\",\"${NODE_NAME[22]} ${NODE_TAG[11]} quic\","
 
-  {
-    # 生成 sing-box SFM SFA SFI 订阅文件
-    [ ! -s "$TEMP_DIR/sing-box-template" ] && wget --no-check-certificate --continue -qO "$TEMP_DIR/sing-box-template" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box" 2>/dev/null
-    cat $TEMP_DIR/sing-box-template | sed "s#\"<OUTBOUND_REPLACE>\",#$OUTBOUND_REPLACE#; s#\"<NODE_REPLACE>\"#${NODE_REPLACE%,}#g" | ${WORK_DIR}/jq > ${WORK_DIR}/subscribe/sing-box
-    rm -f $TEMP_DIR/sing-box-template
-  } &>/dev/null
+  # 生成 sing-box SFM / SFA / SFI 客户端配置。
+  write_sing_box_client_config \
+    "${WORK_DIR}/subscribe/sing-box" \
+    "$OUTBOUND_REPLACE" \
+    "$NODE_REPLACE" \
+    "${WORK_DIR}/jq" || warning " Failed to generate sing-box client configuration. "
 
-  # 生成二维码 url 文件
-  [ "$IS_SUB" = 'is_sub' ] && cat > ${WORK_DIR}/subscribe/qr << EOF
-$(text 81):
-$(text 82) 1:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto
-
-$(text 82) 2:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2
-
-$(text 80) QRcode:
-$(text 82) 1:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto
-
-$(text 82) 2:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2
-
-$(text 82) 1:
-$(${WORK_DIR}/qrencode "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto")
-
-$(text 82) 2:
-$(${WORK_DIR}/qrencode "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2")
-EOF
-
+  local AUTO_URL="$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto"
+  local AUTO2_URL="$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2"
   # 生成配置文件
   EXPORT_LIST_FILE="*******************************************
 ┌────────────────┐
@@ -6335,9 +6451,6 @@ ${PROMPT}
 $(hint "Index:
 $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/
 
-QR code:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/qr
-
 V2rayN $(text 80):
 $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/v2rayn")
 
@@ -6358,39 +6471,27 @@ $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/shadowrocket")
 
 $(info " $(text 81):
 $(text 82) 1:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto
+$AUTO_URL
 
 $(text 82) 2:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2
-
- $(text 80) QRcode:
-$(text 82) 1:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto
-
-$(text 82) 2:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2")
-
-$(hint "$(text 82) 1:")
-$(${WORK_DIR}/qrencode $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto)
-
-$(hint "$(text 82) 2:")
-$(${WORK_DIR}/qrencode $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2)
+$AUTO2_URL")
 "
 
   # 生成并显示节点信息
   echo "$EXPORT_LIST_FILE" > ${WORK_DIR}/list
   cat ${WORK_DIR}/list
 
-  # 显示脚本使用情况数据
-  statistics_of_run_times get
 }
 
 # 创建快捷方式
 create_shortcut() {
+  local _github_proxy
+  _github_proxy=$(shell_quote "${GH_PROXY:-}")
   cat > ${WORK_DIR}/sb.sh << EOF
 #!/usr/bin/env bash
 
-bash <(wget --no-check-certificate -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh) \$@
+export GH_PROXY=${_github_proxy}
+bash <(wget --no-check-certificate -qO- "\${GH_PROXY}https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh") "\$@"
 EOF
   chmod +x ${WORK_DIR}/sb.sh
   ln -sf ${WORK_DIR}/sb.sh /usr/bin/sb
@@ -7742,19 +7843,11 @@ maintenance_menu() {
   while true; do
     hint "\n $(menu_text '高级维护' 'Advanced Maintenance')\n"
     hint " 1. $(text 31)"
-    hint " 2. $(text 32)"
-    hint " 3. $(text 59)"
-    hint " 4. $(text 69)"
-    hint " 5. $(text 76)"
     hint " 0. $(menu_text '返回' 'Back')"
     reading "\n $(text 24) " CHOOSE
     case "$CHOOSE" in
       0 ) return ;;
       1 ) version; exit ;;
-      2 ) bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit ;;
-      3 ) bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit ;;
-      4 ) bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit ;;
-      5 ) bash <(wget --no-check-certificate -qO- https://tcp.hy2.sh/); exit ;;
       * ) warning " $(text 36) "; sleep 1 ;;
     esac
   done
@@ -7790,7 +7883,7 @@ version() {
 
   if [ "${UPDATE,,}" = 'y' ]; then
     check_system_info
-    wget --no-check-certificate --continue ${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz -qO- | tar xz -C $TEMP_DIR sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box
+    wget --no-check-certificate --continue "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" -qO- | tar xz -C $TEMP_DIR sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box
 
     local SB_BIN="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box"
     if [ -s "$SB_BIN" ]; then
@@ -7874,10 +7967,6 @@ menu_setting() {
     OPTION[3]="3.  $(text 34) + Argo $(text 89)"
     OPTION[4]="4.  $(text 34) + $(text 80) $(text 89)"
     OPTION[5]="5.  $(text 34)"
-    OPTION[6]="6.  $(text 32)"
-    OPTION[7]="7.  $(text 59)"
-    OPTION[8]="8.  $(text 69)"
-    OPTION[9]="9.  $(text 76)"
 
     menu_action_fast_install() {
       IS_FAST_INSTALL='is_fast_install'
@@ -7896,20 +7985,12 @@ menu_setting() {
     menu_action_install_with_argo() { IS_SUB=no_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
     menu_action_install_with_sub() { IS_SUB=is_sub; IS_ARGO=no_argo; install_sing-box; export_list install; create_shortcut; exit; }
     menu_action_install() { install_sing-box; export_list install; create_shortcut; exit; }
-    menu_action_bbr() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
-    menu_action_argox() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    menu_action_sba() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    menu_action_hy2_tcp() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://tcp.hy2.sh/); exit; }
 
     ACTION[1]=menu_action_fast_install
     ACTION[2]=menu_action_install_with_argo_sub
     ACTION[3]=menu_action_install_with_argo
     ACTION[4]=menu_action_install_with_sub
     ACTION[5]=menu_action_install
-    ACTION[6]=menu_action_bbr
-    ACTION[7]=menu_action_argox
-    ACTION[8]=menu_action_sba
-    ACTION[9]=menu_action_hy2_tcp
   fi
 
   [ "${#OPTION[@]}" -ge '10' ] && OPTION[0]="0 .  $(text 35)" || OPTION[0]="0.  $(text 35)"
@@ -7948,8 +8029,8 @@ menu() {
   fi
 }
 
-check_cdn
-statistics_of_run_times update sing-box.sh 2>/dev/null
+# 清理旧版本遗留的二维码文件、预编译工具和 sing-box NTP 配置。
+rm -f "${WORK_DIR}/subscribe/qr" "${WORK_DIR}/qrencode" "${WORK_DIR}/conf/06_ntp.json"
 
 # Temporary migration for installs generated before Throne replaced Neko.
 # Remove after 2026-09-30.
@@ -7962,7 +8043,7 @@ fi
 
 # 传参
 [[ "${*^^}" =~ '-E'|'-K' ]] && L=E
-[[ "${*^^}" =~ '-C'|'-B'|'-L' ]] && L=C
+[[ "${*^^}" =~ '-C'|'-L' ]] && L=C
 # 支持在 select_language 前识别 --LANGUAGE，避免 KV 无交互安装仍弹出语言选择。
 for ((_param_i=1; _param_i<=$#; _param_i++)); do
   eval "_param_v=\${${_param_i}}"
@@ -7976,15 +8057,27 @@ for ((_param_i=1; _param_i<=$#; _param_i++)); do
       _param_lang="${_param_v#*=}"
       [[ "${_param_lang^^}" =~ ^C ]] && L=C || L=E
       ;;
+    --GH_PROXY )
+      _param_n=$((_param_i+1))
+      _param_proxy=${!_param_n}
+      CLI_GH_PROXY=$_param_proxy
+      CLI_GH_PROXY_SET=true
+      ;;
+    --GH_PROXY=* )
+      CLI_GH_PROXY="${_param_v#*=}"
+      CLI_GH_PROXY_SET=true
+      ;;
   esac
 done
-unset _param_i _param_v _param_n _param_lang
+unset _param_i _param_v _param_n _param_lang _param_proxy
 
 # 获取 -F 参数的值
 CONFIG_FILE=$(awk '-F[ =]' 'tolower($1) ~ /^-f$/{print $2}' <<< "$*")
 if [[ -n "$CONFIG_FILE" && -s "$CONFIG_FILE" ]]; then
   apply_config_file_options
 fi
+[ "${CLI_GH_PROXY_SET:-false}" != true ] || GH_PROXY=$CLI_GH_PROXY
+check_cdn
 
 check_root
 
@@ -8071,14 +8164,14 @@ for z in "${!ALL_PARAMETER[@]}"; do
     -V )
       check_system_info; check_arch; version; exit 0
       ;;
-    -B )
-      bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit
-      ;;
     -R )
       change_protocols; exit 0
       ;;
     --LANGUAGE )
       ((z++)); [[ "${ALL_PARAMETER[z]^^}" =~ ^C ]] && LANGUAGE=C || LANGUAGE=E
+      ;;
+    --GH_PROXY )
+      ((z++)); GH_PROXY=${ALL_PARAMETER[z]}
       ;;
     --CHOOSE_PROTOCOLS )
       ((z++)); CHOOSE_PROTOCOLS=${ALL_PARAMETER[z]}
@@ -8124,18 +8217,6 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --LOG_LEVEL )
       ((z++)); LOG_LEVEL=${ALL_PARAMETER[z]}
-      ;;
-    --NTP_ENABLED )
-      ((z++)); NTP_ENABLED=${ALL_PARAMETER[z]}
-      ;;
-    --NTP_SERVER )
-      ((z++)); NTP_SERVER=${ALL_PARAMETER[z]}
-      ;;
-    --NTP_SERVER_PORT )
-      ((z++)); NTP_SERVER_PORT=${ALL_PARAMETER[z]}
-      ;;
-    --NTP_INTERVAL )
-      ((z++)); NTP_INTERVAL=${ALL_PARAMETER[z]}
       ;;
     --FINGER_PRINT )
       ((z++)); FINGER_PRINT=${ALL_PARAMETER[z]}; FINGER_PRINT_EXPLICIT=1
@@ -8260,9 +8341,9 @@ done
 
 apply_custom_node_names
 normalize_log_level
-normalize_ntp_config
 normalize_finger_print
 normalize_ws_domain_mode
+check_cdn
 
 check_arch
 check_dependencies

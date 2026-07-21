@@ -2,6 +2,7 @@
 sing-box_json() {
   local IS_CHANGE=$1
   mkdir -p ${WORK_DIR}/conf ${WORK_DIR}/logs ${WORK_DIR}/subscribe "$CUSTOM_DIR" "$STATE_DIR"
+  rm -f "${WORK_DIR}/conf/06_ntp.json"
   routing_migrate_legacy || failure_error " Routing configuration migration failed. " "Custom directory: ${CUSTOM_DIR}"
 
   # 判断是否为新安装，不为 change 就是新安装
@@ -46,18 +47,6 @@ EOF
             }
         ],
         "strategy": "${STRATEGY}"
-    }
-}
-EOF
-
-    # 内建的 NTP 客户端服务配置文件，这对于无法进行时间同步的环境很有用
-    cat > ${WORK_DIR}/conf/06_ntp.json << EOF
-{
-    "ntp": {
-        "enabled": ${NTP_ENABLED},
-        "server": "${NTP_SERVER}",
-        "server_port": ${NTP_SERVER_PORT},
-        "interval": "${NTP_INTERVAL}"
     }
 }
 EOF

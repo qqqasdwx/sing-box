@@ -10,15 +10,27 @@ for ((_param_i=1; _param_i<=$#; _param_i++)); do
       _param_lang="${_param_v#*=}"
       [[ "${_param_lang^^}" =~ ^C ]] && L=C || L=E
       ;;
+    --GH_PROXY )
+      _param_n=$((_param_i+1))
+      _param_proxy=${!_param_n}
+      CLI_GH_PROXY=$_param_proxy
+      CLI_GH_PROXY_SET=true
+      ;;
+    --GH_PROXY=* )
+      CLI_GH_PROXY="${_param_v#*=}"
+      CLI_GH_PROXY_SET=true
+      ;;
   esac
 done
-unset _param_i _param_v _param_n _param_lang
+unset _param_i _param_v _param_n _param_lang _param_proxy
 
 # 获取 -F 参数的值
 CONFIG_FILE=$(awk '-F[ =]' 'tolower($1) ~ /^-f$/{print $2}' <<< "$*")
 if [[ -n "$CONFIG_FILE" && -s "$CONFIG_FILE" ]]; then
   apply_config_file_options
 fi
+[ "${CLI_GH_PROXY_SET:-false}" != true ] || GH_PROXY=$CLI_GH_PROXY
+check_cdn
 
 check_root
 
@@ -105,14 +117,14 @@ for z in "${!ALL_PARAMETER[@]}"; do
     -V )
       check_system_info; check_arch; version; exit 0
       ;;
-    -B )
-      bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit
-      ;;
     -R )
       change_protocols; exit 0
       ;;
     --LANGUAGE )
       ((z++)); [[ "${ALL_PARAMETER[z]^^}" =~ ^C ]] && LANGUAGE=C || LANGUAGE=E
+      ;;
+    --GH_PROXY )
+      ((z++)); GH_PROXY=${ALL_PARAMETER[z]}
       ;;
     --CHOOSE_PROTOCOLS )
       ((z++)); CHOOSE_PROTOCOLS=${ALL_PARAMETER[z]}
@@ -158,18 +170,6 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --LOG_LEVEL )
       ((z++)); LOG_LEVEL=${ALL_PARAMETER[z]}
-      ;;
-    --NTP_ENABLED )
-      ((z++)); NTP_ENABLED=${ALL_PARAMETER[z]}
-      ;;
-    --NTP_SERVER )
-      ((z++)); NTP_SERVER=${ALL_PARAMETER[z]}
-      ;;
-    --NTP_SERVER_PORT )
-      ((z++)); NTP_SERVER_PORT=${ALL_PARAMETER[z]}
-      ;;
-    --NTP_INTERVAL )
-      ((z++)); NTP_INTERVAL=${ALL_PARAMETER[z]}
       ;;
     --FINGER_PRINT )
       ((z++)); FINGER_PRINT=${ALL_PARAMETER[z]}; FINGER_PRINT_EXPLICIT=1
@@ -294,9 +294,9 @@ done
 
 apply_custom_node_names
 normalize_log_level
-normalize_ntp_config
 normalize_finger_print
 normalize_ws_domain_mode
+check_cdn
 
 check_arch
 check_dependencies

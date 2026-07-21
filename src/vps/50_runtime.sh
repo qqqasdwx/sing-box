@@ -1,6 +1,26 @@
+prepare_cloudflared_asset() {
+  [ "$IS_ARGO" = 'is_argo' ] || return 0
+  [ -x "$TEMP_DIR/cloudflared" ] && return 0
+
+  if [ -x "${WORK_DIR}/cloudflared" ]; then
+    cp "${WORK_DIR}/cloudflared" "$TEMP_DIR/cloudflared"
+    chmod +x "$TEMP_DIR/cloudflared"
+    return 0
+  fi
+
+  download_file \
+    "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" \
+    "$TEMP_DIR/cloudflared" \
+    "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH"
+  chmod +x "$TEMP_DIR/cloudflared" 2>/dev/null || true
+}
+
 # 安装 sing-box 全家桶
 install_sing-box() {
   sing-box_variables
+  if [ "$IS_ARGO" = 'is_argo' ]; then
+    prepare_cloudflared_asset &
+  fi
   hint "\n $(text 2) "
   wait
   verify_command_or_fail "\n $(text 42) \n" "Version: ${ONLINE:-unknown}
@@ -20,7 +40,6 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
   sing-box_json
   echo "${L^^}" > ${WORK_DIR}/language
   cp "$TEMP_DIR/sing-box" "$TEMP_DIR/jq" "$WORK_DIR"
-  [ -x "$TEMP_DIR/qrencode" ] && cp "$TEMP_DIR/qrencode" "$WORK_DIR"
 
   # 生成 sing-box systemd 配置文件
   sing-box_systemd
@@ -90,34 +109,16 @@ prepare_config_update_assets() {
     fi
   fi
 
-  if [ ! -x "$TEMP_DIR/qrencode" ]; then
-    if [ -x "${WORK_DIR}/qrencode" ]; then
-      cp "${WORK_DIR}/qrencode" "$TEMP_DIR/qrencode"
-      chmod +x "$TEMP_DIR/qrencode"
-    else
-      download_file "${GH_PROXY}https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH" "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$QRENCODE_ARCH"
-      chmod +x "$TEMP_DIR/qrencode" 2>/dev/null || true
-    fi
-  fi
-
-  if [ "$IS_ARGO" = 'is_argo' ] && [ ! -x "$TEMP_DIR/cloudflared" ]; then
-    if [ -x "${WORK_DIR}/cloudflared" ]; then
-      cp "${WORK_DIR}/cloudflared" "$TEMP_DIR/cloudflared"
-      chmod +x "$TEMP_DIR/cloudflared"
-    else
-      download_file "${GH_PROXY}https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH" "$TEMP_DIR/cloudflared" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-$ARGO_ARCH"
-      chmod +x "$TEMP_DIR/cloudflared" 2>/dev/null || true
-    fi
-  fi
+  prepare_cloudflared_asset
 }
 
 install_from_config_update() {
   CONFIG_UPDATE_INSTALL=config_update_install
   prepare_config_update_defaults
   apply_config_file_options
+  [ "${CLI_GH_PROXY_SET:-false}" != true ] || GH_PROXY=$CLI_GH_PROXY
   apply_custom_node_names
   normalize_log_level
-  normalize_ntp_config
   normalize_finger_print
 
   # 预设默认值，允许 config.conf 只覆盖部分字段。
@@ -168,11 +169,10 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
     [ "$SYSTEM" = 'Alpine' ] || systemctl daemon-reload >/dev/null 2>&1 || true
   fi
 
-  ssl_certificate "$TLS_SERVER_DEFAULT"
+  ssl_certificate "$TLS_SERVER_DEFAULT" reuse_existing
   sing-box_json
   echo "${L^^}" > "${WORK_DIR}/language"
   cp "$TEMP_DIR/sing-box" "$TEMP_DIR/jq" "$WORK_DIR"
-  [ -x "$TEMP_DIR/qrencode" ] && cp "$TEMP_DIR/qrencode" "$WORK_DIR"
 
   sing-box_systemd
   [ "$IS_ARGO" = 'is_argo' ] && cp "$TEMP_DIR/cloudflared" "$WORK_DIR"
@@ -362,26 +362,28 @@ export_list() {
   $CLASH_ANYTLS
 "
 
-  echo -n "${CLASH_SUBSCRIBE}" | sed -E '/^[ ]*#|^--/d' | sed '/^$/d' > ${WORK_DIR}/subscribe/proxies
+  local CLASH_PROXIES
+  CLASH_PROXIES=$(printf '%s' "${CLASH_SUBSCRIBE}" | sed -E '/^[ ]*#|^--/d' | sed '/^$/d')
 
-  # 后台生成 clash 订阅配置文件
-  {
-    # 模板1: 使用 proxy providers
-    cat ${TEMP_DIR}/clash | sed "s#NODE_NAME#${NODE_NAME_CONFIRM}#g; s#PROXY_PROVIDERS_URL#$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/proxies#" > ${WORK_DIR}/subscribe/clash
+  local CLASH_PORTS=("$PORT_XTLS_REALITY" "$PORT_HYSTERIA2" "$PORT_TUIC" "$PORT_SHADOWTLS" "$PORT_SHADOWSOCKS" "$PORT_TROJAN" "$PORT_VMESS_WS" "$PORT_VLESS_WS" "$PORT_H2_REALITY" "$PORT_GRPC_REALITY" "$PORT_ANYTLS")
+  local CLASH_NAMES=("${NODE_NAME[11]} ${NODE_TAG[0]}" "${NODE_NAME[12]} ${NODE_TAG[1]}" "${NODE_NAME[13]} ${NODE_TAG[2]}" "${NODE_NAME[14]} ${NODE_TAG[3]}" "${NODE_NAME[15]} ${NODE_TAG[4]}" "${NODE_NAME[16]} ${NODE_TAG[5]}" "${NODE_NAME[17]} ${NODE_TAG[6]}" "${NODE_NAME[18]} ${NODE_TAG[7]}" "${NODE_NAME[19]} ${NODE_TAG[8]}" "${NODE_NAME[20]} ${NODE_TAG[9]}" "${NODE_NAME[21]} ${NODE_TAG[10]}")
+  local CLASH_ACTIVE_NAMES=() x
+  for x in "${!CLASH_PORTS[@]}"; do
+    [[ "${CLASH_PORTS[x]}" =~ ^[0-9]+$ ]] && CLASH_ACTIVE_NAMES+=("${CLASH_NAMES[x]}")
+  done
+  [ "${#CLASH_ACTIVE_NAMES[@]}" -gt 0 ] || CLASH_PROXIES='proxies: []'
+  printf '%s\n' "$CLASH_PROXIES" > ${WORK_DIR}/subscribe/proxies
 
-    # 模板2: 不使用 proxy providers
-    CLASH2_PORT=("$PORT_XTLS_REALITY" "$PORT_HYSTERIA2" "$PORT_TUIC" "$PORT_SHADOWTLS" "$PORT_SHADOWSOCKS" "$PORT_TROJAN" "$PORT_VMESS_WS" "$PORT_VLESS_WS" "$PORT_GRPC_REALITY" "$PORT_ANYTLS")
-    CLASH2_PROXY_INSERT=("$CLASH_XTLS_REALITY" "$CLASH_HYSTERIA2" "$CLASH_TUIC" "$CLASH_SHADOWTLS" "$CLASH_SHADOWSOCKS" "$CLASH_TROJAN" "$CLASH_VMESS_WS" "$CLASH_VLESS_WS" "$CLASH_GRPC_REALITY" "$CLASH_ANYTLS")
-    CLASH2_PROXY_GROUPS_INSERT=("- ${NODE_NAME[11]} ${NODE_TAG[0]}" "- ${NODE_NAME[12]} ${NODE_TAG[1]}" "- ${NODE_NAME[13]} ${NODE_TAG[2]}" "- ${NODE_NAME[14]} ${NODE_TAG[3]}" "- ${NODE_NAME[15]} ${NODE_TAG[4]}" "- ${NODE_NAME[16]} ${NODE_TAG[5]}" "- ${NODE_NAME[17]} ${NODE_TAG[6]}" "- ${NODE_NAME[18]} ${NODE_TAG[7]}" "- ${NODE_NAME[20]} ${NODE_TAG[9]}" "- ${NODE_NAME[21]} ${NODE_TAG[10]}")
-
-    CLASH2_YAML=$(cat ${TEMP_DIR}/clash2)
-    for x in "${!CLASH2_PORT[@]}"; do
-      [[ ${CLASH2_PORT[x]} =~ [0-9]+ ]] && { CLASH2_YAML=$(sed "/proxy-groups:/i\  ${CLASH2_PROXY_INSERT[x]}" <<< "$CLASH2_YAML"); CLASH2_YAML=$(sed -E "/- name: (♻️ 自动选择|📲 电报消息|💬 OpenAi|📹 油管视频|🎥 奈飞视频|📺 巴哈姆特|📺 哔哩哔哩|🌍 国外媒体|🌏 国内媒体|📢 谷歌FCM|Ⓜ️ 微软Bing|Ⓜ️ 微软云盘|Ⓜ️ 微软服务|🍎 苹果服务|🎮 游戏平台|🎶 网易音乐|🎯 全球直连)|^rules:$/i\      ${CLASH2_PROXY_GROUPS_INSERT[x]}" <<< "$CLASH2_YAML"); }
-    done
-    echo "$CLASH2_YAML" > ${WORK_DIR}/subscribe/clash2
-
-    rm -f ${TEMP_DIR}/clash{,2}
-  } &>/dev/null
+  write_clash_provider_config \
+    "${WORK_DIR}/subscribe/clash" \
+    "$NODE_NAME_CONFIRM" \
+    "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/proxies" \
+    "${WORK_DIR}/jq" || warning " Failed to generate Clash provider configuration. "
+  write_clash_inline_config \
+    "${WORK_DIR}/subscribe/clash2" \
+    "$CLASH_PROXIES" \
+    "${WORK_DIR}/jq" \
+    "${CLASH_ACTIVE_NAMES[@]}" || warning " Failed to generate inline Clash configuration. "
 
   # 生成 ShadowRocket 订阅配置文件
   [ -n "$PORT_XTLS_REALITY" ] && local SHADOWROCKET_SUBSCRIBE+="
@@ -798,36 +800,15 @@ naive+quic://${UUID[22]}:${UUID[22]}@${SERVER_IP_1}:${PORT_NAIVE}?congestion_con
   local OUTBOUND_REPLACE+=" { \"type\": \"naive\", \"tag\": \"${NODE_NAME[22]} ${NODE_TAG[11]} http2\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_NAIVE}, \"username\": \"${UUID[22]}\", \"password\": \"${UUID[22]}\", \"udp_over_tcp\": true, \"quic\": false, \"tls\": { \"enabled\": true, \"certificate\": [$(tr -d '\n' <<< "$CERT200_JSON")], \"server_name\": \"${TLS_SERVER}\" } }, { \"type\": \"naive\", \"tag\": \"${NODE_NAME[22]} ${NODE_TAG[11]} quic\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_NAIVE}, \"username\": \"${UUID[22]}\", \"password\": \"${UUID[22]}\", \"udp_over_tcp\": false, \"quic\": true, \"quic_congestion_control\": \"bbr\", \"tls\": { \"enabled\": true, \"certificate\": [$(tr -d '\n' <<< "$CERT200_JSON")], \"server_name\": \"${TLS_SERVER}\" } }," &&
   local NODE_REPLACE+="\"${NODE_NAME[22]} ${NODE_TAG[11]} http2\",\"${NODE_NAME[22]} ${NODE_TAG[11]} quic\","
 
-  {
-    # 生成 sing-box SFM SFA SFI 订阅文件
-    [ ! -s "$TEMP_DIR/sing-box-template" ] && wget --no-check-certificate --continue -qO "$TEMP_DIR/sing-box-template" "${GH_PROXY}${SUBSCRIBE_TEMPLATE}/sing-box" 2>/dev/null
-    cat $TEMP_DIR/sing-box-template | sed "s#\"<OUTBOUND_REPLACE>\",#$OUTBOUND_REPLACE#; s#\"<NODE_REPLACE>\"#${NODE_REPLACE%,}#g" | ${WORK_DIR}/jq > ${WORK_DIR}/subscribe/sing-box
-    rm -f $TEMP_DIR/sing-box-template
-  } &>/dev/null
+  # 生成 sing-box SFM / SFA / SFI 客户端配置。
+  write_sing_box_client_config \
+    "${WORK_DIR}/subscribe/sing-box" \
+    "$OUTBOUND_REPLACE" \
+    "$NODE_REPLACE" \
+    "${WORK_DIR}/jq" || warning " Failed to generate sing-box client configuration. "
 
-  # 生成二维码 url 文件
-  [ "$IS_SUB" = 'is_sub' ] && cat > ${WORK_DIR}/subscribe/qr << EOF
-$(text 81):
-$(text 82) 1:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto
-
-$(text 82) 2:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2
-
-$(text 80) QRcode:
-$(text 82) 1:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto
-
-$(text 82) 2:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2
-
-$(text 82) 1:
-$(${WORK_DIR}/qrencode "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto")
-
-$(text 82) 2:
-$(${WORK_DIR}/qrencode "$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2")
-EOF
-
+  local AUTO_URL="$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto"
+  local AUTO2_URL="$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2"
   # 生成配置文件
   EXPORT_LIST_FILE="*******************************************
 ┌────────────────┐
@@ -886,9 +867,6 @@ ${PROMPT}
 $(hint "Index:
 $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/
 
-QR code:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/qr
-
 V2rayN $(text 80):
 $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/v2rayn")
 
@@ -909,39 +887,27 @@ $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/shadowrocket")
 
 $(info " $(text 81):
 $(text 82) 1:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto
+$AUTO_URL
 
 $(text 82) 2:
-$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2
-
- $(text 80) QRcode:
-$(text 82) 1:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto
-
-$(text 82) 2:
-https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=$SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2")
-
-$(hint "$(text 82) 1:")
-$(${WORK_DIR}/qrencode $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto)
-
-$(hint "$(text 82) 2:")
-$(${WORK_DIR}/qrencode $SUBSCRIBE_ADDRESS/${UUID_CONFIRM}/auto2)
+$AUTO2_URL")
 "
 
   # 生成并显示节点信息
   echo "$EXPORT_LIST_FILE" > ${WORK_DIR}/list
   cat ${WORK_DIR}/list
 
-  # 显示脚本使用情况数据
-  statistics_of_run_times get
 }
 
 # 创建快捷方式
 create_shortcut() {
+  local _github_proxy
+  _github_proxy=$(shell_quote "${GH_PROXY:-}")
   cat > ${WORK_DIR}/sb.sh << EOF
 #!/usr/bin/env bash
 
-bash <(wget --no-check-certificate -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh) \$@
+export GH_PROXY=${_github_proxy}
+bash <(wget --no-check-certificate -qO- "\${GH_PROXY}https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sing-box.sh") "\$@"
 EOF
   chmod +x ${WORK_DIR}/sb.sh
   ln -sf ${WORK_DIR}/sb.sh /usr/bin/sb
@@ -2293,19 +2259,11 @@ maintenance_menu() {
   while true; do
     hint "\n $(menu_text '高级维护' 'Advanced Maintenance')\n"
     hint " 1. $(text 31)"
-    hint " 2. $(text 32)"
-    hint " 3. $(text 59)"
-    hint " 4. $(text 69)"
-    hint " 5. $(text 76)"
     hint " 0. $(menu_text '返回' 'Back')"
     reading "\n $(text 24) " CHOOSE
     case "$CHOOSE" in
       0 ) return ;;
       1 ) version; exit ;;
-      2 ) bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit ;;
-      3 ) bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit ;;
-      4 ) bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit ;;
-      5 ) bash <(wget --no-check-certificate -qO- https://tcp.hy2.sh/); exit ;;
       * ) warning " $(text 36) "; sleep 1 ;;
     esac
   done
@@ -2341,7 +2299,7 @@ version() {
 
   if [ "${UPDATE,,}" = 'y' ]; then
     check_system_info
-    wget --no-check-certificate --continue ${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz -qO- | tar xz -C $TEMP_DIR sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box
+    wget --no-check-certificate --continue "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" -qO- | tar xz -C $TEMP_DIR sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box
 
     local SB_BIN="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box"
     if [ -s "$SB_BIN" ]; then
@@ -2425,10 +2383,6 @@ menu_setting() {
     OPTION[3]="3.  $(text 34) + Argo $(text 89)"
     OPTION[4]="4.  $(text 34) + $(text 80) $(text 89)"
     OPTION[5]="5.  $(text 34)"
-    OPTION[6]="6.  $(text 32)"
-    OPTION[7]="7.  $(text 59)"
-    OPTION[8]="8.  $(text 69)"
-    OPTION[9]="9.  $(text 76)"
 
     menu_action_fast_install() {
       IS_FAST_INSTALL='is_fast_install'
@@ -2447,20 +2401,12 @@ menu_setting() {
     menu_action_install_with_argo() { IS_SUB=no_sub; IS_ARGO=is_argo; install_sing-box; export_list install; create_shortcut; exit; }
     menu_action_install_with_sub() { IS_SUB=is_sub; IS_ARGO=no_argo; install_sing-box; export_list install; create_shortcut; exit; }
     menu_action_install() { install_sing-box; export_list install; create_shortcut; exit; }
-    menu_action_bbr() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh); exit; }
-    menu_action_argox() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/argox/main/argox.sh) -$L; exit; }
-    menu_action_sba() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://raw.githubusercontent.com/fscarmen/sba/main/sba.sh) -$L; exit; }
-    menu_action_hy2_tcp() { bash <(wget --no-check-certificate -qO- ${GH_PROXY}https://tcp.hy2.sh/); exit; }
 
     ACTION[1]=menu_action_fast_install
     ACTION[2]=menu_action_install_with_argo_sub
     ACTION[3]=menu_action_install_with_argo
     ACTION[4]=menu_action_install_with_sub
     ACTION[5]=menu_action_install
-    ACTION[6]=menu_action_bbr
-    ACTION[7]=menu_action_argox
-    ACTION[8]=menu_action_sba
-    ACTION[9]=menu_action_hy2_tcp
   fi
 
   [ "${#OPTION[@]}" -ge '10' ] && OPTION[0]="0 .  $(text 35)" || OPTION[0]="0.  $(text 35)"
@@ -2499,8 +2445,8 @@ menu() {
   fi
 }
 
-check_cdn
-statistics_of_run_times update sing-box.sh 2>/dev/null
+# 清理旧版本遗留的二维码文件、预编译工具和 sing-box NTP 配置。
+rm -f "${WORK_DIR}/subscribe/qr" "${WORK_DIR}/qrencode" "${WORK_DIR}/conf/06_ntp.json"
 
 # Temporary migration for installs generated before Throne replaced Neko.
 # Remove after 2026-09-30.
@@ -2513,5 +2459,5 @@ fi
 
 # 传参
 [[ "${*^^}" =~ '-E'|'-K' ]] && L=E
-[[ "${*^^}" =~ '-C'|'-B'|'-L' ]] && L=C
+[[ "${*^^}" =~ '-C'|'-L' ]] && L=C
 # 支持在 select_language 前识别 --LANGUAGE，避免 KV 无交互安装仍弹出语言选择。

@@ -69,6 +69,7 @@ bundle_vps() {
     "$ROOT_DIR/src/vps/00_prelude.sh" \
     "$ROOT_DIR/src/vps/10_i18n.sh" \
     "$ROOT_DIR/src/vps/20_helpers.sh" \
+    "$ROOT_DIR/src/vps/25_subscriptions.sh" \
     "$ROOT_DIR/src/vps/30_system.sh" \
     "$ROOT_DIR/src/vps/40_config.sh" \
     "$ROOT_DIR/src/vps/45_v2rayn.sh" \
@@ -81,6 +82,7 @@ bundle_docker() {
     "$ROOT_DIR/src/docker/00_prelude.sh" \
     "$ROOT_DIR/src/vps/10_i18n.sh" \
     "$ROOT_DIR/src/vps/20_helpers.sh" \
+    "$ROOT_DIR/src/vps/25_subscriptions.sh" \
     "$ROOT_DIR/src/vps/30_system.sh" \
     "$ROOT_DIR/src/vps/40_config.sh" \
     "$ROOT_DIR/src/vps/45_v2rayn.sh" \

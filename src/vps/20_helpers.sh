@@ -313,25 +313,6 @@ normalize_log_level() {
   esac
 }
 
-normalize_ntp_config() {
-  NTP_ENABLED=${NTP_ENABLED:-"$NTP_ENABLED_DEFAULT"}
-  NTP_ENABLED=${NTP_ENABLED,,}
-  case "$NTP_ENABLED" in
-    true|1|y|yes|on ) NTP_ENABLED=true ;;
-    false|0|n|no|off ) NTP_ENABLED=false ;;
-    * ) error " NTP_ENABLED must be true or false. " ;;
-  esac
-
-  NTP_SERVER=${NTP_SERVER:-"$NTP_SERVER_DEFAULT"}
-  [[ "$NTP_SERVER" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$ ]] || error " NTP_SERVER contains invalid characters. "
-
-  NTP_SERVER_PORT=${NTP_SERVER_PORT:-"$NTP_SERVER_PORT_DEFAULT"}
-  [[ "$NTP_SERVER_PORT" =~ ^[1-9][0-9]{0,4}$ && "$NTP_SERVER_PORT" -le 65535 ]] || error " NTP_SERVER_PORT must be 1-65535. "
-
-  NTP_INTERVAL=${NTP_INTERVAL:-"$NTP_INTERVAL_DEFAULT"}
-  [[ "$NTP_INTERVAL" =~ ^[1-9][0-9]*(ms|s|m|h)$ ]] || error " NTP_INTERVAL must be a duration like 30m, 60m, or 1h. "
-}
-
 normalize_finger_print() {
   FINGER_PRINT=${FINGER_PRINT:-"${FINGER_PRINT_DEFAULT:-chrome}"}
   [[ "${FINGER_PRINT,,}" =~ ^[0-9a-z]+$ ]] || error " FINGER_PRINT must contain only letters and numbers. "
@@ -728,28 +709,25 @@ reality_public_from_private() {
   local _private_key=$1 _b64 _mod _priv_len _prefix_hex _priv_hex
   [ -n "$_private_key" ] || return 1
   valid_reality_private_format "$_private_key" || return 1
+  command -v xxd >/dev/null 2>&1 || return 1
 
-  if command -v xxd >/dev/null 2>&1; then
-    _b64=$(printf '%s' "$_private_key" | tr '_-' '/+')
-    _mod=$(( ${#_b64} % 4 ))
-    [ "$_mod" -eq 2 ] && _b64="${_b64}=="
-    [ "$_mod" -eq 3 ] && _b64="${_b64}="
-    [ "$_mod" -eq 1 ] && return 1
+  _b64=$(printf '%s' "$_private_key" | tr '_-' '/+')
+  _mod=$(( ${#_b64} % 4 ))
+  [ "$_mod" -eq 2 ] && _b64="${_b64}=="
+  [ "$_mod" -eq 3 ] && _b64="${_b64}="
+  [ "$_mod" -eq 1 ] && return 1
 
-    printf '%s' "$_b64" | base64 -d > "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || return 1
-    _priv_len=$(stat -c%s "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || stat -f%z "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null)
-    [ "$_priv_len" = 32 ] || return 1
+  printf '%s' "$_b64" | base64 -d > "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || return 1
+  _priv_len=$(stat -c%s "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null || stat -f%z "${TEMP_DIR}/_X25519_PRIV_RAW" 2>/dev/null)
+  [ "$_priv_len" = 32 ] || return 1
 
-    _prefix_hex="302e020100300506032b656e04220420"
-    _priv_hex=$(xxd -p -c 256 "${TEMP_DIR}/_X25519_PRIV_RAW" | tr -d '\n')
-    printf '%s%s' "$_prefix_hex" "$_priv_hex" | xxd -r -p > "${TEMP_DIR}/_X25519_PRIV_DER"
-    openssl pkcs8 -inform DER -in "${TEMP_DIR}/_X25519_PRIV_DER" -nocrypt -out "${TEMP_DIR}/_X25519_PRIV_PEM" 2>/dev/null || return 1
-    openssl pkey -in "${TEMP_DIR}/_X25519_PRIV_PEM" -pubout -outform DER > "${TEMP_DIR}/_X25519_PUB_DER" 2>/dev/null || return 1
-    tail -c 32 "${TEMP_DIR}/_X25519_PUB_DER" > "${TEMP_DIR}/_X25519_PUB_RAW"
-    base64 -w0 "${TEMP_DIR}/_X25519_PUB_RAW" | tr '+/' '-_' | sed -E 's/=+$//'
-  else
-    wget --no-check-certificate -qO- --tries=3 --timeout=2 "https://realitykey.cloudflare.now.cc/?privateKey=${_private_key}" | awk -F '"' '/publicKey/{print $4}'
-  fi
+  _prefix_hex="302e020100300506032b656e04220420"
+  _priv_hex=$(xxd -p -c 256 "${TEMP_DIR}/_X25519_PRIV_RAW" | tr -d '\n')
+  printf '%s%s' "$_prefix_hex" "$_priv_hex" | xxd -r -p > "${TEMP_DIR}/_X25519_PRIV_DER"
+  openssl pkcs8 -inform DER -in "${TEMP_DIR}/_X25519_PRIV_DER" -nocrypt -out "${TEMP_DIR}/_X25519_PRIV_PEM" 2>/dev/null || return 1
+  openssl pkey -in "${TEMP_DIR}/_X25519_PRIV_PEM" -pubout -outform DER > "${TEMP_DIR}/_X25519_PUB_DER" 2>/dev/null || return 1
+  tail -c 32 "${TEMP_DIR}/_X25519_PUB_DER" > "${TEMP_DIR}/_X25519_PUB_RAW"
+  base64 -w0 "${TEMP_DIR}/_X25519_PUB_RAW" | tr '+/' '-_' | sed -E 's/=+$//'
 }
 
 generate_reality_keypair() {
@@ -831,6 +809,11 @@ installed_argo_auth() {
   fi
 }
 
+installed_subscription_enabled() {
+  [ -s "${WORK_DIR}/nginx.conf" ] &&
+    grep -Fq 'map $http_user_agent $path1' "${WORK_DIR}/nginx.conf"
+}
+
 prepare_config_update_defaults() {
   local _selection _value
 
@@ -841,7 +824,7 @@ prepare_config_update_defaults() {
   fi
 
   [ -s "$ARGO_DAEMON_FILE" ] && IS_ARGO=is_argo
-  [ -s "${WORK_DIR}/subscribe/qr" ] && IS_SUB=is_sub
+  installed_subscription_enabled && IS_SUB=is_sub
 
   fetch_nodes_value
   normalize_ws_domain_mode
@@ -1045,12 +1028,14 @@ write_config_state_file() {
   config_state_set_line "$_tmp" CHOOSE_PROTOCOLS "$(shell_quote switch)" true
 
   config_state_set_line "$_tmp" LANGUAGE "$(shell_quote "${L,,}")" true
+  _active=false; [ -n "${GH_PROXY:-}" ] && _active=true
+  config_state_set_optional "$_tmp" GH_PROXY "$(shell_quote "${GH_PROXY:-}")" "$_active"
   config_state_set_line "$_tmp" START_PORT "$(config_value START_PORT "$START_PORT_DEFAULT")" true
   config_state_set_line "$_tmp" LOG_LEVEL "$(config_value LOG_LEVEL "$LOG_LEVEL_DEFAULT")" true
-  config_state_set_line "$_tmp" NTP_ENABLED "$(config_value NTP_ENABLED "$NTP_ENABLED_DEFAULT")" true
-  config_state_set_line "$_tmp" NTP_SERVER "$(config_value NTP_SERVER "$NTP_SERVER_DEFAULT")" true
-  config_state_set_line "$_tmp" NTP_SERVER_PORT "$(config_value NTP_SERVER_PORT "$NTP_SERVER_PORT_DEFAULT")" true
-  config_state_set_line "$_tmp" NTP_INTERVAL "$(config_value NTP_INTERVAL "$NTP_INTERVAL_DEFAULT")" true
+  config_state_comment_line "$_tmp" NTP_ENABLED
+  config_state_comment_line "$_tmp" NTP_SERVER
+  config_state_comment_line "$_tmp" NTP_SERVER_PORT
+  config_state_comment_line "$_tmp" NTP_INTERVAL
   _active=false; [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]] && _active=true
   config_state_set_optional "$_tmp" PORT_NGINX "$(config_value PORT_NGINX)" "$_active"
   config_state_set_line "$_tmp" SERVER_IP "$(config_value SERVER_IP)" true
@@ -1194,73 +1179,11 @@ json_number_value() {
   '
 }
 
-# 检测是否需要启用 Github CDN，如能直接连通 api.github.com，则不使用
 check_cdn() {
-  local PROXY CODE PID CMD
-  local _WAIT_COUNT=40
-  local PIDS=()
-  local API_URL='https://api.github.com/repos/SagerNet/sing-box/releases'
-
-  # 确定下载工具：优先 wget，次选 curl
-  if command -v wget >/dev/null 2>&1; then
-    CMD='wget'
-  elif command -v curl >/dev/null 2>&1; then
-    CMD='curl'
-  else
-    GH_PROXY=''
-    return
-  fi
-
-  # 获取 HTTP 状态码
-  get_code() {
-    local url=$1
-    if [ "$CMD" = 'wget' ]; then
-      wget -qT5 -O /dev/null --server-response "$url" 2>&1 | awk '/HTTP\//{code=$2} END{print code}'
-    else
-      curl -skL -w "%{http_code}" "$url" -o /dev/null
-    fi
-  }
-
-  # 直连检测
-  CODE=$(get_code "$API_URL")
-  if [ "$CODE" = '200' ]; then
-    GH_PROXY=''
-    return
-  fi
-
-  # 并发探测代理
-  for PROXY in "${GITHUB_PROXY[@]}"; do
-    {
-      CODE=$(get_code "${PROXY}${API_URL}")
-      [ "$CODE" = '200' ] && [ ! -e "${TEMP_DIR}/cdn_proxy" ] && printf '%s' "$PROXY" > "${TEMP_DIR}/cdn_proxy"
-    } &
-    PIDS+=("$!")
-  done
-
-  # 等第一个返回 200 的代理，超时则回退为直连，避免无限等待卡死
-  while [ ! -e "${TEMP_DIR}/cdn_proxy" ] && [ "$_WAIT_COUNT" -gt 0 ]; do
-    sleep 0.05
-    (( _WAIT_COUNT-- )) || true
-  done
-
-  [ -e "${TEMP_DIR}/cdn_proxy" ] && GH_PROXY=$(cat "${TEMP_DIR}/cdn_proxy") || GH_PROXY=''
-
-  # 清理后台任务和临时文件
-  for PID in "${PIDS[@]}"; do kill "$PID" >/dev/null 2>&1 || true; done
-  for PID in "${PIDS[@]}"; do wait "$PID" 2>/dev/null || true; done
-  rm -f "${TEMP_DIR}/cdn_proxy"
-}
-
-# 脚本当天及累计运行次数统计
-statistics_of_run_times() {
-  local UPDATE_OR_GET=$1
-  local SCRIPT=$2
-  if grep -q 'update' <<< "$UPDATE_OR_GET"; then
-    { wget --no-check-certificate -qO- --timeout=3 "https://stat.cloudflare.now.cc/updateStats?script=${SCRIPT}" > $TEMP_DIR/statistics 2>/dev/null || true; }&
-  elif grep -q 'get' <<< "$UPDATE_OR_GET"; then
-    [ -s $TEMP_DIR/statistics ] && [[ $(cat $TEMP_DIR/statistics) =~ \"todayCount\":([0-9]+),\"totalCount\":([0-9]+) ]] && local TODAY="${BASH_REMATCH[1]}" && local TOTAL="${BASH_REMATCH[2]}" && rm -f $TEMP_DIR/statistics
-    hint "\n*******************************************\n\n $(text 55) \n"
-  fi
+  GH_PROXY=${GH_PROXY:-}
+  [ -z "$GH_PROXY" ] && return 0
+  [[ "$GH_PROXY" =~ ^https?://[^[:space:]]+$ ]] || error " GH_PROXY must be an HTTP(S) URL prefix. "
+  [[ "$GH_PROXY" == */ ]] || GH_PROXY="${GH_PROXY}/"
 }
 
 # 选择中英语言
@@ -2157,7 +2080,46 @@ routing_validate_candidate() {
     printf 'Sing-box binary not found: %s\n' "${WORK_DIR}/sing-box" >&2
     return 1
   }
+  routing_validate_outbound_references "$CANDIDATE_DIR" || return 1
   "${WORK_DIR}/sing-box" check -C "$CANDIDATE_DIR"
+}
+
+routing_validate_outbound_references() {
+  local CANDIDATE_DIR=$1 ROUTING_FILE MISSING_TAGS
+  ROUTING_FILE="${CANDIDATE_DIR}/03_routing.json"
+  [ -s "$ROUTING_FILE" ] || {
+    printf 'Candidate routing configuration not found: %s\n' "$ROUTING_FILE" >&2
+    return 1
+  }
+
+  MISSING_TAGS=$(jq_exec -r '
+    (
+      [.outbounds[]?.tag?, .endpoints[]?.tag?] |
+      map(select(type == "string" and length > 0)) |
+      unique
+    ) as $defined |
+    (
+      [
+        .route.rules[]? |
+        .. |
+        objects |
+        .outbound? |
+        select(type == "string")
+      ] + [
+        .route.final? |
+        select(type == "string")
+      ]
+    ) |
+    unique |
+    map(select(. as $tag | ($defined | index($tag) | not))) |
+    map(if length == 0 then "<empty>" else . end) |
+    join(", ")
+  ' "$ROUTING_FILE") || return 1
+
+  [ -z "$MISSING_TAGS" ] || {
+    printf 'Undefined route outbound/endpoint tag(s): %s\n' "$MISSING_TAGS" >&2
+    return 1
+  }
 }
 
 routing_check() {
