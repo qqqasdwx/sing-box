@@ -4,10 +4,21 @@
 
 ## 2026-07-21
 
+- 发布脚本版本更新为 `v1.3.18`。
+- 删除 BBR/DD、ArgoX、SBA 和 TCP Brutal 远程安装入口；TCP Brutal 只保留本机内核模块检测和已有客户端配置支持。
+- Clash provider、Clash 内嵌节点和 sing-box 客户端模板改为项目内生成，不再下载无许可证的外部模板。
+- 删除预编译二维码工具、系统 `qrencode` 依赖、终端二维码和 `/qr` 页面，只保留可复制的订阅链接。
+- 删除 sing-box 内建 NTP 客户端配置，统一依赖宿主机时间同步；升级时清理旧 `06_ntp.json` 并停用旧 `NTP_*` 配置项。
+- 删除运行次数遥测、自建 IP 查询和远程 Reality 公钥推导；公网 IP 改用 Cloudflare 官方 trace，Reality 公钥只在本机通过 `xxd` 和 OpenSSL 推导。
+- GitHub 下载默认直连，不再自动探测第三方反代；新增显式 `GH_PROXY` 配置和 Docker 环境变量。
+- Docker 的 s6-overlay 固定为 `3.2.3.2` 并校验官方 SHA-256；cloudflared 只在启用 Argo 时下载。
+- 新增本地订阅和依赖策略测试，防止已删除的远程脚本、自建服务和模板依赖被重新引入。
 - 选择性移植上游 `fa45859` 的 SIGHUP 热重载：VPS 在完整配置检查成功后只向 sing-box 主进程发送 HUP，并确认 PID 未变化且服务仍在运行。
 - VPS 的监听端口和节点参数修改改用安全热重载；协议增删仍保留完整停启，避免遗漏 nginx、Argo、服务文件和防火墙联动。
 - OpenRC 服务增加标准 `reload()`；systemd 继续使用已有的 `ExecReload`。
 - VPS 与 Docker 更新 sing-box 前，先使用新二进制检查现有配置；不兼容时在替换文件或中断服务之前退出。
+- 修复配置文件升级和 Docker 重启时无条件重生成自签证书的问题；SNI 未变化且证书、私钥有效匹配时保留原证书，避免已有 Hysteria2、TUIC、Trojan、AnyTLS 和 Naive 客户端失效。
+- 自定义路由发布前新增出站与 endpoint 引用校验，路由规则或 `route.final` 引用了未定义 tag 时明确失败，不再依赖 sing-box 当前未覆盖该语义的内建检查。
 - Hysteria2 客户端带宽修改不再执行无关的防火墙同步。
 - 新增安全热重载测试，覆盖配置发布失败时禁止发送 HUP，以及主 PID 变化时判定失败。
 - 更新上游评审基线到 `fscarmen/sing-box@fa45859cf2e61f457f31015fa1fa4f31d4d6b159`。
