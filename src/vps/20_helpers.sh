@@ -246,6 +246,22 @@ restart_service_or_warn() {
     { service_action_warn "$_label" "$_service" restart; return 1; }
 }
 
+reload_service_or_fail() {
+  local _label=$1 _service=$2
+  cmd_systemctl reload "$_service" || service_action_failed "$_label" "$_service" reload
+  cmd_systemctl status "$_service" &>/dev/null &&
+    info " ${_label} $(service_action_text reload) $(text 37)" ||
+    service_action_failed "$_label" "$_service" reload
+}
+
+reload_service_or_warn() {
+  local _label=$1 _service=$2
+  cmd_systemctl reload "$_service" || { service_action_warn "$_label" "$_service" reload; return 1; }
+  cmd_systemctl status "$_service" &>/dev/null &&
+    info " ${_label} $(service_action_text reload) $(text 37)" ||
+    { service_action_warn "$_label" "$_service" reload; return 1; }
+}
+
 # 根据 INSTALL_PROTOCOLS 计算安装流程总步骤数
 # sing-box 协议分类：Reality 类 (b/j/k)、Hysteria2(c)、WS 类 (h/i)
 calc_install_steps() {
@@ -1456,7 +1472,6 @@ change_config() {
       warning " $(text 143) "
     done
     sed -i -E "s/(up: \")([0-9]+)( Mbps\")/\1${HY2_UP}\3/g; s/(down: \")([0-9]+)( Mbps\")/\1${HY2_DOWN}\3/g" ${WORK_DIR}/subscribe/proxies
-    sync_firewall_rules
     hint " $(text 112) "
     export_list
     return
@@ -1472,7 +1487,7 @@ change_config() {
       set_hy2_realm_config enable
     fi
     hint " $(text 112) "
-    restart_service_or_fail Sing-box sing-box
+    reload_service_or_fail Sing-box sing-box
     export_list
     return
   elif [ "$KEY" = "hy2hopping" ]; then
@@ -1567,7 +1582,7 @@ change_config() {
   else
     find ${WORK_DIR} -type f | xargs -P 50 sed -i "s|${OLD}|${NEW_VAL}|g" 2>/dev/null
     if [[ ! "$KEY" =~ ^(fingerprint)$ ]]; then
-      restart_service_or_warn Sing-box sing-box || true
+      reload_service_or_warn Sing-box sing-box || true
     fi
   fi
 
@@ -2193,20 +2208,7 @@ routing_publish() (
 )
 
 routing_reload() {
-  local PID
-  local PIDS=()
-  routing_publish || return 1
-  if [ "$SYSTEM" = 'Alpine' ]; then
-    mapfile -t PIDS < <(pgrep -f "^${WORK_DIR}/sing-box run( |$)")
-    [ "${#PIDS[@]}" -gt 0 ] || return 1
-    for PID in "${PIDS[@]}"; do
-      kill -HUP "$PID" || return 1
-    done
-  else
-    systemctl kill --kill-who=main --signal=HUP sing-box || return 1
-  fi
-  sleep 2
-  cmd_systemctl status sing-box >/dev/null 2>&1
+  cmd_systemctl reload sing-box
 }
 
 # 更新 Hysteria2 服务端 Realm 模块

@@ -322,6 +322,13 @@ docker_update_sing_box() {
 Architecture: ${SING_BOX_ARCH:-unknown}
 Expected file: ${SB_BIN}"
 
+  local CHECK_OUTPUT
+  CHECK_OUTPUT=$("$SB_BIN" check -C "${WORK_DIR}/conf" 2>&1) ||
+    failure_error " $(text 54) " "Version: ${ONLINE:-unknown}
+Config: ${WORK_DIR}/conf
+Output:
+${CHECK_OUTPUT:-No output}"
+
   cp -f "${WORK_DIR}/sing-box" "$TEMP_DIR/sing-box.bak"
   mv "$SB_BIN" "${WORK_DIR}/sing-box"
   chmod +x "${WORK_DIR}/sing-box"

@@ -637,8 +637,14 @@ depend() {
     [ -n "$PORT_NGINX" ] && OPENRC_SERVICE+="
     need nginx"
 
-    # 添加 start_pre 函数，确保目录存在并设置正确权限
+    # 添加 reload 和 start_pre 函数
     OPENRC_SERVICE+="
+}
+
+reload() {
+    ebegin \"Reloading \${RC_SVCNAME}\"
+    start-stop-daemon --signal HUP --pidfile \$pidfile
+    eend \$? \"Failed to reload \${RC_SVCNAME}\"
 }
 
 start_pre() {

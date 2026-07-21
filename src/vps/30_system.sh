@@ -247,11 +247,27 @@ check_install() {
   fi
 }
 
+# 获取 sing-box 主进程 PID，用于确认 HUP 没有退化成进程重启。
+sing_box_main_pid() {
+  local _service=${1:-sing-box} _pid=''
+  if [ "$SYSTEM" = 'Alpine' ]; then
+    [ -r "/var/run/${_service}.pid" ] && _pid=$(< "/var/run/${_service}.pid")
+    if ! [[ "$_pid" =~ ^[1-9][0-9]*$ ]] || ! kill -0 "$_pid" 2>/dev/null; then
+      _pid=$(pgrep -o -f "^${WORK_DIR}/sing-box run( |$)" 2>/dev/null || true)
+    fi
+  else
+    _pid=$(systemctl show --property MainPID --value "$_service" 2>/dev/null || true)
+  fi
+  [[ "$_pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  printf '%s\n' "$_pid"
+}
+
 # 为了适配 alpine，定义 cmd_systemctl 的函数
 cmd_systemctl() {
   local _action=$1 _service=${2:-systemctl} _log_file _rc=0 _runlevel_rc=0
+  local _main_pid='' _reloaded_pid=''
 
-  if [[ "$_service" = 'sing-box' && "$_action" =~ ^(enable|restart)$ ]]; then
+  if [[ "$_service" = 'sing-box' && "$_action" =~ ^(enable|restart|reload)$ ]]; then
     routing_publish || return 1
   fi
 
@@ -300,6 +316,19 @@ cmd_systemctl() {
         rc-service "$2" restart >> "$_log_file" 2>&1
         return $?
         ;;
+      reload )
+        if [ "$2" != 'sing-box' ]; then
+          rc-service "$2" reload >> "$_log_file" 2>&1
+          return $?
+        fi
+        _main_pid=$(sing_box_main_pid "$2") || return 1
+        kill -HUP "$_main_pid" >> "$_log_file" 2>&1 || return 1
+        sleep 2
+        _reloaded_pid=$(sing_box_main_pid "$2") || return 1
+        [ "$_main_pid" = "$_reloaded_pid" ] || return 1
+        rc-service "$2" status >> "$_log_file" 2>&1
+        return $?
+        ;;
       status )
         rc-service "$2" status
         ;;
@@ -327,6 +356,19 @@ cmd_systemctl() {
           nginx_run || _rc=$?
         fi
         return "$_rc"
+        ;;
+      reload )
+        if [ "$2" != 'sing-box' ]; then
+          systemctl reload "$2" >> "$_log_file" 2>&1
+          return $?
+        fi
+        _main_pid=$(sing_box_main_pid "$2") || return 1
+        systemctl kill --kill-who=main --signal=HUP "$2" >> "$_log_file" 2>&1 || return 1
+        sleep 2
+        _reloaded_pid=$(sing_box_main_pid "$2") || return 1
+        [ "$_main_pid" = "$_reloaded_pid" ] || return 1
+        systemctl is-active "$2" >> "$_log_file" 2>&1
+        return $?
         ;;
       status )
         systemctl is-active "$2"

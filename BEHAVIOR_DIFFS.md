@@ -1,11 +1,11 @@
 # 与上游的行为差异
 
-本次 review 基线，日期：2026-07-16。
+本次 review 基线，日期：2026-07-21。
 
-- 上游：`fscarmen/sing-box@4f29ea5c92707716fe5f0dfcccac12c5b5d63407`
+- 上游：`fscarmen/sing-box@fa45859cf2e61f457f31015fa1fa4f31d4d6b159`
 - 下游：`qqqasdwx/sing-box@main`
 
-本次 review 已选择性移植上游 `4f29ea5` 中适用于本仓库的变化。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
+截至当前 review 基线，已选择性移植上游中适用于本仓库的变化。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
 
 ## Review 结果
 
@@ -14,6 +14,8 @@
 - 本仓库完全移除内置 WARP endpoint、宿主机 WARP 检测/状态显示，以及 OpenAI、Hysteria2 和 `sb -d` 的 WARP 专用逻辑；Hysteria2 Realm/STUN 与通用自定义出站能力保留。
 - 本次 review 选择性移植上游 `4f29ea5` 的 v2rayN Hysteria2 Realm 格式更新，改用 `ProtoExtraObj.Hy2RealmUrl`；上游实现遗漏了 `Ports` 和 `HopInterval`，本仓库保留这两个端口跳跃字段并增加组合测试。
 - 本次 review 不移植上游的 `BIND_INTERFACE` 菜单；需要绑定网卡时可直接在 `custom/04_outbounds.json` 中设置 sing-box 的 `bind_interface`。上游同时把示例变量误改为脚本不读取的 `PORT_HOPPING_RANGE`，本仓库继续使用 `HY2_PORT_HOPPING_RANGE`。
+- 本次 review 选择性移植上游 `fa45859` 的 SIGHUP 热重载和新二进制配置预检。VPS 复用现有候选配置检查，在发送 HUP 后确认主 PID 未变化且服务仍存活；Docker 只移植更新前预检，配置生效方式仍为重启容器。
+- 上游把协议增删也直接改为 HUP，但该流程同时修改服务文件、nginx、Argo 和防火墙。本仓库暂时保留协议增删的完整停启，只让端口和单项节点参数修改使用安全热重载。
 - 早前 review 已移植上游 `6bb22b3`、`53ce0dc`、`5dfd0cd` 和 `3dfbec4`，包括客户端 TLS 指纹、部分导出配置热更新、服务端 IP 修改修复、协议变更 UUID 保留、Hysteria2 Realm UX、v2rayN Realm 订阅支持、端口跳跃目标解析和 Hysteria2 sing-box JSON 输出修复。
 - 早前 review 已移植上游 `803cfa7` 与 `2ca9504`，包括 `nginx.conf` UUID 提取修复、Throne 订阅输出、客户端订阅 TLS 安全参数调整和 V2rayN Trojan 输出改进。
 - 早前 review 发现并修复了两个迁移问题：
@@ -32,6 +34,7 @@
 | 协议端口 | 主要通过 `START_PORT` 按所选协议顺序连续分配端口。 | 支持 `PORT_XTLS_REALITY`、`PORT_HYSTERIA2` 等单协议端口；未设置时仍按 `START_PORT` 顺序使用默认端口。 | 保留上游默认行为，同时允许 Docker 或配置文件固定某个协议的公开端口。 |
 | 客户端 TLS 指纹 | 通过已安装后的 `sb -d` 菜单修改导出订阅里的客户端 TLS fingerprint。 | 保留菜单修改，并额外支持 `FINGER_PRINT` 配置文件变量和 Docker 环境变量；默认值同上游为 `chrome`。 | Docker 没有交互菜单，配置化可以让 VPS 和 Docker 的订阅输出保持一致。 |
 | 自定义路由与出站 | 路由和出站由安装脚本直接生成在 sing-box 的配置目录，自定义 WARP 规则另存一份配置。 | `custom/03_route.json` 和 `custom/04_outbounds.json` 是唯一源文件；完整检查成功后合并发布到 `conf/03_routing.json`。VPS 使用 `sb check/reload`，Docker 在启动时发布。 | 避免基本路由与附加规则存在多个来源，同时保证错误配置不会覆盖最后一次可运行版本。 |
+| 服务配置热重载 | 配置修改后直接发送 HUP；信号发送成功即报告完成，协议增删也不再停启。 | VPS 先发布并检查完整配置，再只向主 PID 发送 HUP，并验证 PID 与服务状态；协议增删继续完整停启。Docker 仍通过容器重启应用配置。 | 避免无效配置触发 reload，并保留 nginx、Argo、服务文件和防火墙的跨组件生命周期。 |
 | 出站网卡绑定 | `sb -d` 枚举当前网卡并直接修改生成的 `conf/01_outbounds.json`。 | 不提供专用菜单；高级用户可在 `custom/04_outbounds.json` 的具体出站中设置 `bind_interface`。 | 网卡绑定不能区分同一接口上的多个地址，容器内外看到的接口也不同；配置应继续遵守 `custom/` 唯一源和检查发布流程。 |
 | 内置 WARP | 默认生成 `warp-ep`，OpenAI 检测失败时自动使用，另有 Hysteria2 和 `sb -d` WARP 路由入口。 | 不生成 WARP endpoint，并删除所有 WARP 专用入口；旧引用在升级时清理。 | 项目没有足够明确、普适的场景需要默认携带或管理 WARP。 |
 | Docker 镜像仓库 | Action 使用 Docker Hub secrets 推送到 Docker Hub。 | Action 使用 `GITHUB_TOKEN` 推送到 `ghcr.io/qqqasdwx/sing-box:latest`。 | 不再依赖 Docker Hub 凭据，镜像发布留在 GitHub Packages。 |

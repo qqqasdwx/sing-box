@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.16 (2026.07.16)'
+VERSION='v1.3.17 (2026.07.21)'
 
 # Github 反代加速代理
 GITHUB_PROXY=('https://hub.glowp.xyz/' 'https://proxy.vvvv.ee/')
@@ -46,8 +46,8 @@ trap 'cleanup_temp; printf "\n"; exit 1' INT QUIT TERM
 mkdir -p "$TEMP_DIR"
 E[0]="Language:\n 1. English (default) \n 2. 简体中文"
 C[0]="${E[0]}"
-E[1]="Updated v2rayN Hysteria2 Realm subscriptions to ProtoExtraObj.Hy2RealmUrl while preserving port hopping settings"
-C[1]="v2rayN Hysteria2 Realm 订阅改用 ProtoExtraObj.Hy2RealmUrl，并保留端口跳跃设置"
+E[1]="Added validated SIGHUP reloads and pre-upgrade configuration checks"
+C[1]="新增经过完整配置检查的 SIGHUP 热重载和升级前兼容性检查"
 E[2]="Downloading Sing-box. Please wait a seconds ..."
 C[2]="下载 Sing-box 中，请稍等 ..."
 E[3]="Input errors up to 5 times.The script is aborted."
@@ -150,8 +150,8 @@ E[52]="Please set the ip \[\${WS_SERVER_IP_SHOW}] to domain \[\${TYPE_HOST_DOMAI
 C[52]="请在 Cloudflare 绑定 \[\${WS_SERVER_IP_SHOW}] 的域名为 \[\${TYPE_HOST_DOMAIN}], 并设置 origin rule 为 \[\${TYPE_PORT_WS}]"
 E[53]="Please select or enter the preferred address (domain / IPv4 / [IPv6], optional :port), the default is \${CDN_DOMAIN[0]}:"
 C[53]="请选择或者填入优选地址（域名 / IPv4 / [IPv6]，可选 :端口），默认为 \${CDN_DOMAIN[0]}:"
-E[54]=""
-C[54]=""
+E[54]="Configuration check failed. The new sing-box version is incompatible with the current config; upgrade aborted."
+C[54]="配置检查失败，新版 sing-box 与当前配置不兼容，升级已中止。"
 E[55]="The script runs today: \$TODAY. Total: \$TOTAL"
 C[55]="脚本当天运行次数: \$TODAY，累计运行次数: \$TOTAL"
 E[56]="Process ID"
@@ -266,8 +266,8 @@ E[110]="No CDN protocol is currently in use"
 C[110]="当前没有使用 CDN 的协议"
 E[111]="Please select or enter a new CDN (press Enter to keep the current one):"
 C[111]="请选择或输入新的 CDN (回车保持当前值):"
-E[112]="Change complete, restarting service..."
-C[112]="修改完成，正在重启服务..."
+E[112]="Change complete"
+C[112]="修改完成"
 E[113]="Failed to change CDN, using random privateKey"
 C[113]="privateKey 格式失败次数过多，已使用随机私钥"
 E[114]="Invalid privateKey format: expected a 43-character base64url-encoded string."
@@ -604,6 +604,22 @@ restart_service_or_warn() {
   cmd_systemctl status "$_service" &>/dev/null &&
     info " ${_label} $(service_action_text restart) $(text 37)" ||
     { service_action_warn "$_label" "$_service" restart; return 1; }
+}
+
+reload_service_or_fail() {
+  local _label=$1 _service=$2
+  cmd_systemctl reload "$_service" || service_action_failed "$_label" "$_service" reload
+  cmd_systemctl status "$_service" &>/dev/null &&
+    info " ${_label} $(service_action_text reload) $(text 37)" ||
+    service_action_failed "$_label" "$_service" reload
+}
+
+reload_service_or_warn() {
+  local _label=$1 _service=$2
+  cmd_systemctl reload "$_service" || { service_action_warn "$_label" "$_service" reload; return 1; }
+  cmd_systemctl status "$_service" &>/dev/null &&
+    info " ${_label} $(service_action_text reload) $(text 37)" ||
+    { service_action_warn "$_label" "$_service" reload; return 1; }
 }
 
 # 根据 INSTALL_PROTOCOLS 计算安装流程总步骤数
@@ -1816,7 +1832,6 @@ change_config() {
       warning " $(text 143) "
     done
     sed -i -E "s/(up: \")([0-9]+)( Mbps\")/\1${HY2_UP}\3/g; s/(down: \")([0-9]+)( Mbps\")/\1${HY2_DOWN}\3/g" ${WORK_DIR}/subscribe/proxies
-    sync_firewall_rules
     hint " $(text 112) "
     export_list
     return
@@ -1832,7 +1847,7 @@ change_config() {
       set_hy2_realm_config enable
     fi
     hint " $(text 112) "
-    restart_service_or_fail Sing-box sing-box
+    reload_service_or_fail Sing-box sing-box
     export_list
     return
   elif [ "$KEY" = "hy2hopping" ]; then
@@ -1927,7 +1942,7 @@ change_config() {
   else
     find ${WORK_DIR} -type f | xargs -P 50 sed -i "s|${OLD}|${NEW_VAL}|g" 2>/dev/null
     if [[ ! "$KEY" =~ ^(fingerprint)$ ]]; then
-      restart_service_or_warn Sing-box sing-box || true
+      reload_service_or_warn Sing-box sing-box || true
     fi
   fi
 
@@ -2553,20 +2568,7 @@ routing_publish() (
 )
 
 routing_reload() {
-  local PID
-  local PIDS=()
-  routing_publish || return 1
-  if [ "$SYSTEM" = 'Alpine' ]; then
-    mapfile -t PIDS < <(pgrep -f "^${WORK_DIR}/sing-box run( |$)")
-    [ "${#PIDS[@]}" -gt 0 ] || return 1
-    for PID in "${PIDS[@]}"; do
-      kill -HUP "$PID" || return 1
-    done
-  else
-    systemctl kill --kill-who=main --signal=HUP sing-box || return 1
-  fi
-  sleep 2
-  cmd_systemctl status sing-box >/dev/null 2>&1
+  cmd_systemctl reload sing-box
 }
 
 # 更新 Hysteria2 服务端 Realm 模块
@@ -2981,11 +2983,27 @@ check_install() {
   fi
 }
 
+# 获取 sing-box 主进程 PID，用于确认 HUP 没有退化成进程重启。
+sing_box_main_pid() {
+  local _service=${1:-sing-box} _pid=''
+  if [ "$SYSTEM" = 'Alpine' ]; then
+    [ -r "/var/run/${_service}.pid" ] && _pid=$(< "/var/run/${_service}.pid")
+    if ! [[ "$_pid" =~ ^[1-9][0-9]*$ ]] || ! kill -0 "$_pid" 2>/dev/null; then
+      _pid=$(pgrep -o -f "^${WORK_DIR}/sing-box run( |$)" 2>/dev/null || true)
+    fi
+  else
+    _pid=$(systemctl show --property MainPID --value "$_service" 2>/dev/null || true)
+  fi
+  [[ "$_pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  printf '%s\n' "$_pid"
+}
+
 # 为了适配 alpine，定义 cmd_systemctl 的函数
 cmd_systemctl() {
   local _action=$1 _service=${2:-systemctl} _log_file _rc=0 _runlevel_rc=0
+  local _main_pid='' _reloaded_pid=''
 
-  if [[ "$_service" = 'sing-box' && "$_action" =~ ^(enable|restart)$ ]]; then
+  if [[ "$_service" = 'sing-box' && "$_action" =~ ^(enable|restart|reload)$ ]]; then
     routing_publish || return 1
   fi
 
@@ -3034,6 +3052,19 @@ cmd_systemctl() {
         rc-service "$2" restart >> "$_log_file" 2>&1
         return $?
         ;;
+      reload )
+        if [ "$2" != 'sing-box' ]; then
+          rc-service "$2" reload >> "$_log_file" 2>&1
+          return $?
+        fi
+        _main_pid=$(sing_box_main_pid "$2") || return 1
+        kill -HUP "$_main_pid" >> "$_log_file" 2>&1 || return 1
+        sleep 2
+        _reloaded_pid=$(sing_box_main_pid "$2") || return 1
+        [ "$_main_pid" = "$_reloaded_pid" ] || return 1
+        rc-service "$2" status >> "$_log_file" 2>&1
+        return $?
+        ;;
       status )
         rc-service "$2" status
         ;;
@@ -3061,6 +3092,19 @@ cmd_systemctl() {
           nginx_run || _rc=$?
         fi
         return "$_rc"
+        ;;
+      reload )
+        if [ "$2" != 'sing-box' ]; then
+          systemctl reload "$2" >> "$_log_file" 2>&1
+          return $?
+        fi
+        _main_pid=$(sing_box_main_pid "$2") || return 1
+        systemctl kill --kill-who=main --signal=HUP "$2" >> "$_log_file" 2>&1 || return 1
+        sleep 2
+        _reloaded_pid=$(sing_box_main_pid "$2") || return 1
+        [ "$_main_pid" = "$_reloaded_pid" ] || return 1
+        systemctl is-active "$2" >> "$_log_file" 2>&1
+        return $?
         ;;
       status )
         systemctl is-active "$2"
@@ -5013,8 +5057,14 @@ depend() {
     [ -n "$PORT_NGINX" ] && OPENRC_SERVICE+="
     need nginx"
 
-    # 添加 start_pre 函数，确保目录存在并设置正确权限
+    # 添加 reload 和 start_pre 函数
     OPENRC_SERVICE+="
+}
+
+reload() {
+    ebegin \"Reloading \${RC_SVCNAME}\"
+    start-stop-daemon --signal HUP --pidfile \$pidfile
+    eend \$? \"Failed to reload \${RC_SVCNAME}\"
 }
 
 start_pre() {
@@ -6447,7 +6497,6 @@ change_start_port() {
   done
   [ "$CHANGE_HY2" = true ] && [ -n "$OLD_HOPPING_START" ] && [ -n "$OLD_HOPPING_END" ] && del_port_hopping_nat
 
-  cmd_systemctl disable sing-box || service_action_failed Sing-box sing-box disable
   for _i in "${!NEW_PORTS[@]}"; do
     [ "${NEW_PORTS[_i]}" = "${OLD_PORTS[_i]}" ] && continue
     awk -v new_port="${NEW_PORTS[_i]}" '
@@ -6474,12 +6523,10 @@ change_start_port() {
       "${WORK_DIR}/nginx.conf" | sed -n '1p')
     export_nginx_conf_file
   fi
-  cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
+  reload_service_or_fail Sing-box sing-box
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
   sync_firewall_rules
-  sleep 2
   export_list
-  cmd_systemctl status sing-box &>/dev/null && info " Sing-box $(text 121) $(text 37) " || service_failure_error " Sing-box $(text 121) $(text 38) " sing-box enable
 }
 
 # 增加或删除协议
@@ -6937,7 +6984,7 @@ protocol_status_text() {
   protocol_installed_by_code "$1" && menu_text '已安装' 'installed' || menu_text '未安装' 'not installed'
 }
 
-protocol_restart_export() {
+protocol_reload_export() {
   check_install
   fetch_nodes_value
 
@@ -6948,7 +6995,7 @@ protocol_restart_export() {
 
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
 
-  restart_service_or_warn Sing-box sing-box || true
+  reload_service_or_warn Sing-box sing-box || true
 
   export_list
   menu_pause
@@ -6999,7 +7046,7 @@ protocol_edit_node_name() {
   NEW_TAG="${NEW_NAME} ${NODE_TAG[IDX]}"
   literal_replace_file "$FILE" "$OLD_TAG" "$NEW_TAG"
   [ -s "${CUSTOM_DIR}/03_route.json" ] && literal_replace_file "${CUSTOM_DIR}/03_route.json" "$OLD_TAG" "$NEW_TAG"
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_primary_secret() {
@@ -7035,7 +7082,7 @@ protocol_edit_primary_secret() {
     grep -Fq "\"path\":\"/${OLD_PATH}\"" "$FILE" && literal_replace_file "$FILE" "$OLD_PATH" "$NEW_PATH"
   fi
 
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_reality_key() {
@@ -7057,7 +7104,7 @@ protocol_edit_reality_key() {
   fi
   literal_replace_file "$FILE" "$OLD_PRIVATE" "$NEW_PRIVATE"
   literal_replace_file "$FILE" "$OLD_PUBLIC" "$NEW_PUBLIC"
-  protocol_restart_export
+  protocol_reload_export
 }
 
 menu_edit_tls_server() {
@@ -7067,7 +7114,7 @@ menu_edit_tls_server() {
   ssl_certificate "$NEW_VAL"
   ls ${WORK_DIR}/conf/*_inbounds.json >/dev/null 2>&1 && literal_replace_many "$OLD_VAL" "$NEW_VAL" ${WORK_DIR}/conf/*_inbounds.json
   [ -s "${WORK_DIR}/conf/22_${NODE_TAG[11]}_inbounds.json" ] && ssl_certificate "$NEW_VAL" naive_only
-  protocol_restart_export
+  protocol_reload_export
 }
 
 menu_edit_server_ip() {
@@ -7094,7 +7141,7 @@ protocol_edit_method() {
   fi
   read_new_value "$LABEL" "$OLD_VAL" NEW_VAL || return
   literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_shadowtls_ss_password() {
@@ -7104,7 +7151,7 @@ protocol_edit_shadowtls_ss_password() {
   OLD_VAL="$SHADOWTLS_PASSWORD"
   read_new_value "$(menu_text '请输入 ShadowTLS 底层 Shadowsocks 密码' 'Enter ShadowTLS Shadowsocks password')" "$OLD_VAL" NEW_VAL || return
   replace_json_string_key_file "$FILE" password "$NEW_VAL" 2
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_tuic_password() {
@@ -7114,7 +7161,7 @@ protocol_edit_tuic_password() {
   OLD_VAL="$TUIC_PASSWORD"
   read_new_value "$(menu_text '请输入新的 Tuic 密码' 'Enter new Tuic password')" "$OLD_VAL" NEW_VAL || return
   replace_json_string_key_file "$FILE" password "$NEW_VAL"
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_tuic_congestion() {
@@ -7124,7 +7171,7 @@ protocol_edit_tuic_congestion() {
   OLD_VAL="${TUIC_CONGESTION_CONTROL:-bbr}"
   read_new_value "$(menu_text '请输入 Tuic 拥塞控制算法，例如 bbr/cubic/new_reno' 'Enter Tuic congestion control, e.g. bbr/cubic/new_reno')" "$OLD_VAL" NEW_VAL || return
   literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_hy2_bandwidth() {
@@ -7155,7 +7202,7 @@ protocol_toggle_hy2_realm() {
     HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
     set_hy2_realm_config enable
   fi
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_hy2_realm_id() {
@@ -7166,7 +7213,7 @@ protocol_edit_hy2_realm_id() {
   OLD_VAL="${HY2_REALM_ID:-${UUID[12]}}"
   read_new_value "$(menu_text '请输入 Hysteria2 Realm ID' 'Enter Hysteria2 Realm ID')" "$OLD_VAL" NEW_VAL || return
   literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_hy2_hopping() {
@@ -7216,7 +7263,7 @@ protocol_edit_ws_path() {
   NEW_VAL="${NEW_VAL#/}"
   [ -n "$NEW_VAL" ] || error " $(text 36) "
   literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_ws_cdn() {
@@ -7232,7 +7279,7 @@ protocol_edit_ws_cdn() {
   parse_host_port "$NEW_INPUT" "$OLD_PORT" || error " $(text 36) "
   literal_replace_file "$FILE" "\"CDN\": \"${OLD_HOST}\"" "\"CDN\": \"${PARSED_HOST}\""
   literal_replace_file "$FILE" "\"CDN_PORT\": \"${OLD_PORT}\"" "\"CDN_PORT\": \"${PARSED_PORT}\""
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_ws_cdn_port() {
@@ -7245,7 +7292,7 @@ protocol_edit_ws_cdn_port() {
   read_new_value "$(menu_text '请输入新的客户端 CDN 端口' 'Enter new client CDN port')" "$OLD_VAL" NEW_VAL || return
   [[ "$NEW_VAL" =~ ^[1-9][0-9]{0,4}$ && "$NEW_VAL" -le 65535 ]] || error " $(text 36) "
   literal_replace_file "$FILE" "\"CDN_PORT\": \"${OLD_VAL}\"" "\"CDN_PORT\": \"${NEW_VAL}\""
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_ws_domain() {
@@ -7259,7 +7306,7 @@ protocol_edit_ws_domain() {
   [ "$CODE" = h ] && OLD_VAL="$VMESS_HOST_DOMAIN" || OLD_VAL="$VLESS_HOST_DOMAIN"
   read_new_value "$(menu_text '请输入新的 WS Host 域名' 'Enter new WS Host domain')" "$OLD_VAL" NEW_VAL || return
   literal_replace_file "$FILE" "$OLD_VAL" "$NEW_VAL"
-  protocol_restart_export
+  protocol_reload_export
 }
 
 protocol_edit_ws_origin_ip() {
@@ -7270,7 +7317,7 @@ protocol_edit_ws_origin_ip() {
   OLD_VAL="${WS_SERVER_IP[NODE_IDX]}"
   read_new_value "$(menu_text '请输入新的 WS 源站 IP' 'Enter new WS origin IP')" "$OLD_VAL" NEW_VAL || return
   literal_replace_file "$FILE" "\"WS_SERVER_IP_SHOW\": \"${OLD_VAL}\"" "\"WS_SERVER_IP_SHOW\": \"${NEW_VAL}\""
-  protocol_restart_export
+  protocol_reload_export
 }
 
 edit_nginx_port() {
@@ -7745,7 +7792,15 @@ version() {
     check_system_info
     wget --no-check-certificate --continue ${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz -qO- | tar xz -C $TEMP_DIR sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box
 
-    if [ -s $TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box ]; then
+    local SB_BIN="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box"
+    if [ -s "$SB_BIN" ]; then
+      chmod +x "$SB_BIN"
+      local CHECK_OUTPUT
+      CHECK_OUTPUT=$("$SB_BIN" check -C "${WORK_DIR}/conf" 2>&1) ||
+        failure_error "\n $(text 54) \n" "Version: ${ONLINE:-unknown}
+Config: ${WORK_DIR}/conf
+Output:
+${CHECK_OUTPUT:-No output}"
       cmd_systemctl disable sing-box || service_action_failed Sing-box sing-box disable
 
       # 备份旧版本
@@ -7753,7 +7808,7 @@ version() {
       hint "\n $(text 102) \n"
 
       # 安装新版本
-      chmod +x $TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box && mv $TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box ${WORK_DIR}/sing-box
+      mv "$SB_BIN" ${WORK_DIR}/sing-box
       cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
       sleep 2
 
