@@ -74,6 +74,8 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
 
 协议端口可以逐个覆盖：`PORT_XTLS_REALITY`、`PORT_HYSTERIA2`、`PORT_TUIC`、`PORT_SHADOWTLS`、`PORT_SHADOWSOCKS`、`PORT_TROJAN`、`PORT_VMESS_WS`、`PORT_VLESS_WS`、`PORT_H2_REALITY`、`PORT_GRPC_REALITY`、`PORT_ANYTLS`、`PORT_NAIVE`。未填写的协议继续按 `START_PORT` 和 `CHOOSE_PROTOCOLS` 顺序递增，重复端口会直接报错。除 WebSocket 协议外，这些端口会作为客户端连接端口导出；`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 是源站监听端口，Argo 下是本机内部回源端口，Origin Rules 下是 Cloudflare 回源端口，客户端连接端口由 `CDN_PORT` 决定（默认 VMess WS 为 80，VLESS WS TLS 为 443）。已安装后也可以通过 `sb -d` 的监听端口面板逐个修改。
 
+VPS 上通过菜单修改监听端口、UUID、密码、Reality 参数、SNI、节点名或 Hysteria2 Realm 时，脚本会先对包含自定义路由在内的完整配置执行 `sing-box check`，检查成功后向 sing-box 主进程发送 HUP，并确认 PID 未变化且服务仍在运行。协议增加或删除还会联动服务文件、nginx、Argo 和防火墙，因此继续使用完整停启流程。执行 `sb -v` 更新 sing-box 时，会先用新二进制检查当前配置；不兼容时在替换文件和停止服务之前中止。Docker 更新同样执行新二进制预检，但运行配置仍通过重启容器生效。
+
 节点名称优先级：单协议节点名 > 全局 `NODE_NAME_CONFIRM` > 默认主机名。支持的单协议变量包括 `NODE_NAME_XTLS_REALITY`、`NODE_NAME_HYSTERIA2`、`NODE_NAME_TUIC`、`NODE_NAME_SHADOWTLS`、`NODE_NAME_SHADOWSOCKS`、`NODE_NAME_TROJAN`、`NODE_NAME_VMESS_WS`、`NODE_NAME_VLESS_WS`、`NODE_NAME_H2_REALITY`、`NODE_NAME_GRPC_REALITY`、`NODE_NAME_ANYTLS`、`NODE_NAME_NAIVE`。
 
 ## 自定义出站与路由
@@ -164,6 +166,7 @@ docker run -d --name sing-box --network host --restart unless-stopped \
 tools/bundle.sh
 bash -n sing-box.sh docker_init.sh
 tools/bundle.sh --check
+bash tests/test-safe-reload.sh
 find examples/routing -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty
 ```
 

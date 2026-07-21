@@ -2,6 +2,16 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-07-21
+
+- 选择性移植上游 `fa45859` 的 SIGHUP 热重载：VPS 在完整配置检查成功后只向 sing-box 主进程发送 HUP，并确认 PID 未变化且服务仍在运行。
+- VPS 的监听端口和节点参数修改改用安全热重载；协议增删仍保留完整停启，避免遗漏 nginx、Argo、服务文件和防火墙联动。
+- OpenRC 服务增加标准 `reload()`；systemd 继续使用已有的 `ExecReload`。
+- VPS 与 Docker 更新 sing-box 前，先使用新二进制检查现有配置；不兼容时在替换文件或中断服务之前退出。
+- Hysteria2 客户端带宽修改不再执行无关的防火墙同步。
+- 新增安全热重载测试，覆盖配置发布失败时禁止发送 HUP，以及主 PID 变化时判定失败。
+- 更新上游评审基线到 `fscarmen/sing-box@fa45859cf2e61f457f31015fa1fa4f31d4d6b159`。
+
 ## 2026-07-16
 
 - 选择性移植上游 `4f29ea5`：v2rayN Hysteria2 Realm 订阅改用 `ProtoExtraObj.Hy2RealmUrl`，同时保留 `Ports` 和 `HopInterval` 端口跳跃字段。
