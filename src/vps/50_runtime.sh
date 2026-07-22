@@ -2304,41 +2304,37 @@ version() {
     local SB_BIN="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box"
     if [ -s "$SB_BIN" ]; then
       chmod +x "$SB_BIN"
-      local CHECK_OUTPUT
-      CHECK_OUTPUT=$("$SB_BIN" check -C "${WORK_DIR}/conf" 2>&1) ||
-        failure_error "\n $(text 54) \n" "Version: ${ONLINE:-unknown}
-Config: ${WORK_DIR}/conf
-Output:
-${CHECK_OUTPUT:-No output}"
-      cmd_systemctl disable sing-box || service_action_failed Sing-box sing-box disable
-
-      # 备份旧版本
-      cp ${WORK_DIR}/sing-box ${WORK_DIR}/sing-box.bak
-      hint "\n $(text 102) \n"
-
-      # 安装新版本
-      mv "$SB_BIN" ${WORK_DIR}/sing-box
-      cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
-      sleep 2
-
-      # 检查新版本是否成功运行
-      if cmd_systemctl status sing-box &>/dev/null; then
-        # 新版本运行成功，删除备份
-        rm -f ${WORK_DIR}/sing-box.bak
-        info "\n $(text 103) \n"
-      else
-        # 新版本运行失败，恢复旧版本
-        warning "\n $(text 104) \n"
-        mv ${WORK_DIR}/sing-box.bak ${WORK_DIR}/sing-box
-        cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
-        sleep 2
-
-        if cmd_systemctl status sing-box &>/dev/null; then
-          info "\n $(text 105) \n"
-        else
-          service_failure_error "\n $(text 106) \n" sing-box enable
+      local CHECK_OUTPUT CANDIDATE_OUTPUT CANDIDATE_DIR='' REBUILD_CONFIG
+      if ! CHECK_OUTPUT=$("$SB_BIN" check -C "${WORK_DIR}/conf" 2>&1); then
+        warning "\n $(text 54) \n"
+        CANDIDATE_DIR=$(mktemp -d "${TEMP_DIR}/upgrade-config.XXXXXX") ||
+          failure_error "\n $(text 174) \n" "Unable to create a temporary candidate directory."
+        if ! CANDIDATE_OUTPUT=$(upgrade_prepare_config_candidate "$CANDIDATE_DIR" "$SB_BIN" 2>&1); then
+          failure_error "\n $(text 174) \n" "Version: ${ONLINE:-unknown}
+Current config check:
+${CHECK_OUTPUT:-No output}
+Compatibility rebuild:
+${CANDIDATE_OUTPUT:-No output}"
+        fi
+        reading "\n $(text 173) " REBUILD_CONFIG
+        if [[ ! "${REBUILD_CONFIG,,}" =~ ^(y|yes)$ ]]; then
+          rm -rf "$CANDIDATE_DIR"
+          info "\n $(text 178) \n"
+          return 0
         fi
       fi
+
+      hint "\n $(text 102) \n"
+      local UPGRADE_RC
+      upgrade_install_transaction "$SB_BIN" "$CANDIDATE_DIR"
+      UPGRADE_RC=$?
+      [ -z "$CANDIDATE_DIR" ] || rm -rf "$CANDIDATE_DIR"
+      case "$UPGRADE_RC" in
+        0 ) info "\n $(text 103) \n" ;;
+        1 ) failure_error "\n $(text 175) \n" "$UPGRADE_FAILURE_DETAIL" ;;
+        2 ) warning "\n $(text 176) \n"; [ -z "$UPGRADE_FAILURE_DETAIL" ] || warning "$UPGRADE_FAILURE_DETAIL" ;;
+        * ) failure_error "\n $(text 177) \n" "$UPGRADE_FAILURE_DETAIL" ;;
+      esac
     else
       failure_error "\n $(text 42) " "Version: ${ONLINE:-unknown}
 Architecture: ${SING_BOX_ARCH:-unknown}

@@ -2,7 +2,7 @@
 
 # Docker keeps only container-specific defaults here. Protocol generation,
 # subscriptions, Argo parsing, and node export are shared with the VPS script.
-VERSION='v1.3.18 (2026.07.21)'
+VERSION='v1.3.19 (2026.07.22)'
 
 GH_PROXY=${GH_PROXY:-}
 
@@ -23,7 +23,7 @@ PROTOCOL_LIST=("XTLS + reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "tr
 NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess-ws" "vless-ws-tls" "h2-reality" "grpc-reality" "anytls" "naive")
 CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
 CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org" "cf.090227.xyz")
-DEFAULT_NEWEST_VERSION='1.13.0-rc.4'
+DEFAULT_NEWEST_VERSION='1.14.0-alpha.50'
 FINGER_PRINT_DEFAULT='chrome'
 STEP_NUM=0
 TOTAL_STEPS=''
@@ -40,8 +40,8 @@ trap 'cleanup_temp; printf "\n"; exit 1' INT QUIT TERM
 mkdir -p "$TEMP_DIR"
 E[0]="Language:\n 1. English (default) \n 2. 简体中文"
 C[0]="${E[0]}"
-E[1]="Added validated SIGHUP reloads and pre-upgrade configuration checks"
-C[1]="新增经过完整配置检查的 SIGHUP 热重载和升级前兼容性检查"
+E[1]="Added transactional sing-box upgrades with managed-config compatibility repair"
+C[1]="新增 sing-box 事务升级和托管配置兼容修复"
 E[2]="Downloading Sing-box. Please wait a seconds ..."
 C[2]="下载 Sing-box 中，请稍等 ..."
 E[3]="Input errors up to 5 times.The script is aborted."
@@ -142,8 +142,8 @@ E[52]="Please set the ip \[\${WS_SERVER_IP_SHOW}] to domain \[\${TYPE_HOST_DOMAI
 C[52]="请在 Cloudflare 绑定 \[\${WS_SERVER_IP_SHOW}] 的域名为 \[\${TYPE_HOST_DOMAIN}], 并设置 origin rule 为 \[\${TYPE_PORT_WS}]"
 E[53]="Please select or enter the preferred address (domain / IPv4 / [IPv6], optional :port), the default is \${CDN_DOMAIN[0]}:"
 C[53]="请选择或者填入优选地址（域名 / IPv4 / [IPv6]，可选 :端口），默认为 \${CDN_DOMAIN[0]}:"
-E[54]="Configuration check failed. The new sing-box version is incompatible with the current config; upgrade aborted."
-C[54]="配置检查失败，新版 sing-box 与当前配置不兼容，升级已中止。"
+E[54]="The new sing-box version rejected the current config. Trying a managed-config compatibility rebuild."
+C[54]="新版 sing-box 无法加载当前配置，正在尝试重建项目托管的基础配置。"
 E[56]="Process ID"
 C[56]="进程ID"
 E[57]="Selecting the ws return method:\n 1. Argo (default)\n 2. Origin rules"
@@ -230,10 +230,10 @@ E[100]="Can't get the official latest version. Script exits."
 C[100]="获取不到官方的最新版本，脚本退出!"
 E[101]="The privateKey should be a 43-character base64url encoding; please check."
 C[101]="privateKey 应该是43位的 base64url 编码，请检查"
-E[102]="Backing up old version sing-box to ${WORK_DIR}/sing-box.bak"
-C[102]="已备份旧版本 sing-box 到 ${WORK_DIR}/sing-box.bak"
-E[103]="New version \$ONLINE is running successfully, backup file deleted"
-C[103]="新版本 \$ONLINE 运行成功，已删除备份文件"
+E[102]="Backing up the current sing-box binary and complete runtime configuration"
+C[102]="正在备份当前 sing-box 内核和完整运行配置"
+E[103]="New version \$ONLINE is running successfully; transaction backups were deleted"
+C[103]="新版本 \$ONLINE 运行成功，事务备份已删除"
 E[104]="New version failed to run \$ONLINE, restoring old version \$LOCAL ..."
 C[104]="新版本 \$ONLINE 运行失败，正在恢复旧版本 \$LOCAL ..."
 E[105]="Successfully restored old version \$LOCAL"
@@ -342,6 +342,18 @@ E[171]="Close Realm"
 C[171]="关闭 Realm"
 E[172]="Open Realm"
 C[172]="开启 Realm"
+E[173]="A compatible managed configuration was generated without changing custom/. Apply it and continue upgrading? [y/N]:"
+C[173]="已生成兼容的托管配置，custom/ 未被修改。是否应用并继续升级？[y/N]:"
+E[174]="Automatic compatibility repair failed; upgrade aborted."
+C[174]="自动兼容修复失败，升级已中止。"
+E[175]="The upgrade could not be applied; the existing installation was restored or left unchanged."
+C[175]="升级未能应用，现有安装已恢复或保持不变。"
+E[176]="The new version failed to start; the previous binary and complete configuration were restored."
+C[176]="新版本启动失败，旧内核和完整旧配置已恢复。"
+E[177]="The new version failed and automatic rollback did not restore a working service. Check manually."
+C[177]="新版本失败，自动回滚也未能恢复可运行服务，请手动检查。"
+E[178]="Upgrade canceled; the current binary and configuration were not changed."
+C[178]="升级已取消，当前内核和配置均未修改。"
 # 自定义字体彩色，read 函数
 warning() { echo -e "\033[31m\033[01m$*\033[0m"; }  # 红色
 error() { echo -e "\033[31m\033[01m$*\033[0m" && exit 1; } # 红色
@@ -2420,12 +2432,13 @@ routing_prepare_candidate() {
 
 routing_validate_candidate() {
   local CANDIDATE_DIR=$1
-  [ -x "${WORK_DIR}/sing-box" ] || {
-    printf 'Sing-box binary not found: %s\n' "${WORK_DIR}/sing-box" >&2
+  local SING_BOX_BIN=${2:-"${WORK_DIR}/sing-box"}
+  [ -x "$SING_BOX_BIN" ] || {
+    printf 'Sing-box binary not found: %s\n' "$SING_BOX_BIN" >&2
     return 1
   }
   routing_validate_outbound_references "$CANDIDATE_DIR" || return 1
-  "${WORK_DIR}/sing-box" check -C "$CANDIDATE_DIR"
+  "$SING_BOX_BIN" check -C "$CANDIDATE_DIR"
 }
 
 routing_validate_outbound_references() {
@@ -2515,6 +2528,151 @@ routing_publish() (
 
 routing_reload() {
   cmd_systemctl reload sing-box
+}
+
+upgrade_prepare_config_candidate() {
+  local CANDIDATE_DIR=$1 NEW_BINARY=$2
+
+  managed_base_config_values "${WORK_DIR}/conf"
+  routing_prepare_candidate "$CANDIDATE_DIR" || return 1
+  generate_managed_base_config \
+    "$CANDIDATE_DIR" \
+    "$BASE_LOG_LEVEL" \
+    "$BASE_DNS_PREFER_GO" \
+    "$BASE_DNS_STRATEGY" || return 1
+  routing_validate_candidate "$CANDIDATE_DIR" "$NEW_BINARY"
+}
+
+upgrade_restore_transaction() {
+  local BINARY_BACKUP=$1 CONFIG_BACKUP=$2
+  local RESTORE_FAILED=false
+
+  cmd_systemctl disable sing-box >/dev/null 2>&1 || true
+  if [ -s "$BINARY_BACKUP" ]; then
+    mv -f "$BINARY_BACKUP" "${WORK_DIR}/sing-box" || RESTORE_FAILED=true
+  else
+    RESTORE_FAILED=true
+  fi
+  if [ -d "$CONFIG_BACKUP" ]; then
+    rm -rf "${WORK_DIR}/conf"
+    mv "$CONFIG_BACKUP" "${WORK_DIR}/conf" || RESTORE_FAILED=true
+  else
+    RESTORE_FAILED=true
+  fi
+  [ "$RESTORE_FAILED" = false ] || return 1
+
+  cmd_systemctl enable sing-box >/dev/null 2>&1 || return 1
+  sleep 2
+  cmd_systemctl status sing-box &>/dev/null
+}
+
+upgrade_record_rollback_failure() {
+  local DETAIL
+  DETAIL=$(service_failure_detail sing-box enable)
+  DETAIL=${DETAIL:-"The previous sing-box service did not become active after rollback."}
+  UPGRADE_FAILURE_DETAIL="${UPGRADE_FAILURE_DETAIL}${UPGRADE_FAILURE_DETAIL:+
+}Rollback failure:
+${DETAIL}"
+}
+
+# 将内核和完整运行配置作为一个事务切换；返回 2 表示新版本失败但已成功回滚。
+upgrade_install_transaction() {
+  local NEW_BINARY=$1 CANDIDATE_DIR=${2:-}
+  local SUFFIX="$$.${RANDOM}"
+  local BINARY_BACKUP="${WORK_DIR}/sing-box.upgrade.bak.${SUFFIX}"
+  local CONFIG_BACKUP="${WORK_DIR}/conf.upgrade.bak.${SUFFIX}"
+  local CONFIG_STAGE="${WORK_DIR}/conf.upgrade.new.${SUFFIX}"
+  local STARTED_NEW=false
+
+  UPGRADE_FAILURE_DETAIL=''
+  if [ ! -x "$NEW_BINARY" ] || [ ! -x "${WORK_DIR}/sing-box" ] || [ ! -d "${WORK_DIR}/conf" ]; then
+    UPGRADE_FAILURE_DETAIL="Missing new/current sing-box binary or configuration directory."
+    return 1
+  fi
+  if [ -n "$CANDIDATE_DIR" ] && [ ! -d "$CANDIDATE_DIR" ]; then
+    UPGRADE_FAILURE_DETAIL="Compatible configuration candidate not found: ${CANDIDATE_DIR}."
+    return 1
+  fi
+  if [ -e "$BINARY_BACKUP" ] || [ -e "$CONFIG_BACKUP" ] || [ -e "$CONFIG_STAGE" ]; then
+    UPGRADE_FAILURE_DETAIL="Upgrade transaction path already exists under ${WORK_DIR}."
+    return 1
+  fi
+
+  cp -p "${WORK_DIR}/sing-box" "$BINARY_BACKUP" || {
+    UPGRADE_FAILURE_DETAIL="Unable to back up the current sing-box binary."
+    return 1
+  }
+  if [ -n "$CANDIDATE_DIR" ]; then
+    cp -a "$CANDIDATE_DIR" "$CONFIG_STAGE" || {
+      UPGRADE_FAILURE_DETAIL="Unable to stage the compatible configuration."
+      rm -f "$BINARY_BACKUP"
+      rm -rf "$CONFIG_STAGE"
+      return 1
+    }
+  else
+    cp -a "${WORK_DIR}/conf" "$CONFIG_STAGE" || {
+      UPGRADE_FAILURE_DETAIL="Unable to stage the current configuration."
+      rm -f "$BINARY_BACKUP"
+      rm -rf "$CONFIG_STAGE"
+      return 1
+    }
+  fi
+
+  if ! cmd_systemctl disable sing-box; then
+    UPGRADE_FAILURE_DETAIL=$(service_failure_detail sing-box disable)
+    UPGRADE_FAILURE_DETAIL=${UPGRADE_FAILURE_DETAIL:-"Unable to stop the current sing-box service."}
+    rm -f "$BINARY_BACKUP"
+    rm -rf "$CONFIG_STAGE"
+    return 1
+  fi
+
+  if ! mv "${WORK_DIR}/conf" "$CONFIG_BACKUP"; then
+    UPGRADE_FAILURE_DETAIL="Unable to switch to the staged configuration."
+    rm -f "$BINARY_BACKUP"
+    rm -rf "$CONFIG_STAGE"
+    if cmd_systemctl enable sing-box >/dev/null 2>&1; then
+      sleep 2
+      cmd_systemctl status sing-box &>/dev/null && return 1
+    fi
+    upgrade_record_rollback_failure
+    return 3
+  fi
+  if ! mv "$CONFIG_STAGE" "${WORK_DIR}/conf"; then
+    UPGRADE_FAILURE_DETAIL="Unable to switch to the staged configuration."
+    if ! upgrade_restore_transaction "$BINARY_BACKUP" "$CONFIG_BACKUP"; then
+      upgrade_record_rollback_failure
+      return 3
+    fi
+    rm -rf "$CONFIG_STAGE"
+    return 1
+  fi
+  if ! mv -f "$NEW_BINARY" "${WORK_DIR}/sing-box"; then
+    UPGRADE_FAILURE_DETAIL="Unable to install the new sing-box binary."
+    if ! upgrade_restore_transaction "$BINARY_BACKUP" "$CONFIG_BACKUP"; then
+      upgrade_record_rollback_failure
+      return 3
+    fi
+    return 1
+  fi
+
+  if cmd_systemctl enable sing-box; then
+    STARTED_NEW=true
+    sleep 2
+    cmd_systemctl status sing-box &>/dev/null || STARTED_NEW=false
+  fi
+  if [ "$STARTED_NEW" = true ]; then
+    rm -f "$BINARY_BACKUP"
+    rm -rf "$CONFIG_BACKUP"
+    return 0
+  fi
+
+  UPGRADE_FAILURE_DETAIL=$(service_failure_detail sing-box enable)
+  UPGRADE_FAILURE_DETAIL=${UPGRADE_FAILURE_DETAIL:-"The new sing-box service did not become active."}
+  if upgrade_restore_transaction "$BINARY_BACKUP" "$CONFIG_BACKUP"; then
+    return 2
+  fi
+  upgrade_record_rollback_failure
+  return 3
 }
 
 # 更新 Hysteria2 服务端 Realm 模块
@@ -4563,6 +4721,100 @@ http {
 
   echo "$NGINX_CONF" > ${WORK_DIR}/nginx.conf
 }
+# 读取现有基础配置中需要跨升级保留的用户偏好。
+managed_base_config_values() {
+  local SOURCE_DIR=$1 VALUE
+
+  BASE_LOG_LEVEL=$LOG_LEVEL_DEFAULT
+  if [ -s "${SOURCE_DIR}/00_log.json" ]; then
+    VALUE=$(jq_exec -r '.log.level // empty' "${SOURCE_DIR}/00_log.json" 2>/dev/null || true)
+    case "$VALUE" in
+      trace|debug|info|warn|error|fatal|panic ) BASE_LOG_LEVEL=$VALUE ;;
+    esac
+  fi
+
+  BASE_DNS_STRATEGY=prefer_ipv4
+  BASE_DNS_PREFER_GO=''
+  if [ -s "${SOURCE_DIR}/05_dns.json" ]; then
+    VALUE=$(jq_exec -r '.dns.strategy // empty' "${SOURCE_DIR}/05_dns.json" 2>/dev/null || true)
+    case "$VALUE" in
+      ipv4_only|ipv6_only|prefer_ipv4|prefer_ipv6 ) BASE_DNS_STRATEGY=$VALUE ;;
+    esac
+    VALUE=$(jq_exec -r '
+      ([.dns.servers[]? | select(.type == "local") | .prefer_go?] | .[0]) as $value |
+      if $value == null then empty else $value end
+    ' "${SOURCE_DIR}/05_dns.json" 2>/dev/null || true)
+    case "$VALUE" in
+      true|false ) BASE_DNS_PREFER_GO=$VALUE ;;
+    esac
+  fi
+
+  if [ -z "$BASE_DNS_PREFER_GO" ]; then
+    if [ "${SYSTEM:-}" != 'Alpine' ] && command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet systemd-resolved; then
+      BASE_DNS_PREFER_GO=false
+    else
+      BASE_DNS_PREFER_GO=true
+    fi
+  fi
+}
+
+# 只生成由本项目管理的基础配置；custom/ 路由和协议入站不在此处修改。
+generate_managed_base_config() {
+  local TARGET_DIR=$1
+  local BASE_LOG_LEVEL=${2:-$LOG_LEVEL_DEFAULT}
+  local BASE_DNS_PREFER_GO=${3:-true}
+  local BASE_DNS_STRATEGY=${4:-prefer_ipv4}
+
+  mkdir -p "$TARGET_DIR"
+  rm -f "${TARGET_DIR}/06_ntp.json"
+
+  cat > "${TARGET_DIR}/00_log.json" << EOF
+{
+    "log":{
+        "disabled":false,
+        "level":"${BASE_LOG_LEVEL}",
+        "output":"${WORK_DIR}/logs/box.log",
+        "timestamp":true
+    }
+}
+EOF
+
+  cat > "${TARGET_DIR}/04_experimental.json" << EOF
+{
+    "experimental": {
+        "cache_file": {
+            "enabled": true,
+            "path": "${WORK_DIR}/cache.db"
+        }
+    }
+}
+EOF
+
+  cat > "${TARGET_DIR}/05_dns.json" << EOF
+{
+    "dns":{
+        "servers":[
+            {
+                "type":"local",
+                "prefer_go": ${BASE_DNS_PREFER_GO}
+            }
+        ],
+        "strategy": "${BASE_DNS_STRATEGY}"
+    }
+}
+EOF
+
+  cat > "${TARGET_DIR}/07_http_clients.json" << 'EOF'
+{
+    "http_clients": [
+        {
+            "tag": "http-client-direct"
+        }
+    ]
+}
+EOF
+}
+
 # 生成 sing-box 配置文件
 sing-box_json() {
   local IS_CHANGE=$1
@@ -4576,56 +4828,7 @@ sing-box_json() {
     DIR=${WORK_DIR}
   else
     DIR=$TEMP_DIR
-
-    # 生成 log 配置
-    cat > ${WORK_DIR}/conf/00_log.json << EOF
-{
-    "log":{
-        "disabled":false,
-        "level":"${LOG_LEVEL}",
-        "output":"${WORK_DIR}/logs/box.log",
-        "timestamp":true
-    }
-}
-EOF
-
-    # 生成缓存文件
-    cat > ${WORK_DIR}/conf/04_experimental.json << EOF
-{
-    "experimental": {
-        "cache_file": {
-            "enabled": true,
-            "path": "${WORK_DIR}/cache.db"
-        }
-    }
-}
-EOF
-
-    # 生成 dns 配置文件
-    cat > ${WORK_DIR}/conf/05_dns.json << EOF
-{
-    "dns":{
-        "servers":[
-            {
-                "type":"local",
-                "prefer_go": ${IS_PREFER_GO}
-            }
-        ],
-        "strategy": "${STRATEGY}"
-    }
-}
-EOF
-
-    # 专门给 sing-box 内部组件发 HTTP 请求用，比如这些场景会用到它：下载远程 rule_set：.srs 规则文件，ACME 申请证书，Cloudflare Origin CA 证书提供器，DERP / Tailscale 相关 HTTP 请求
-    cat > ${WORK_DIR}/conf/07_http_clients.json << EOF
-{
-    "http_clients": [
-        {
-            "tag": "http-client-direct"
-        }
-    ]
-}
-EOF
+    generate_managed_base_config "${WORK_DIR}/conf" "$LOG_LEVEL" "$IS_PREFER_GO" "$STRATEGY"
   fi
 
   # 生成或规范化 Reality 公私钥，避免空数组元素或无效私钥写入 sing-box 配置。
@@ -7887,41 +8090,37 @@ version() {
     local SB_BIN="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box"
     if [ -s "$SB_BIN" ]; then
       chmod +x "$SB_BIN"
-      local CHECK_OUTPUT
-      CHECK_OUTPUT=$("$SB_BIN" check -C "${WORK_DIR}/conf" 2>&1) ||
-        failure_error "\n $(text 54) \n" "Version: ${ONLINE:-unknown}
-Config: ${WORK_DIR}/conf
-Output:
-${CHECK_OUTPUT:-No output}"
-      cmd_systemctl disable sing-box || service_action_failed Sing-box sing-box disable
-
-      # 备份旧版本
-      cp ${WORK_DIR}/sing-box ${WORK_DIR}/sing-box.bak
-      hint "\n $(text 102) \n"
-
-      # 安装新版本
-      mv "$SB_BIN" ${WORK_DIR}/sing-box
-      cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
-      sleep 2
-
-      # 检查新版本是否成功运行
-      if cmd_systemctl status sing-box &>/dev/null; then
-        # 新版本运行成功，删除备份
-        rm -f ${WORK_DIR}/sing-box.bak
-        info "\n $(text 103) \n"
-      else
-        # 新版本运行失败，恢复旧版本
-        warning "\n $(text 104) \n"
-        mv ${WORK_DIR}/sing-box.bak ${WORK_DIR}/sing-box
-        cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
-        sleep 2
-
-        if cmd_systemctl status sing-box &>/dev/null; then
-          info "\n $(text 105) \n"
-        else
-          service_failure_error "\n $(text 106) \n" sing-box enable
+      local CHECK_OUTPUT CANDIDATE_OUTPUT CANDIDATE_DIR='' REBUILD_CONFIG
+      if ! CHECK_OUTPUT=$("$SB_BIN" check -C "${WORK_DIR}/conf" 2>&1); then
+        warning "\n $(text 54) \n"
+        CANDIDATE_DIR=$(mktemp -d "${TEMP_DIR}/upgrade-config.XXXXXX") ||
+          failure_error "\n $(text 174) \n" "Unable to create a temporary candidate directory."
+        if ! CANDIDATE_OUTPUT=$(upgrade_prepare_config_candidate "$CANDIDATE_DIR" "$SB_BIN" 2>&1); then
+          failure_error "\n $(text 174) \n" "Version: ${ONLINE:-unknown}
+Current config check:
+${CHECK_OUTPUT:-No output}
+Compatibility rebuild:
+${CANDIDATE_OUTPUT:-No output}"
+        fi
+        reading "\n $(text 173) " REBUILD_CONFIG
+        if [[ ! "${REBUILD_CONFIG,,}" =~ ^(y|yes)$ ]]; then
+          rm -rf "$CANDIDATE_DIR"
+          info "\n $(text 178) \n"
+          return 0
         fi
       fi
+
+      hint "\n $(text 102) \n"
+      local UPGRADE_RC
+      upgrade_install_transaction "$SB_BIN" "$CANDIDATE_DIR"
+      UPGRADE_RC=$?
+      [ -z "$CANDIDATE_DIR" ] || rm -rf "$CANDIDATE_DIR"
+      case "$UPGRADE_RC" in
+        0 ) info "\n $(text 103) \n" ;;
+        1 ) failure_error "\n $(text 175) \n" "$UPGRADE_FAILURE_DETAIL" ;;
+        2 ) warning "\n $(text 176) \n"; [ -z "$UPGRADE_FAILURE_DETAIL" ] || warning "$UPGRADE_FAILURE_DETAIL" ;;
+        * ) failure_error "\n $(text 177) \n" "$UPGRADE_FAILURE_DETAIL" ;;
+      esac
     else
       failure_error "\n $(text 42) " "Version: ${ONLINE:-unknown}
 Architecture: ${SING_BOX_ARCH:-unknown}

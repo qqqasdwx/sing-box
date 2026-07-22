@@ -2076,12 +2076,13 @@ routing_prepare_candidate() {
 
 routing_validate_candidate() {
   local CANDIDATE_DIR=$1
-  [ -x "${WORK_DIR}/sing-box" ] || {
-    printf 'Sing-box binary not found: %s\n' "${WORK_DIR}/sing-box" >&2
+  local SING_BOX_BIN=${2:-"${WORK_DIR}/sing-box"}
+  [ -x "$SING_BOX_BIN" ] || {
+    printf 'Sing-box binary not found: %s\n' "$SING_BOX_BIN" >&2
     return 1
   }
   routing_validate_outbound_references "$CANDIDATE_DIR" || return 1
-  "${WORK_DIR}/sing-box" check -C "$CANDIDATE_DIR"
+  "$SING_BOX_BIN" check -C "$CANDIDATE_DIR"
 }
 
 routing_validate_outbound_references() {
@@ -2171,6 +2172,151 @@ routing_publish() (
 
 routing_reload() {
   cmd_systemctl reload sing-box
+}
+
+upgrade_prepare_config_candidate() {
+  local CANDIDATE_DIR=$1 NEW_BINARY=$2
+
+  managed_base_config_values "${WORK_DIR}/conf"
+  routing_prepare_candidate "$CANDIDATE_DIR" || return 1
+  generate_managed_base_config \
+    "$CANDIDATE_DIR" \
+    "$BASE_LOG_LEVEL" \
+    "$BASE_DNS_PREFER_GO" \
+    "$BASE_DNS_STRATEGY" || return 1
+  routing_validate_candidate "$CANDIDATE_DIR" "$NEW_BINARY"
+}
+
+upgrade_restore_transaction() {
+  local BINARY_BACKUP=$1 CONFIG_BACKUP=$2
+  local RESTORE_FAILED=false
+
+  cmd_systemctl disable sing-box >/dev/null 2>&1 || true
+  if [ -s "$BINARY_BACKUP" ]; then
+    mv -f "$BINARY_BACKUP" "${WORK_DIR}/sing-box" || RESTORE_FAILED=true
+  else
+    RESTORE_FAILED=true
+  fi
+  if [ -d "$CONFIG_BACKUP" ]; then
+    rm -rf "${WORK_DIR}/conf"
+    mv "$CONFIG_BACKUP" "${WORK_DIR}/conf" || RESTORE_FAILED=true
+  else
+    RESTORE_FAILED=true
+  fi
+  [ "$RESTORE_FAILED" = false ] || return 1
+
+  cmd_systemctl enable sing-box >/dev/null 2>&1 || return 1
+  sleep 2
+  cmd_systemctl status sing-box &>/dev/null
+}
+
+upgrade_record_rollback_failure() {
+  local DETAIL
+  DETAIL=$(service_failure_detail sing-box enable)
+  DETAIL=${DETAIL:-"The previous sing-box service did not become active after rollback."}
+  UPGRADE_FAILURE_DETAIL="${UPGRADE_FAILURE_DETAIL}${UPGRADE_FAILURE_DETAIL:+
+}Rollback failure:
+${DETAIL}"
+}
+
+# 将内核和完整运行配置作为一个事务切换；返回 2 表示新版本失败但已成功回滚。
+upgrade_install_transaction() {
+  local NEW_BINARY=$1 CANDIDATE_DIR=${2:-}
+  local SUFFIX="$$.${RANDOM}"
+  local BINARY_BACKUP="${WORK_DIR}/sing-box.upgrade.bak.${SUFFIX}"
+  local CONFIG_BACKUP="${WORK_DIR}/conf.upgrade.bak.${SUFFIX}"
+  local CONFIG_STAGE="${WORK_DIR}/conf.upgrade.new.${SUFFIX}"
+  local STARTED_NEW=false
+
+  UPGRADE_FAILURE_DETAIL=''
+  if [ ! -x "$NEW_BINARY" ] || [ ! -x "${WORK_DIR}/sing-box" ] || [ ! -d "${WORK_DIR}/conf" ]; then
+    UPGRADE_FAILURE_DETAIL="Missing new/current sing-box binary or configuration directory."
+    return 1
+  fi
+  if [ -n "$CANDIDATE_DIR" ] && [ ! -d "$CANDIDATE_DIR" ]; then
+    UPGRADE_FAILURE_DETAIL="Compatible configuration candidate not found: ${CANDIDATE_DIR}."
+    return 1
+  fi
+  if [ -e "$BINARY_BACKUP" ] || [ -e "$CONFIG_BACKUP" ] || [ -e "$CONFIG_STAGE" ]; then
+    UPGRADE_FAILURE_DETAIL="Upgrade transaction path already exists under ${WORK_DIR}."
+    return 1
+  fi
+
+  cp -p "${WORK_DIR}/sing-box" "$BINARY_BACKUP" || {
+    UPGRADE_FAILURE_DETAIL="Unable to back up the current sing-box binary."
+    return 1
+  }
+  if [ -n "$CANDIDATE_DIR" ]; then
+    cp -a "$CANDIDATE_DIR" "$CONFIG_STAGE" || {
+      UPGRADE_FAILURE_DETAIL="Unable to stage the compatible configuration."
+      rm -f "$BINARY_BACKUP"
+      rm -rf "$CONFIG_STAGE"
+      return 1
+    }
+  else
+    cp -a "${WORK_DIR}/conf" "$CONFIG_STAGE" || {
+      UPGRADE_FAILURE_DETAIL="Unable to stage the current configuration."
+      rm -f "$BINARY_BACKUP"
+      rm -rf "$CONFIG_STAGE"
+      return 1
+    }
+  fi
+
+  if ! cmd_systemctl disable sing-box; then
+    UPGRADE_FAILURE_DETAIL=$(service_failure_detail sing-box disable)
+    UPGRADE_FAILURE_DETAIL=${UPGRADE_FAILURE_DETAIL:-"Unable to stop the current sing-box service."}
+    rm -f "$BINARY_BACKUP"
+    rm -rf "$CONFIG_STAGE"
+    return 1
+  fi
+
+  if ! mv "${WORK_DIR}/conf" "$CONFIG_BACKUP"; then
+    UPGRADE_FAILURE_DETAIL="Unable to switch to the staged configuration."
+    rm -f "$BINARY_BACKUP"
+    rm -rf "$CONFIG_STAGE"
+    if cmd_systemctl enable sing-box >/dev/null 2>&1; then
+      sleep 2
+      cmd_systemctl status sing-box &>/dev/null && return 1
+    fi
+    upgrade_record_rollback_failure
+    return 3
+  fi
+  if ! mv "$CONFIG_STAGE" "${WORK_DIR}/conf"; then
+    UPGRADE_FAILURE_DETAIL="Unable to switch to the staged configuration."
+    if ! upgrade_restore_transaction "$BINARY_BACKUP" "$CONFIG_BACKUP"; then
+      upgrade_record_rollback_failure
+      return 3
+    fi
+    rm -rf "$CONFIG_STAGE"
+    return 1
+  fi
+  if ! mv -f "$NEW_BINARY" "${WORK_DIR}/sing-box"; then
+    UPGRADE_FAILURE_DETAIL="Unable to install the new sing-box binary."
+    if ! upgrade_restore_transaction "$BINARY_BACKUP" "$CONFIG_BACKUP"; then
+      upgrade_record_rollback_failure
+      return 3
+    fi
+    return 1
+  fi
+
+  if cmd_systemctl enable sing-box; then
+    STARTED_NEW=true
+    sleep 2
+    cmd_systemctl status sing-box &>/dev/null || STARTED_NEW=false
+  fi
+  if [ "$STARTED_NEW" = true ]; then
+    rm -f "$BINARY_BACKUP"
+    rm -rf "$CONFIG_BACKUP"
+    return 0
+  fi
+
+  UPGRADE_FAILURE_DETAIL=$(service_failure_detail sing-box enable)
+  UPGRADE_FAILURE_DETAIL=${UPGRADE_FAILURE_DETAIL:-"The new sing-box service did not become active."}
+  if upgrade_restore_transaction "$BINARY_BACKUP" "$CONFIG_BACKUP"; then
+    return 2
+  fi
+  upgrade_record_rollback_failure
+  return 3
 }
 
 # 更新 Hysteria2 服务端 Realm 模块

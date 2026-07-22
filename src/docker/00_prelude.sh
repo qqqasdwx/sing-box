@@ -2,7 +2,7 @@
 
 # Docker keeps only container-specific defaults here. Protocol generation,
 # subscriptions, Argo parsing, and node export are shared with the VPS script.
-VERSION='v1.3.18 (2026.07.21)'
+VERSION='v1.3.19 (2026.07.22)'
 
 GH_PROXY=${GH_PROXY:-}
 
@@ -23,7 +23,7 @@ PROTOCOL_LIST=("XTLS + reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "tr
 NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess-ws" "vless-ws-tls" "h2-reality" "grpc-reality" "anytls" "naive")
 CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
 CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org" "cf.090227.xyz")
-DEFAULT_NEWEST_VERSION='1.13.0-rc.4'
+DEFAULT_NEWEST_VERSION='1.14.0-alpha.50'
 FINGER_PRINT_DEFAULT='chrome'
 STEP_NUM=0
 TOTAL_STEPS=''

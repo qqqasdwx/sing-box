@@ -1,3 +1,97 @@
+# 读取现有基础配置中需要跨升级保留的用户偏好。
+managed_base_config_values() {
+  local SOURCE_DIR=$1 VALUE
+
+  BASE_LOG_LEVEL=$LOG_LEVEL_DEFAULT
+  if [ -s "${SOURCE_DIR}/00_log.json" ]; then
+    VALUE=$(jq_exec -r '.log.level // empty' "${SOURCE_DIR}/00_log.json" 2>/dev/null || true)
+    case "$VALUE" in
+      trace|debug|info|warn|error|fatal|panic ) BASE_LOG_LEVEL=$VALUE ;;
+    esac
+  fi
+
+  BASE_DNS_STRATEGY=prefer_ipv4
+  BASE_DNS_PREFER_GO=''
+  if [ -s "${SOURCE_DIR}/05_dns.json" ]; then
+    VALUE=$(jq_exec -r '.dns.strategy // empty' "${SOURCE_DIR}/05_dns.json" 2>/dev/null || true)
+    case "$VALUE" in
+      ipv4_only|ipv6_only|prefer_ipv4|prefer_ipv6 ) BASE_DNS_STRATEGY=$VALUE ;;
+    esac
+    VALUE=$(jq_exec -r '
+      ([.dns.servers[]? | select(.type == "local") | .prefer_go?] | .[0]) as $value |
+      if $value == null then empty else $value end
+    ' "${SOURCE_DIR}/05_dns.json" 2>/dev/null || true)
+    case "$VALUE" in
+      true|false ) BASE_DNS_PREFER_GO=$VALUE ;;
+    esac
+  fi
+
+  if [ -z "$BASE_DNS_PREFER_GO" ]; then
+    if [ "${SYSTEM:-}" != 'Alpine' ] && command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet systemd-resolved; then
+      BASE_DNS_PREFER_GO=false
+    else
+      BASE_DNS_PREFER_GO=true
+    fi
+  fi
+}
+
+# 只生成由本项目管理的基础配置；custom/ 路由和协议入站不在此处修改。
+generate_managed_base_config() {
+  local TARGET_DIR=$1
+  local BASE_LOG_LEVEL=${2:-$LOG_LEVEL_DEFAULT}
+  local BASE_DNS_PREFER_GO=${3:-true}
+  local BASE_DNS_STRATEGY=${4:-prefer_ipv4}
+
+  mkdir -p "$TARGET_DIR"
+  rm -f "${TARGET_DIR}/06_ntp.json"
+
+  cat > "${TARGET_DIR}/00_log.json" << EOF
+{
+    "log":{
+        "disabled":false,
+        "level":"${BASE_LOG_LEVEL}",
+        "output":"${WORK_DIR}/logs/box.log",
+        "timestamp":true
+    }
+}
+EOF
+
+  cat > "${TARGET_DIR}/04_experimental.json" << EOF
+{
+    "experimental": {
+        "cache_file": {
+            "enabled": true,
+            "path": "${WORK_DIR}/cache.db"
+        }
+    }
+}
+EOF
+
+  cat > "${TARGET_DIR}/05_dns.json" << EOF
+{
+    "dns":{
+        "servers":[
+            {
+                "type":"local",
+                "prefer_go": ${BASE_DNS_PREFER_GO}
+            }
+        ],
+        "strategy": "${BASE_DNS_STRATEGY}"
+    }
+}
+EOF
+
+  cat > "${TARGET_DIR}/07_http_clients.json" << 'EOF'
+{
+    "http_clients": [
+        {
+            "tag": "http-client-direct"
+        }
+    ]
+}
+EOF
+}
+
 # 生成 sing-box 配置文件
 sing-box_json() {
   local IS_CHANGE=$1
@@ -11,56 +105,7 @@ sing-box_json() {
     DIR=${WORK_DIR}
   else
     DIR=$TEMP_DIR
-
-    # 生成 log 配置
-    cat > ${WORK_DIR}/conf/00_log.json << EOF
-{
-    "log":{
-        "disabled":false,
-        "level":"${LOG_LEVEL}",
-        "output":"${WORK_DIR}/logs/box.log",
-        "timestamp":true
-    }
-}
-EOF
-
-    # 生成缓存文件
-    cat > ${WORK_DIR}/conf/04_experimental.json << EOF
-{
-    "experimental": {
-        "cache_file": {
-            "enabled": true,
-            "path": "${WORK_DIR}/cache.db"
-        }
-    }
-}
-EOF
-
-    # 生成 dns 配置文件
-    cat > ${WORK_DIR}/conf/05_dns.json << EOF
-{
-    "dns":{
-        "servers":[
-            {
-                "type":"local",
-                "prefer_go": ${IS_PREFER_GO}
-            }
-        ],
-        "strategy": "${STRATEGY}"
-    }
-}
-EOF
-
-    # 专门给 sing-box 内部组件发 HTTP 请求用，比如这些场景会用到它：下载远程 rule_set：.srs 规则文件，ACME 申请证书，Cloudflare Origin CA 证书提供器，DERP / Tailscale 相关 HTTP 请求
-    cat > ${WORK_DIR}/conf/07_http_clients.json << EOF
-{
-    "http_clients": [
-        {
-            "tag": "http-client-direct"
-        }
-    ]
-}
-EOF
+    generate_managed_base_config "${WORK_DIR}/conf" "$LOG_LEVEL" "$IS_PREFER_GO" "$STRATEGY"
   fi
 
   # 生成或规范化 Reality 公私钥，避免空数组元素或无效私钥写入 sing-box 配置。
