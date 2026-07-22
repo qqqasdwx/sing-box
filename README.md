@@ -83,7 +83,9 @@ TCP Brutal 不再由本项目代安装。脚本只检测宿主机是否已有 `b
 
 协议端口可以逐个覆盖：`PORT_XTLS_REALITY`、`PORT_HYSTERIA2`、`PORT_TUIC`、`PORT_SHADOWTLS`、`PORT_SHADOWSOCKS`、`PORT_TROJAN`、`PORT_VMESS_WS`、`PORT_VLESS_WS`、`PORT_H2_REALITY`、`PORT_GRPC_REALITY`、`PORT_ANYTLS`、`PORT_NAIVE`。未填写的协议继续按 `START_PORT` 和 `CHOOSE_PROTOCOLS` 顺序递增，重复端口会直接报错。除 WebSocket 协议外，这些端口会作为客户端连接端口导出；`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 是源站监听端口，Argo 下是本机内部回源端口，Origin Rules 下是 Cloudflare 回源端口，客户端连接端口由 `CDN_PORT` 决定（默认 VMess WS 为 80，VLESS WS TLS 为 443）。已安装后也可以通过 `sb -d` 的监听端口面板逐个修改。
 
-VPS 上通过菜单修改监听端口、UUID、密码、Reality 参数、SNI、节点名或 Hysteria2 Realm 时，脚本会先对包含自定义路由在内的完整配置执行 `sing-box check`，检查成功后向 sing-box 主进程发送 HUP，并确认 PID 未变化且服务仍在运行。协议增加或删除还会联动服务文件、nginx、Argo 和防火墙，因此继续使用完整停启流程。执行 `sb -v` 更新 sing-box 时，会先用新二进制检查当前配置；不兼容时在替换文件和停止服务之前中止。Docker 更新同样执行新二进制预检，但运行配置仍通过重启容器生效。
+VPS 上通过菜单修改监听端口、UUID、密码、Reality 参数、SNI、节点名或 Hysteria2 Realm 时，脚本会先对包含自定义路由在内的完整配置执行 `sing-box check`，检查成功后向 sing-box 主进程发送 HUP，并确认 PID 未变化且服务仍在运行。协议增加或删除还会联动服务文件、nginx、Argo 和防火墙，因此继续使用完整停启流程。
+
+执行 `sb -v` 更新 sing-box 时，会先用新二进制检查当前配置。如果新版只是不兼容项目托管的基础配置，脚本会在临时目录重建 `00_log.json`、`04_experimental.json`、`05_dns.json` 和 `07_http_clients.json`，保留日志等级、DNS 策略、协议入站以及 `custom/` 路由和出站，并再次使用新二进制检查。候选配置通过后仍需用户明确确认才会应用。内核与完整 `conf/` 作为同一个事务切换；新服务启动失败时两者一起回滚。协议配置或 `custom/` 本身不兼容时不会自动改写，而是保留当前服务并显示检查错误。Docker 更新同样执行新二进制预检，但运行配置仍通过重启容器生效。
 
 使用 `-f config.conf` 更新时，如果 `TLS_SERVER` 未变化，现有自签证书、私钥和 SNI 有效匹配，脚本会保留原证书固定值；只有 SNI 改变、证书失效或密钥不匹配时才重新生成。这样升级后无需刷新 Hysteria2、TUIC、Trojan、AnyTLS 和 Naive 客户端配置。
 
@@ -210,6 +212,7 @@ bash tests/test-safe-reload.sh
 bash tests/test-local-assets.sh
 bash tests/test-certificate-reuse.sh
 bash tests/test-routing-validation.sh
+bash tests/test-upgrade-transaction.sh
 find examples/routing -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty
 ```
 
