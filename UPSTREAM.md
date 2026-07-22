@@ -5,7 +5,7 @@ This repository is maintained as an independent downstream of:
 - Upstream: https://github.com/fscarmen/sing-box
 - Upstream branch: `main`
 - Tracking branch: `upstream-main`
-- Current tracked commit: `fa45859cf2e61f457f31015fa1fa4f31d4d6b159`
+- Current tracked commit: `56997fdbee6910fcb351f4579131899ea7993ba3`
 - Latest reviewed commit: `56997fdbee6910fcb351f4579131899ea7993ba3`
 - Last reviewed: 2026-07-22
 
