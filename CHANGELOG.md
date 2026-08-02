@@ -2,6 +2,13 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-08-02
+
+- 发布脚本版本更新为 `v1.3.20`。
+- Alpine/OpenRC 的 cloudflared 改由 `supervise-daemon` 监督；进程异常退出后等待 5 秒自动拉起，60 秒内连续失败 10 次后停止重试，避免无效认证持续刷日志。
+- 旧版 Alpine 固定 Tunnel 会在运行脚本时自动迁移并重启，迁移启动失败会恢复原服务文件和运行状态；正在运行的 Quick Tunnel 不会被静默重启，避免 `trycloudflare.com` 域名变化。
+- 修复 Alpine Argo 服务把 `cloudflared tunnel` 整体写入 `command` 的问题，并保证切换 Token、JSON 或 Quick Tunnel 时保留 `tunnel` 子命令。
+
 ## 2026-07-22
 
 - 发布脚本版本更新为 `v1.3.19`。
