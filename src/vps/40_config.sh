@@ -754,22 +754,21 @@ WantedBy=multi-user.target"
   fi
 }
 
-# Argo 生成守护进程文件
-argo_systemd() {
-  if [ "$SYSTEM" = 'Alpine' ]; then
-    # 分离命令和参数
-    local COMMAND="${ARGO_RUNS%% --*}"   # 提取命令部分（包括 cloudflared tunnel）
-    local ARGS="${ARGO_RUNS#$COMMAND }"  # 提取参数部分
+# 生成由 OpenRC supervise-daemon 监督的 Argo 服务文件。
+write_argo_openrc_service() {
+  local COMMAND=$1 ARGS=$2 SERVICE_FILE=$3
 
-    cat > ${ARGO_DAEMON_FILE} << EOF
+  cat > "$SERVICE_FILE" << EOF
 #!/sbin/openrc-run
 
 name="argo"
 description="Cloudflare Tunnel service"
 command="${COMMAND}"
 command_args="${ARGS}"
-pidfile="/var/run/\${RC_SVCNAME}.pid"
-command_background="yes"
+supervisor="supervise-daemon"
+respawn_delay=5
+respawn_max=10
+respawn_period=60
 output_log="${WORK_DIR}/logs/argo.log"
 error_log="${WORK_DIR}/logs/argo.log"
 
@@ -779,16 +778,19 @@ depend() {
 }
 
 start_pre() {
-    # 确保日志目录和PID目录存在并有正确权限
     mkdir -p ${WORK_DIR}/logs
-    mkdir -p /var/run
-    chmod 755 /var/run
-
-    # 确保 PID 文件不存在，避免启动失败
-    rm -f \$pidfile
 }
 EOF
-    chmod +x ${ARGO_DAEMON_FILE}
+  chmod 755 "$SERVICE_FILE"
+}
+
+# Argo 生成守护进程文件
+argo_systemd() {
+  if [ "$SYSTEM" = 'Alpine' ]; then
+    local COMMAND="${ARGO_RUNS%% *}"
+    local ARGS="${ARGO_RUNS#"$COMMAND"}"
+    ARGS="${ARGS# }"
+    write_argo_openrc_service "$COMMAND" "$ARGS" "$ARGO_DAEMON_FILE"
   else
     # 原有的 systemd 服务创建代码
     cat > ${ARGO_DAEMON_FILE} << EOF
@@ -810,6 +812,108 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
   fi
+}
+
+# 将旧版 Alpine Argo 服务迁移到 supervise-daemon。运行中的临时隧道不能
+# 无提示重启，否则 trycloudflare.com 域名会变化。
+migrate_argo_openrc_supervision() {
+  [ "$SYSTEM" = 'Alpine' ] || return 0
+  [ -s "$ARGO_DAEMON_FILE" ] || return 0
+  grep -Fq 'command_background="yes"' "$ARGO_DAEMON_FILE" || return 0
+
+  local LEGACY_COMMAND ARGS COMMAND BACKUP_FILE CANDIDATE_FILE
+  local WAS_RUNNING=false IS_QUICK_TUNNEL=false RESTORE_OK=true
+  LEGACY_COMMAND=$(sed -n 's/^command="\([^"]*\)"/\1/p' "$ARGO_DAEMON_FILE")
+  ARGS=$(sed -n 's/^command_args="\([^"]*\)"/\1/p' "$ARGO_DAEMON_FILE")
+
+  case "$LEGACY_COMMAND" in
+    */cloudflared\ tunnel )
+      COMMAND=${LEGACY_COMMAND% tunnel}
+      ARGS="tunnel${ARGS:+ $ARGS}"
+      ;;
+    */cloudflared )
+      COMMAND=$LEGACY_COMMAND
+      [[ "$ARGS" = 'tunnel' || "$ARGS" = tunnel\ * ]] || return 1
+      ;;
+    * )
+      return 1
+      ;;
+  esac
+
+  rc-service argo status >/dev/null 2>&1 && WAS_RUNNING=true
+  [[ "$ARGS" = *'--url '* ]] && IS_QUICK_TUNNEL=true
+  if [ "$WAS_RUNNING" = true ] && [ "$IS_QUICK_TUNNEL" = true ]; then
+    if [ "${L:-E}" = 'C' ]; then
+      warning "\n Alpine Argo 服务仍使用旧版启动方式。当前是运行中的临时隧道，为避免域名变化，本次不自动重启；停止 Argo 后再次运行脚本即可完成自动恢复迁移。\n"
+    else
+      warning "\n Alpine Argo still uses the legacy service. The running Quick Tunnel was not restarted because its hostname would change. Stop Argo and run the script again to enable automatic recovery.\n"
+    fi
+    return 0
+  fi
+
+  BACKUP_FILE=$(mktemp "${TEMP_DIR}/argo.openrc.backup.XXXXXX") || return 1
+  CANDIDATE_FILE=$(mktemp "${ARGO_DAEMON_FILE%/*}/.argo.supervision.XXXXXX") || {
+    rm -f "$BACKUP_FILE"
+    return 1
+  }
+  cp "$ARGO_DAEMON_FILE" "$BACKUP_FILE" || {
+    rm -f "$BACKUP_FILE" "$CANDIDATE_FILE"
+    return 1
+  }
+  write_argo_openrc_service "$COMMAND" "$ARGS" "$CANDIDATE_FILE" || {
+    rm -f "$BACKUP_FILE" "$CANDIDATE_FILE"
+    return 1
+  }
+
+  if [ "$WAS_RUNNING" = true ] && ! rc-service argo stop >/dev/null 2>&1; then
+    rm -f "$BACKUP_FILE" "$CANDIDATE_FILE"
+    return 1
+  fi
+
+  if ! mv -f "$CANDIDATE_FILE" "$ARGO_DAEMON_FILE"; then
+    [ "$WAS_RUNNING" = false ] || rc-service argo start >/dev/null 2>&1 || true
+    rm -f "$BACKUP_FILE" "$CANDIDATE_FILE"
+    return 1
+  fi
+
+  if [ "$WAS_RUNNING" = true ] &&
+     { ! rc-service argo start >/dev/null 2>&1 || ! rc-service argo status >/dev/null 2>&1; }; then
+    rc-service argo stop >/dev/null 2>&1 || true
+    cp "$BACKUP_FILE" "$ARGO_DAEMON_FILE" || RESTORE_OK=false
+    if [ "$RESTORE_OK" = true ]; then
+      rc-service argo start >/dev/null 2>&1 || RESTORE_OK=false
+    fi
+    rm -f "$BACKUP_FILE"
+    if [ "${L:-E}" = 'C' ]; then
+      [ "$RESTORE_OK" = true ] && warning "\n Alpine Argo 自动恢复迁移失败，已恢复旧服务。\n" || warning "\n Alpine Argo 自动恢复迁移失败，旧服务也未能恢复，请检查 Argo 服务。\n"
+    else
+      [ "$RESTORE_OK" = true ] && warning "\n Failed to migrate Alpine Argo supervision; the legacy service was restored.\n" || warning "\n Failed to migrate Alpine Argo supervision and restore the legacy service. Check the Argo service.\n"
+    fi
+    return 2
+  fi
+
+  rm -f "$BACKUP_FILE"
+  if [ "${L:-E}" = 'C' ]; then
+    info "\n Alpine Argo 已启用进程退出自动恢复。\n"
+  else
+    info "\n Automatic process recovery is now enabled for Alpine Argo.\n"
+  fi
+}
+
+run_argo_openrc_migration() {
+  local MIGRATION_RC
+  migrate_argo_openrc_supervision
+  MIGRATION_RC=$?
+  case "$MIGRATION_RC" in
+    0|2 ) return 0 ;;
+  esac
+
+  if [ "${L:-E}" = 'C' ]; then
+    warning "\n 无法迁移 Alpine Argo 自动恢复服务，现有服务文件保持不变。\n"
+  else
+    warning "\n Unable to migrate Alpine Argo automatic recovery; the existing service file was left unchanged.\n"
+  fi
+  return 0
 }
 
 # 获取原有各协议的参数，先清空所有的 key-value

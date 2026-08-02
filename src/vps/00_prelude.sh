@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.19 (2026.07.22)'
+VERSION='v1.3.20 (2026.08.02)'
 
 # 可选 GitHub URL 前缀；默认直连，不自动选择第三方代理。
 GH_PROXY=${GH_PROXY:-}

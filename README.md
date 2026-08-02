@@ -85,6 +85,8 @@ TCP Brutal 不再由本项目代安装。脚本只检测宿主机是否已有 `b
 
 VPS 上通过菜单修改监听端口、UUID、密码、Reality 参数、SNI、节点名或 Hysteria2 Realm 时，脚本会先对包含自定义路由在内的完整配置执行 `sing-box check`，检查成功后向 sing-box 主进程发送 HUP，并确认 PID 未变化且服务仍在运行。协议增加或删除还会联动服务文件、nginx、Argo 和防火墙，因此继续使用完整停启流程。
 
+Alpine/OpenRC 使用 `supervise-daemon` 监督 cloudflared。进程异常退出后等待 5 秒自动拉起；如果 60 秒内连续失败 10 次则停止重试，避免认证或配置长期无效时持续刷日志。旧版固定 Tunnel 会在再次运行脚本时自动迁移，失败会恢复原服务；正在运行的 Quick Tunnel 不会被自动重启，因为重启会更换 `trycloudflare.com` 域名。需要迁移 Quick Tunnel 时，先停止 Argo，再重新运行脚本，之后再次启动 Argo 并更新客户端域名。
+
 执行 `sb -v` 更新 sing-box 时，会先用新二进制检查当前配置。如果新版只是不兼容项目托管的基础配置，脚本会在临时目录重建 `00_log.json`、`04_experimental.json`、`05_dns.json` 和 `07_http_clients.json`，保留日志等级、DNS 策略、协议入站以及 `custom/` 路由和出站，并再次使用新二进制检查。候选配置通过后仍需用户明确确认才会应用。内核与完整 `conf/` 作为同一个事务切换；新服务启动失败时两者一起回滚。协议配置或 `custom/` 本身不兼容时不会自动改写，而是保留当前服务并显示检查错误。Docker 更新同样执行新二进制预检，但运行配置仍通过重启容器生效。
 
 使用 `-f config.conf` 更新时，如果 `TLS_SERVER` 未变化，现有自签证书、私钥和 SNI 有效匹配，脚本会保留原证书固定值；只有 SNI 改变、证书失效或密钥不匹配时才重新生成。这样升级后无需刷新 Hysteria2、TUIC、Trojan、AnyTLS 和 Naive 客户端配置。
@@ -209,6 +211,7 @@ tools/bundle.sh
 bash -n sing-box.sh docker_init.sh
 tools/bundle.sh --check
 bash tests/test-safe-reload.sh
+bash tests/test-argo-supervision.sh
 bash tests/test-local-assets.sh
 bash tests/test-certificate-reuse.sh
 bash tests/test-routing-validation.sh

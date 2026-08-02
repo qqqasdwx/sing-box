@@ -42,6 +42,7 @@ case "${1:-}" in
     ;;
   reload )
     check_system_info
+    run_argo_openrc_migration
     routing_migrate_legacy || exit 1
     routing_reload && info " Routing configuration published and reloaded. " || exit 1
     exit 0
@@ -50,6 +51,7 @@ esac
 
 select_language
 check_system_info
+run_argo_openrc_migration
 check_brutal
 
 # 可以是 Key Value 或者 Key=Value 的形式。传参时，
