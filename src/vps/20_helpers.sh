@@ -384,6 +384,13 @@ ws_uses_argo() {
   [ "${IS_ARGO:-}" = 'is_argo' ]
 }
 
+argo_is_fixed_tunnel() {
+  case "${ARGO_TYPE:-}" in
+    is_token_argo|is_json_argo|Token|Json ) return 0 ;;
+    * ) return 1 ;;
+  esac
+}
+
 input_uuid() {
   UUID_DEFAULT=$(cat /proc/sys/kernel/random/uuid)
   [[ "$IS_FAST_INSTALL" = 'is_fast_install' || "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' ]] && UUID_CONFIRM=${UUID_CONFIRM:-"$UUID_DEFAULT"}
@@ -1304,11 +1311,11 @@ change_config() {
   fi
 
   # 节点名
-  local NAME_NOW=$(awk '/"tag"/{gsub(/^.*"tag": *"/,""); gsub(/".*/,""); sub(/ [^ ]*$/,""); print; exit}' ${WORK_DIR}/conf/*_inbounds.json)
+  local NAME_NOW=$(awk '/"tag"/{gsub(/^.*"tag": *"/,""); gsub(/".*/,""); sub(/ [^ ]*$/,""); print; exit}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null)
   [ -n "$NAME_NOW" ] && MENU_IDX+=(130) && MENU_KEY+=(name) && MENU_VAL+=("$NAME_NOW")
 
   # UUID / Password
-  local UUID_NOW="$(awk -F'"' '/"uuid"[[:space:]]*:[[:space:]]*"/ || /"id"[[:space:]]*:[[:space:]]*"/ {print $4; exit}' ${WORK_DIR}/conf/*_inbounds.json)"
+  local UUID_NOW="$(awk -F'"' '/"uuid"[[:space:]]*:[[:space:]]*"/ || /"id"[[:space:]]*:[[:space:]]*"/ {print $4; exit}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null)"
   [ -n "$UUID_NOW" ] && MENU_IDX+=(131) && MENU_KEY+=(uuid) && MENU_VAL+=("$UUID_NOW")
 
   # 服务器 IP
@@ -1505,6 +1512,7 @@ change_config() {
   else
     find ${WORK_DIR} -type f | xargs -P 50 sed -i "s|${OLD}|${NEW_VAL}|g" 2>/dev/null
     if [[ ! "$KEY" =~ ^(fingerprint)$ ]]; then
+      [ -s "${WORK_DIR}/nginx.conf" ] && nginx_sync_or_fail
       reload_service_or_warn Sing-box sing-box || true
     fi
   fi
@@ -2480,5 +2488,6 @@ change_argo() {
   # 更新节点信息和配置
   fetch_nodes_value
   export_nginx_conf_file
+  nginx_sync_or_fail
   export_list
 }

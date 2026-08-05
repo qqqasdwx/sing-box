@@ -240,6 +240,85 @@ sing_box_main_pid() {
   printf '%s\n' "$_pid"
 }
 
+nginx_project_pid() {
+  ps -eo pid=,args= | awk -v config="${WORK_DIR}/nginx.conf" '
+    index($0, "nginx: master process") && index($0, "-c " config) {
+      print $1
+      exit
+    }
+  '
+}
+
+nginx_run() {
+  local _action=${1:-reload} _log_file _nginx_bin
+  _log_file=$(service_command_log_file nginx "$_action")
+  : > "$_log_file" 2>/dev/null || true
+  _nginx_bin=$(command -v nginx) || return 1
+  [ -s "${WORK_DIR}/nginx.conf" ] || return 1
+  "$_nginx_bin" -t -c "${WORK_DIR}/nginx.conf" >> "$_log_file" 2>&1 || return 1
+  "$_nginx_bin" -c "${WORK_DIR}/nginx.conf" >> "$_log_file" 2>&1
+}
+
+nginx_reload() {
+  local _action=${1:-reload} _log_file _nginx_bin
+  _log_file=$(service_command_log_file nginx "$_action")
+  : > "$_log_file" 2>/dev/null || true
+  _nginx_bin=$(command -v nginx) || return 1
+  [ -s "${WORK_DIR}/nginx.conf" ] || return 1
+  "$_nginx_bin" -t -c "${WORK_DIR}/nginx.conf" >> "$_log_file" 2>&1 || return 1
+  "$_nginx_bin" -s reload -c "${WORK_DIR}/nginx.conf" >> "$_log_file" 2>&1
+}
+
+nginx_stop() {
+  local _action=${1:-stop} _log_file _pid _current_pid _attempt
+  _log_file=$(service_command_log_file nginx "$_action")
+  : > "$_log_file" 2>/dev/null || true
+  _pid=$(nginx_project_pid || true)
+  [ -n "$_pid" ] || return 0
+
+  if ! kill -QUIT "$_pid" >> "$_log_file" 2>&1; then
+    _current_pid=$(nginx_project_pid || true)
+    [ "$_current_pid" != "$_pid" ] && return 0
+    return 1
+  fi
+  for _attempt in 1 2 3 4 5; do
+    _current_pid=$(nginx_project_pid || true)
+    [ "$_current_pid" != "$_pid" ] && return 0
+    sleep 1
+  done
+
+  if ! kill -TERM "$_pid" >> "$_log_file" 2>&1; then
+    _current_pid=$(nginx_project_pid || true)
+    [ "$_current_pid" != "$_pid" ] && return 0
+    return 1
+  fi
+  sleep 1
+  _current_pid=$(nginx_project_pid || true)
+  [ "$_current_pid" != "$_pid" ] && return 0
+  kill -KILL "$_pid" >> "$_log_file" 2>&1 || {
+    _current_pid=$(nginx_project_pid || true)
+    [ "$_current_pid" != "$_pid" ]
+  }
+}
+
+nginx_sync() {
+  if [ -s "${WORK_DIR}/nginx.conf" ]; then
+    if [ -n "$(nginx_project_pid)" ]; then
+      nginx_reload reload
+    else
+      nginx_run reload
+    fi
+  else
+    nginx_stop stop
+  fi
+}
+
+nginx_sync_or_fail() {
+  local _action=stop
+  [ -s "${WORK_DIR}/nginx.conf" ] && _action=reload
+  nginx_sync || service_action_failed Nginx nginx "$_action"
+}
+
 # 为了适配 alpine，定义 cmd_systemctl 的函数
 cmd_systemctl() {
   local _action=$1 _service=${2:-systemctl} _log_file _rc=0 _runlevel_rc=0
@@ -251,21 +330,6 @@ cmd_systemctl() {
 
   _log_file=$(service_command_log_file "$_service" "$_action")
   : > "$_log_file" 2>/dev/null || true
-
-  nginx_run() {
-    local _nginx_bin
-    _nginx_bin=$(command -v nginx) || return 1
-    "$_nginx_bin" -c "$WORK_DIR/nginx.conf" >> "$_log_file" 2>&1
-  }
-
-  nginx_stop() {
-    local NGINX_PID NGINX_LISTEN_PIDS
-    NGINX_PID=$(ps -eo pid,args | awk -v work_dir="$WORK_DIR" '$0~(work_dir"/nginx.conf"){print $1;exit}')
-    [ -n "$NGINX_PID" ] || return 0
-    NGINX_LISTEN_PIDS=$(ss -nltp | sed -n "/pid=$NGINX_PID,/ s/,/ /gp" | grep -oP 'pid=\K\S+' | sort -u)
-    [ -n "$NGINX_LISTEN_PIDS" ] || return 0
-    xargs kill -9 >> "$_log_file" 2>&1 <<< "$NGINX_LISTEN_PIDS"
-  }
 
   if [ "$SYSTEM" = 'Alpine' ]; then
     case "$1" in
@@ -316,24 +380,11 @@ cmd_systemctl() {
     case "$1" in
       enable | disable )
         systemctl "$1" --now "$2" >> "$_log_file" 2>&1
-        _rc=$?
-        if [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s $WORK_DIR/nginx.conf ]; then
-          if [ "$1" = 'enable' ]; then
-            nginx_run || _rc=$?
-          else
-            nginx_stop || _rc=$?
-          fi
-        fi
-        return "$_rc"
+        return $?
         ;;
       restart )
-        [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s "$WORK_DIR/nginx.conf" ] && nginx_stop
         systemctl restart "$2" >> "$_log_file" 2>&1
-        _rc=$?
-        if [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s "$WORK_DIR/nginx.conf" ]; then
-          nginx_run || _rc=$?
-        fi
-        return "$_rc"
+        return $?
         ;;
       reload )
         if [ "$2" != 'sing-box' ]; then
@@ -1108,49 +1159,6 @@ append_unique_port() {
   ARRAY_REF+=("$PORT")
 }
 
-# 收集当前应该对外开放的普通端口
-collect_exposed_ports() {
-  EXPOSED_TCP_PORTS=()
-  EXPOSED_UDP_PORTS=()
-
-  local FILE BASENAME PORT NGINX_PORT HAS_NGINX=false
-
-  if [ -s "${WORK_DIR}/nginx.conf" ]; then
-    HAS_NGINX=true
-    NGINX_PORT=$(awk '
-      /listen[[:space:]]+[0-9]+[[:space:]]*;/ && $2 !~ /^\[/ {
-        gsub(/;/, "", $2)
-        print $2
-        exit
-      }
-    ' "${WORK_DIR}/nginx.conf")
-    append_unique_port EXPOSED_TCP_PORTS "$NGINX_PORT"
-  fi
-
-  for FILE in ${WORK_DIR}/conf/*_inbounds.json; do
-    [ ! -s "$FILE" ] && continue
-    BASENAME=$(basename "$FILE")
-    PORT=$(awk -F '[:,]' '/"listen_port"/{gsub(/[[:space:]]/, "", $2); print $2; exit}' "$FILE")
-    [ -z "$PORT" ] && continue
-
-    case "$BASENAME" in
-      *hysteria2_inbounds.json|*tuic_inbounds.json )
-        append_unique_port EXPOSED_UDP_PORTS "$PORT"
-        ;;
-      *naive_inbounds.json )
-        append_unique_port EXPOSED_TCP_PORTS "$PORT"
-        append_unique_port EXPOSED_UDP_PORTS "$PORT"
-        ;;
-      *vmess-ws_inbounds.json|*vless-ws-tls_inbounds.json )
-        [ "$HAS_NGINX" = false ] && append_unique_port EXPOSED_TCP_PORTS "$PORT"
-        ;;
-      * )
-        append_unique_port EXPOSED_TCP_PORTS "$PORT"
-        ;;
-    esac
-  done
-}
-
 # UFW 普通端口规则备注
 service_port_ufw_comment() {
   local PROTO=$1
@@ -1167,26 +1175,6 @@ add_service_port_rule_ufw() {
 
   [ -z "$PROTO" ] || [ -z "$PORT" ] && return 1
   ufw allow ${PORT}/${PROTO} comment "$COMMENT" >/dev/null 2>&1
-}
-
-# 删除 UFW 普通端口规则
-del_service_port_rule_ufw() {
-  local PROTO=$1
-  local PORT=$2
-  local COMMENT_PREFIX='Sing-box Family Bucket UFW PORT'
-  local RULE_NUM
-
-  [ -z "$PROTO" ] || [ -z "$PORT" ] && return 0
-
-  ufw --force delete allow ${PORT}/${PROTO} >/dev/null 2>&1 || true
-
-  while read -r RULE_NUM; do
-    [ -n "$RULE_NUM" ] && ufw --force delete "$RULE_NUM" >/dev/null 2>&1 || true
-  done < <(
-    ufw status numbered 2>/dev/null | \
-    grep "$COMMENT_PREFIX ${PROTO} ${PORT}" | \
-    awk -F'[][]' '{print $2}' | sort -rn
-  )
 }
 
 # 清理所有由脚本管理的 UFW 普通端口规则

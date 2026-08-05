@@ -687,9 +687,9 @@ start_pre() {
     mkdir -p /var/run
     chmod 755 /var/run"
 
-    # 如果配置了 Nginx，启动 Nginx
+    # 如果配置了 Nginx，启动 Nginx；已运行时不阻塞 sing-box 启动
     [ -n "$PORT_NGINX" ] && OPENRC_SERVICE+="
-    $(command -v nginx) -c ${WORK_DIR}/nginx.conf"
+    $(command -v nginx) -c ${WORK_DIR}/nginx.conf || true"
 
     OPENRC_SERVICE+="
     # 确保 PID 文件不存在，避免启动失败
@@ -738,7 +738,7 @@ NoNewPrivileges=yes
 TimeoutStartSec=0
 WorkingDirectory=${WORK_DIR}
 "
-    [[ -n "$PORT_NGINX" && "$IS_CENTOS" != 'CentOS7' ]] && SING_BOX_SERVICE+="ExecStartPre=$(command -v nginx) -c ${WORK_DIR}/nginx.conf
+    [[ -n "$PORT_NGINX" ]] && SING_BOX_SERVICE+="ExecStartPre=-$(command -v nginx) -c ${WORK_DIR}/nginx.conf
 "
     SING_BOX_SERVICE+="ExecStart=${WORK_DIR}/sing-box run -C ${WORK_DIR}/conf
 ExecReload=/bin/kill -HUP \$MAINPID
@@ -922,7 +922,7 @@ fetch_nodes_value() {
 
   # 获取公共数据
   ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && SERVER_IP=$(awk -F '"' '/"WS_SERVER_IP_SHOW"/{print $4; exit}' ${WORK_DIR}/conf/*-ws*inbounds.json) || SERVER_IP=$(grep -A1 '"tag"' ${WORK_DIR}/list | sed -E '/-ws(-tls)*",$/{N;d}' | awk -F '"' '/"server"/{count++; if (count == 1) {print $4; exit}}')
-  EXISTED_PORTS=$(awk -F ':|,' '/listen_port/{print $2}' ${WORK_DIR}/conf/*_inbounds.json)
+  EXISTED_PORTS=$(awk -F ':|,' '/listen_port/{print $2}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null)
   START_PORT=$(awk 'NR == 1 { min = $0 } { if ($0 < min) min = $0; count++ } END {print min}' <<< "$EXISTED_PORTS")
   [[ -z "$NODE_NAME_CONFIRM" && -s ${WORK_DIR}/subscribe/clash ]] && NODE_NAME_CONFIRM=$(awk -F "'" '/u: &u/{print $2; exit}' ${WORK_DIR}/subscribe/clash)
   if [ -z "${FINGER_PRINT_EXPLICIT:-}" ]; then

@@ -35,13 +35,16 @@ jobs:
           tools/bundle.sh --check
 
       - name: Check shell syntax
-        run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh tests/test-v2rayn-hy2.sh tests/test-safe-reload.sh tests/test-argo-supervision.sh tests/test-local-assets.sh tests/test-certificate-reuse.sh tests/test-routing-validation.sh tests/test-upgrade-transaction.sh
+        run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh tests/test-v2rayn-hy2.sh tests/test-safe-reload.sh tests/test-nginx-lifecycle.sh tests/test-argo-supervision.sh tests/test-local-assets.sh tests/test-certificate-reuse.sh tests/test-routing-validation.sh tests/test-upgrade-transaction.sh
 
       - name: Test v2rayN Hysteria2 output
         run: bash tests/test-v2rayn-hy2.sh
 
       - name: Test safe reload behavior
         run: bash tests/test-safe-reload.sh
+
+      - name: Test nginx lifecycle synchronization
+        run: bash tests/test-nginx-lifecycle.sh
 
       - name: Test Alpine Argo supervision
         run: bash tests/test-argo-supervision.sh

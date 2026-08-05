@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.20 (2026.08.02)'
+VERSION='v1.3.21 (2026.08.05)'
 
 # 可选 GitHub URL 前缀；默认直连，不自动选择第三方代理。
 GH_PROXY=${GH_PROXY:-}
@@ -739,6 +739,13 @@ ws_host_for() {
 
 ws_uses_argo() {
   [ "${IS_ARGO:-}" = 'is_argo' ]
+}
+
+argo_is_fixed_tunnel() {
+  case "${ARGO_TYPE:-}" in
+    is_token_argo|is_json_argo|Token|Json ) return 0 ;;
+    * ) return 1 ;;
+  esac
 }
 
 input_uuid() {
@@ -1661,11 +1668,11 @@ change_config() {
   fi
 
   # 节点名
-  local NAME_NOW=$(awk '/"tag"/{gsub(/^.*"tag": *"/,""); gsub(/".*/,""); sub(/ [^ ]*$/,""); print; exit}' ${WORK_DIR}/conf/*_inbounds.json)
+  local NAME_NOW=$(awk '/"tag"/{gsub(/^.*"tag": *"/,""); gsub(/".*/,""); sub(/ [^ ]*$/,""); print; exit}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null)
   [ -n "$NAME_NOW" ] && MENU_IDX+=(130) && MENU_KEY+=(name) && MENU_VAL+=("$NAME_NOW")
 
   # UUID / Password
-  local UUID_NOW="$(awk -F'"' '/"uuid"[[:space:]]*:[[:space:]]*"/ || /"id"[[:space:]]*:[[:space:]]*"/ {print $4; exit}' ${WORK_DIR}/conf/*_inbounds.json)"
+  local UUID_NOW="$(awk -F'"' '/"uuid"[[:space:]]*:[[:space:]]*"/ || /"id"[[:space:]]*:[[:space:]]*"/ {print $4; exit}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null)"
   [ -n "$UUID_NOW" ] && MENU_IDX+=(131) && MENU_KEY+=(uuid) && MENU_VAL+=("$UUID_NOW")
 
   # 服务器 IP
@@ -1862,6 +1869,7 @@ change_config() {
   else
     find ${WORK_DIR} -type f | xargs -P 50 sed -i "s|${OLD}|${NEW_VAL}|g" 2>/dev/null
     if [[ ! "$KEY" =~ ^(fingerprint)$ ]]; then
+      [ -s "${WORK_DIR}/nginx.conf" ] && nginx_sync_or_fail
       reload_service_or_warn Sing-box sing-box || true
     fi
   fi
@@ -2837,6 +2845,7 @@ change_argo() {
   # 更新节点信息和配置
   fetch_nodes_value
   export_nginx_conf_file
+  nginx_sync_or_fail
   export_list
 }
 # shellcheck shell=bash
@@ -3279,6 +3288,85 @@ sing_box_main_pid() {
   printf '%s\n' "$_pid"
 }
 
+nginx_project_pid() {
+  ps -eo pid=,args= | awk -v config="${WORK_DIR}/nginx.conf" '
+    index($0, "nginx: master process") && index($0, "-c " config) {
+      print $1
+      exit
+    }
+  '
+}
+
+nginx_run() {
+  local _action=${1:-reload} _log_file _nginx_bin
+  _log_file=$(service_command_log_file nginx "$_action")
+  : > "$_log_file" 2>/dev/null || true
+  _nginx_bin=$(command -v nginx) || return 1
+  [ -s "${WORK_DIR}/nginx.conf" ] || return 1
+  "$_nginx_bin" -t -c "${WORK_DIR}/nginx.conf" >> "$_log_file" 2>&1 || return 1
+  "$_nginx_bin" -c "${WORK_DIR}/nginx.conf" >> "$_log_file" 2>&1
+}
+
+nginx_reload() {
+  local _action=${1:-reload} _log_file _nginx_bin
+  _log_file=$(service_command_log_file nginx "$_action")
+  : > "$_log_file" 2>/dev/null || true
+  _nginx_bin=$(command -v nginx) || return 1
+  [ -s "${WORK_DIR}/nginx.conf" ] || return 1
+  "$_nginx_bin" -t -c "${WORK_DIR}/nginx.conf" >> "$_log_file" 2>&1 || return 1
+  "$_nginx_bin" -s reload -c "${WORK_DIR}/nginx.conf" >> "$_log_file" 2>&1
+}
+
+nginx_stop() {
+  local _action=${1:-stop} _log_file _pid _current_pid _attempt
+  _log_file=$(service_command_log_file nginx "$_action")
+  : > "$_log_file" 2>/dev/null || true
+  _pid=$(nginx_project_pid || true)
+  [ -n "$_pid" ] || return 0
+
+  if ! kill -QUIT "$_pid" >> "$_log_file" 2>&1; then
+    _current_pid=$(nginx_project_pid || true)
+    [ "$_current_pid" != "$_pid" ] && return 0
+    return 1
+  fi
+  for _attempt in 1 2 3 4 5; do
+    _current_pid=$(nginx_project_pid || true)
+    [ "$_current_pid" != "$_pid" ] && return 0
+    sleep 1
+  done
+
+  if ! kill -TERM "$_pid" >> "$_log_file" 2>&1; then
+    _current_pid=$(nginx_project_pid || true)
+    [ "$_current_pid" != "$_pid" ] && return 0
+    return 1
+  fi
+  sleep 1
+  _current_pid=$(nginx_project_pid || true)
+  [ "$_current_pid" != "$_pid" ] && return 0
+  kill -KILL "$_pid" >> "$_log_file" 2>&1 || {
+    _current_pid=$(nginx_project_pid || true)
+    [ "$_current_pid" != "$_pid" ]
+  }
+}
+
+nginx_sync() {
+  if [ -s "${WORK_DIR}/nginx.conf" ]; then
+    if [ -n "$(nginx_project_pid)" ]; then
+      nginx_reload reload
+    else
+      nginx_run reload
+    fi
+  else
+    nginx_stop stop
+  fi
+}
+
+nginx_sync_or_fail() {
+  local _action=stop
+  [ -s "${WORK_DIR}/nginx.conf" ] && _action=reload
+  nginx_sync || service_action_failed Nginx nginx "$_action"
+}
+
 # 为了适配 alpine，定义 cmd_systemctl 的函数
 cmd_systemctl() {
   local _action=$1 _service=${2:-systemctl} _log_file _rc=0 _runlevel_rc=0
@@ -3290,21 +3378,6 @@ cmd_systemctl() {
 
   _log_file=$(service_command_log_file "$_service" "$_action")
   : > "$_log_file" 2>/dev/null || true
-
-  nginx_run() {
-    local _nginx_bin
-    _nginx_bin=$(command -v nginx) || return 1
-    "$_nginx_bin" -c "$WORK_DIR/nginx.conf" >> "$_log_file" 2>&1
-  }
-
-  nginx_stop() {
-    local NGINX_PID NGINX_LISTEN_PIDS
-    NGINX_PID=$(ps -eo pid,args | awk -v work_dir="$WORK_DIR" '$0~(work_dir"/nginx.conf"){print $1;exit}')
-    [ -n "$NGINX_PID" ] || return 0
-    NGINX_LISTEN_PIDS=$(ss -nltp | sed -n "/pid=$NGINX_PID,/ s/,/ /gp" | grep -oP 'pid=\K\S+' | sort -u)
-    [ -n "$NGINX_LISTEN_PIDS" ] || return 0
-    xargs kill -9 >> "$_log_file" 2>&1 <<< "$NGINX_LISTEN_PIDS"
-  }
 
   if [ "$SYSTEM" = 'Alpine' ]; then
     case "$1" in
@@ -3355,24 +3428,11 @@ cmd_systemctl() {
     case "$1" in
       enable | disable )
         systemctl "$1" --now "$2" >> "$_log_file" 2>&1
-        _rc=$?
-        if [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s $WORK_DIR/nginx.conf ]; then
-          if [ "$1" = 'enable' ]; then
-            nginx_run || _rc=$?
-          else
-            nginx_stop || _rc=$?
-          fi
-        fi
-        return "$_rc"
+        return $?
         ;;
       restart )
-        [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s "$WORK_DIR/nginx.conf" ] && nginx_stop
         systemctl restart "$2" >> "$_log_file" 2>&1
-        _rc=$?
-        if [ "$IS_CENTOS" = 'CentOS7' ] && [ "$2" = 'sing-box' ] && [ -s "$WORK_DIR/nginx.conf" ]; then
-          nginx_run || _rc=$?
-        fi
-        return "$_rc"
+        return $?
         ;;
       reload )
         if [ "$2" != 'sing-box' ]; then
@@ -4147,49 +4207,6 @@ append_unique_port() {
   ARRAY_REF+=("$PORT")
 }
 
-# 收集当前应该对外开放的普通端口
-collect_exposed_ports() {
-  EXPOSED_TCP_PORTS=()
-  EXPOSED_UDP_PORTS=()
-
-  local FILE BASENAME PORT NGINX_PORT HAS_NGINX=false
-
-  if [ -s "${WORK_DIR}/nginx.conf" ]; then
-    HAS_NGINX=true
-    NGINX_PORT=$(awk '
-      /listen[[:space:]]+[0-9]+[[:space:]]*;/ && $2 !~ /^\[/ {
-        gsub(/;/, "", $2)
-        print $2
-        exit
-      }
-    ' "${WORK_DIR}/nginx.conf")
-    append_unique_port EXPOSED_TCP_PORTS "$NGINX_PORT"
-  fi
-
-  for FILE in ${WORK_DIR}/conf/*_inbounds.json; do
-    [ ! -s "$FILE" ] && continue
-    BASENAME=$(basename "$FILE")
-    PORT=$(awk -F '[:,]' '/"listen_port"/{gsub(/[[:space:]]/, "", $2); print $2; exit}' "$FILE")
-    [ -z "$PORT" ] && continue
-
-    case "$BASENAME" in
-      *hysteria2_inbounds.json|*tuic_inbounds.json )
-        append_unique_port EXPOSED_UDP_PORTS "$PORT"
-        ;;
-      *naive_inbounds.json )
-        append_unique_port EXPOSED_TCP_PORTS "$PORT"
-        append_unique_port EXPOSED_UDP_PORTS "$PORT"
-        ;;
-      *vmess-ws_inbounds.json|*vless-ws-tls_inbounds.json )
-        [ "$HAS_NGINX" = false ] && append_unique_port EXPOSED_TCP_PORTS "$PORT"
-        ;;
-      * )
-        append_unique_port EXPOSED_TCP_PORTS "$PORT"
-        ;;
-    esac
-  done
-}
-
 # UFW 普通端口规则备注
 service_port_ufw_comment() {
   local PROTO=$1
@@ -4206,26 +4223,6 @@ add_service_port_rule_ufw() {
 
   [ -z "$PROTO" ] || [ -z "$PORT" ] && return 1
   ufw allow ${PORT}/${PROTO} comment "$COMMENT" >/dev/null 2>&1
-}
-
-# 删除 UFW 普通端口规则
-del_service_port_rule_ufw() {
-  local PROTO=$1
-  local PORT=$2
-  local COMMENT_PREFIX='Sing-box Family Bucket UFW PORT'
-  local RULE_NUM
-
-  [ -z "$PROTO" ] || [ -z "$PORT" ] && return 0
-
-  ufw --force delete allow ${PORT}/${PROTO} >/dev/null 2>&1 || true
-
-  while read -r RULE_NUM; do
-    [ -n "$RULE_NUM" ] && ufw --force delete "$RULE_NUM" >/dev/null 2>&1 || true
-  done < <(
-    ufw status numbered 2>/dev/null | \
-    grep "$COMMENT_PREFIX ${PROTO} ${PORT}" | \
-    awk -F'[][]' '{print $2}' | sort -rn
-  )
 }
 
 # 清理所有由脚本管理的 UFW 普通端口规则
@@ -5411,9 +5408,9 @@ start_pre() {
     mkdir -p /var/run
     chmod 755 /var/run"
 
-    # 如果配置了 Nginx，启动 Nginx
+    # 如果配置了 Nginx，启动 Nginx；已运行时不阻塞 sing-box 启动
     [ -n "$PORT_NGINX" ] && OPENRC_SERVICE+="
-    $(command -v nginx) -c ${WORK_DIR}/nginx.conf"
+    $(command -v nginx) -c ${WORK_DIR}/nginx.conf || true"
 
     OPENRC_SERVICE+="
     # 确保 PID 文件不存在，避免启动失败
@@ -5462,7 +5459,7 @@ NoNewPrivileges=yes
 TimeoutStartSec=0
 WorkingDirectory=${WORK_DIR}
 "
-    [[ -n "$PORT_NGINX" && "$IS_CENTOS" != 'CentOS7' ]] && SING_BOX_SERVICE+="ExecStartPre=$(command -v nginx) -c ${WORK_DIR}/nginx.conf
+    [[ -n "$PORT_NGINX" ]] && SING_BOX_SERVICE+="ExecStartPre=-$(command -v nginx) -c ${WORK_DIR}/nginx.conf
 "
     SING_BOX_SERVICE+="ExecStart=${WORK_DIR}/sing-box run -C ${WORK_DIR}/conf
 ExecReload=/bin/kill -HUP \$MAINPID
@@ -5646,7 +5643,7 @@ fetch_nodes_value() {
 
   # 获取公共数据
   ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && SERVER_IP=$(awk -F '"' '/"WS_SERVER_IP_SHOW"/{print $4; exit}' ${WORK_DIR}/conf/*-ws*inbounds.json) || SERVER_IP=$(grep -A1 '"tag"' ${WORK_DIR}/list | sed -E '/-ws(-tls)*",$/{N;d}' | awk -F '"' '/"server"/{count++; if (count == 1) {print $4; exit}}')
-  EXISTED_PORTS=$(awk -F ':|,' '/listen_port/{print $2}' ${WORK_DIR}/conf/*_inbounds.json)
+  EXISTED_PORTS=$(awk -F ':|,' '/listen_port/{print $2}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null)
   START_PORT=$(awk 'NR == 1 { min = $0 } { if ($0 < min) min = $0; count++ } END {print min}' <<< "$EXISTED_PORTS")
   [[ -z "$NODE_NAME_CONFIRM" && -s ${WORK_DIR}/subscribe/clash ]] && NODE_NAME_CONFIRM=$(awk -F "'" '/u: &u/{print $2; exit}' ${WORK_DIR}/subscribe/clash)
   if [ -z "${FINGER_PRINT_EXPLICIT:-}" ]; then
@@ -5944,6 +5941,7 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
 
   # 生成 Nginx 配置文件
   [ -n "$PORT_NGINX" ] && export_nginx_conf_file
+  nginx_sync_or_fail
 
   # 系统启动 sing-box 服务
   cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
@@ -6070,6 +6068,7 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
   [ -n "$ARGO_RUNS" ] && argo_systemd
   [ -n "$ARGO_JSON" ] && cp $TEMP_DIR/tunnel.* ${WORK_DIR}
   [ -n "$PORT_NGINX" ] && export_nginx_conf_file
+  nginx_sync_or_fail
 
   cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
   sleep 2
@@ -6930,6 +6929,7 @@ change_start_port() {
       -e 's#^[[:space:]]*location[[:space:]]+/([^/[:space:]]+)-(vmess|vless).*#\1#p' \
       "${WORK_DIR}/nginx.conf" | sed -n '1p')
     export_nginx_conf_file
+    nginx_sync_or_fail
   fi
   reload_service_or_fail Sing-box sing-box
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
@@ -6946,7 +6946,7 @@ change_protocols() {
   check_system_ip
 
   # 查找已安装的协议，并遍历其在所有协议列表中的名称，获取协议名后存放在 EXISTED_PROTOCOLS; 没有的协议存放在 NOT_EXISTED_PROTOCOLS
-  INSTALLED_PROTOCOLS_LIST=$(awk -F '"' '/"tag":/{print $4}' ${WORK_DIR}/conf/*_inbounds.json | grep -v 'shadowtls-in' | awk '{print $NF}')
+  INSTALLED_PROTOCOLS_LIST=$(awk -F '"' '/"tag":/{print $4}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null | grep -v 'shadowtls-in' | awk '{print $NF}')
   for f in "${!NODE_TAG[@]}"; do
     [[ $INSTALLED_PROTOCOLS_LIST =~ ${NODE_TAG[f]} ]] && EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}") || NOT_EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}")
   done
@@ -7266,12 +7266,6 @@ change_protocols() {
 
   # 关闭防火墙相关端口
 
-  # 生成 Nginx 配置文件
-  [ -n "$PORT_NGINX" ] && export_nginx_conf_file
-
-  # 重新生成 Sing-box 守护进程文件
-  sing-box_systemd
-
   # 生成各协议的 json 文件
   sing-box_json change
 
@@ -7282,13 +7276,25 @@ change_protocols() {
       cmd_systemctl enable argo >/dev/null 2>&1 || service_action_failed Argo argo enable
     fi
   elif [ -s ${ARGO_DAEMON_FILE} ]; then
-    cmd_systemctl disable argo >/dev/null 2>&1 || service_action_failed Argo argo disable
-    rm -f ${ARGO_DAEMON_FILE}
-    [ -s ${WORK_DIR}/tunnel.json ] && rm -f ${WORK_DIR}/tunnel.*
+    # 固定 Tunnel 可继续供订阅或以后新增 WS 使用；Quick Tunnel 随最后一个 WS 删除。
+    if ! argo_is_fixed_tunnel; then
+      cmd_systemctl disable argo >/dev/null 2>&1 || service_action_failed Argo argo disable
+      rm -f ${ARGO_DAEMON_FILE}
+      [ -s ${WORK_DIR}/tunnel.json ] && rm -f ${WORK_DIR}/tunnel.*
+      IS_ARGO=no_argo
+    fi
   fi
 
-  # 如有需要，删除 nginx 配置文件
-  ! ls ${ARGO_DAEMON_FILE} >/dev/null 2>&1 && [[ -s ${WORK_DIR}/nginx.conf && "$IS_SUB" = 'no_sub' ]] && IS_ARGO=no_argo && rm -f ${WORK_DIR}/nginx.conf
+  # 先确定最终 nginx 状态，再生成守护文件，避免残留失效的 ExecStartPre / start_pre。
+  if ! ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && [ "$IS_SUB" = 'no_sub' ]; then
+    rm -f ${WORK_DIR}/nginx.conf
+    unset PORT_NGINX
+  elif [ -n "$PORT_NGINX" ]; then
+    export_nginx_conf_file
+  fi
+
+  sing-box_systemd
+  nginx_sync_or_fail
 
   # 运行 sing-box
   cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
@@ -7399,6 +7405,7 @@ protocol_reload_export() {
   if [ -s "${WORK_DIR}/nginx.conf" ]; then
     [ -z "$PORT_NGINX" ] && PORT_NGINX=$(awk '/listen/{print $2; exit}' "${WORK_DIR}/nginx.conf")
     [ -n "$PORT_NGINX" ] && export_nginx_conf_file
+    nginx_sync_or_fail
   fi
 
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
@@ -7744,6 +7751,7 @@ edit_nginx_port() {
   PORT_NGINX="$NEW_PORT"
   literal_replace_file "$ARGO_DAEMON_FILE" "localhost:${OLD_PORT}" "localhost:${NEW_PORT}"
   export_nginx_conf_file
+  nginx_sync_or_fail
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
   sync_firewall_rules
   restart_service_or_fail Sing-box sing-box
@@ -7755,13 +7763,7 @@ edit_nginx_port() {
 restart_nginx_runtime() {
   command -v nginx >/dev/null 2>&1 || error " Nginx $(text 26) "
   [ -s "${WORK_DIR}/nginx.conf" ] || error " Nginx $(text 26) "
-
-  nginx -s reload -c "${WORK_DIR}/nginx.conf" >/dev/null 2>&1 || {
-    local NGINX_PID
-    NGINX_PID=$(ps -eo pid,args | awk -v work_dir="$WORK_DIR" '$0~(work_dir"/nginx.conf"){print $1;exit}')
-    [ -n "$NGINX_PID" ] && kill "$NGINX_PID" >/dev/null 2>&1 || true
-    nginx -c "${WORK_DIR}/nginx.conf" >/dev/null 2>&1 || service_action_failed Nginx nginx restart
-  }
+  nginx_sync_or_fail
   info " Nginx restart $(text 37)"
   menu_pause
 }
@@ -8165,6 +8167,7 @@ uninstall() {
   if [ -d ${WORK_DIR} ]; then
     [ -s ${ARGO_DAEMON_FILE} ] && cmd_systemctl disable argo &>/dev/null
     [ -s ${SINGBOX_DAEMON_FILE} ] && cmd_systemctl disable sing-box &>/dev/null
+    nginx_stop stop || service_action_failed Nginx nginx stop
     sleep 1
     [[ -s ${WORK_DIR}/nginx.conf && "$(ps -ef | grep -c '[n]ginx')" = 0 ]] && reading "\n $(text 83) " REMOVE_NGINX
     [ "${REMOVE_NGINX,,}" = 'y' ] && ${PACKAGE_UNINSTALL[int]} nginx >/dev/null 2>&1

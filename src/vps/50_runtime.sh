@@ -53,6 +53,7 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
 
   # 生成 Nginx 配置文件
   [ -n "$PORT_NGINX" ] && export_nginx_conf_file
+  nginx_sync_or_fail
 
   # 系统启动 sing-box 服务
   cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
@@ -179,6 +180,7 @@ Architecture: ${SING_BOX_ARCH:-unknown}" "$TEMP_DIR/sing-box" "$TEMP_DIR/sing-bo
   [ -n "$ARGO_RUNS" ] && argo_systemd
   [ -n "$ARGO_JSON" ] && cp $TEMP_DIR/tunnel.* ${WORK_DIR}
   [ -n "$PORT_NGINX" ] && export_nginx_conf_file
+  nginx_sync_or_fail
 
   cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
   sleep 2
@@ -1039,6 +1041,7 @@ change_start_port() {
       -e 's#^[[:space:]]*location[[:space:]]+/([^/[:space:]]+)-(vmess|vless).*#\1#p' \
       "${WORK_DIR}/nginx.conf" | sed -n '1p')
     export_nginx_conf_file
+    nginx_sync_or_fail
   fi
   reload_service_or_fail Sing-box sing-box
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
@@ -1055,7 +1058,7 @@ change_protocols() {
   check_system_ip
 
   # 查找已安装的协议，并遍历其在所有协议列表中的名称，获取协议名后存放在 EXISTED_PROTOCOLS; 没有的协议存放在 NOT_EXISTED_PROTOCOLS
-  INSTALLED_PROTOCOLS_LIST=$(awk -F '"' '/"tag":/{print $4}' ${WORK_DIR}/conf/*_inbounds.json | grep -v 'shadowtls-in' | awk '{print $NF}')
+  INSTALLED_PROTOCOLS_LIST=$(awk -F '"' '/"tag":/{print $4}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null | grep -v 'shadowtls-in' | awk '{print $NF}')
   for f in "${!NODE_TAG[@]}"; do
     [[ $INSTALLED_PROTOCOLS_LIST =~ ${NODE_TAG[f]} ]] && EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}") || NOT_EXISTED_PROTOCOLS+=("${PROTOCOL_LIST[f]}")
   done
@@ -1375,12 +1378,6 @@ change_protocols() {
 
   # 关闭防火墙相关端口
 
-  # 生成 Nginx 配置文件
-  [ -n "$PORT_NGINX" ] && export_nginx_conf_file
-
-  # 重新生成 Sing-box 守护进程文件
-  sing-box_systemd
-
   # 生成各协议的 json 文件
   sing-box_json change
 
@@ -1391,13 +1388,25 @@ change_protocols() {
       cmd_systemctl enable argo >/dev/null 2>&1 || service_action_failed Argo argo enable
     fi
   elif [ -s ${ARGO_DAEMON_FILE} ]; then
-    cmd_systemctl disable argo >/dev/null 2>&1 || service_action_failed Argo argo disable
-    rm -f ${ARGO_DAEMON_FILE}
-    [ -s ${WORK_DIR}/tunnel.json ] && rm -f ${WORK_DIR}/tunnel.*
+    # 固定 Tunnel 可继续供订阅或以后新增 WS 使用；Quick Tunnel 随最后一个 WS 删除。
+    if ! argo_is_fixed_tunnel; then
+      cmd_systemctl disable argo >/dev/null 2>&1 || service_action_failed Argo argo disable
+      rm -f ${ARGO_DAEMON_FILE}
+      [ -s ${WORK_DIR}/tunnel.json ] && rm -f ${WORK_DIR}/tunnel.*
+      IS_ARGO=no_argo
+    fi
   fi
 
-  # 如有需要，删除 nginx 配置文件
-  ! ls ${ARGO_DAEMON_FILE} >/dev/null 2>&1 && [[ -s ${WORK_DIR}/nginx.conf && "$IS_SUB" = 'no_sub' ]] && IS_ARGO=no_argo && rm -f ${WORK_DIR}/nginx.conf
+  # 先确定最终 nginx 状态，再生成守护文件，避免残留失效的 ExecStartPre / start_pre。
+  if ! ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && [ "$IS_SUB" = 'no_sub' ]; then
+    rm -f ${WORK_DIR}/nginx.conf
+    unset PORT_NGINX
+  elif [ -n "$PORT_NGINX" ]; then
+    export_nginx_conf_file
+  fi
+
+  sing-box_systemd
+  nginx_sync_or_fail
 
   # 运行 sing-box
   cmd_systemctl enable sing-box || service_action_failed Sing-box sing-box enable
@@ -1508,6 +1517,7 @@ protocol_reload_export() {
   if [ -s "${WORK_DIR}/nginx.conf" ]; then
     [ -z "$PORT_NGINX" ] && PORT_NGINX=$(awk '/listen/{print $2; exit}' "${WORK_DIR}/nginx.conf")
     [ -n "$PORT_NGINX" ] && export_nginx_conf_file
+    nginx_sync_or_fail
   fi
 
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
@@ -1853,6 +1863,7 @@ edit_nginx_port() {
   PORT_NGINX="$NEW_PORT"
   literal_replace_file "$ARGO_DAEMON_FILE" "localhost:${OLD_PORT}" "localhost:${NEW_PORT}"
   export_nginx_conf_file
+  nginx_sync_or_fail
   [ -s "${WORK_DIR}/tunnel.json" ] && [ -n "$ARGO_DOMAIN" ] && export_argo_json_file "${WORK_DIR}"
   sync_firewall_rules
   restart_service_or_fail Sing-box sing-box
@@ -1864,13 +1875,7 @@ edit_nginx_port() {
 restart_nginx_runtime() {
   command -v nginx >/dev/null 2>&1 || error " Nginx $(text 26) "
   [ -s "${WORK_DIR}/nginx.conf" ] || error " Nginx $(text 26) "
-
-  nginx -s reload -c "${WORK_DIR}/nginx.conf" >/dev/null 2>&1 || {
-    local NGINX_PID
-    NGINX_PID=$(ps -eo pid,args | awk -v work_dir="$WORK_DIR" '$0~(work_dir"/nginx.conf"){print $1;exit}')
-    [ -n "$NGINX_PID" ] && kill "$NGINX_PID" >/dev/null 2>&1 || true
-    nginx -c "${WORK_DIR}/nginx.conf" >/dev/null 2>&1 || service_action_failed Nginx nginx restart
-  }
+  nginx_sync_or_fail
   info " Nginx restart $(text 37)"
   menu_pause
 }
@@ -2274,6 +2279,7 @@ uninstall() {
   if [ -d ${WORK_DIR} ]; then
     [ -s ${ARGO_DAEMON_FILE} ] && cmd_systemctl disable argo &>/dev/null
     [ -s ${SINGBOX_DAEMON_FILE} ] && cmd_systemctl disable sing-box &>/dev/null
+    nginx_stop stop || service_action_failed Nginx nginx stop
     sleep 1
     [[ -s ${WORK_DIR}/nginx.conf && "$(ps -ef | grep -c '[n]ginx')" = 0 ]] && reading "\n $(text 83) " REMOVE_NGINX
     [ "${REMOVE_NGINX,,}" = 'y' ] && ${PACKAGE_UNINSTALL[int]} nginx >/dev/null 2>&1
