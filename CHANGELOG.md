@@ -2,6 +2,16 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-08-05
+
+- 发布脚本版本更新为 `v1.3.21`。
+- VPS 新增统一的 nginx 状态同步：写入配置后先执行 `nginx -t`，再按最终配置启动、热重载或停止项目 nginx；失败时输出命令和配置检查结果，不再静默继续。
+- 协议增删改为先生成最终协议和 nginx 状态，再重建 systemd/OpenRC 服务文件；继续保持完整停启 sing-box，避免残留失效的 `ExecStartPre`、OpenRC `start_pre` 或旧 nginx 监听端口。
+- 修改节点参数、WS 配置、nginx 端口或 Argo 类型后会同步重载 nginx；卸载时会显式停止由本项目配置启动的 nginx。
+- systemd（包括 CentOS 7）统一使用容错的 nginx `ExecStartPre`，Alpine/OpenRC 也允许 nginx 已运行，避免重复启动 nginx 阻塞 sing-box。
+- 删除最后一个 WS 时保留 Token/JSON 固定 Argo Tunnel，Quick Tunnel 仍随 WS 删除；无 WS 且未启用订阅时清理 nginx，但不引入上游的“零协议运行”模式。
+- 清理未使用的防火墙辅助函数，并避免读取不存在的 inbound 通配符时输出无意义错误。
+
 ## 2026-08-02
 
 - 发布脚本版本更新为 `v1.3.20`。
