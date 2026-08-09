@@ -647,6 +647,33 @@ EOF
 }
 EOF
   fi
+
+  # 生成带强制认证的公网 SOCKS5 配置
+  CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
+    [ -z "$PORT_SOCKS5" ] && PORT_SOCKS5=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
+    NODE_NAME[23]=${NODE_NAME[23]:-"$NODE_NAME_CONFIRM"}
+    prepare_socks5_credentials
+
+    cat > ${WORK_DIR}/conf/23_${NODE_TAG[12]}_inbounds.json << EOF
+{
+    "inbounds":[
+        {
+            "type":"socks",
+            "tag":"${NODE_NAME[23]} ${NODE_TAG[12]}",
+            "listen":"::",
+            "listen_port":$PORT_SOCKS5,
+            "users":[
+                {
+                    "username":"${SOCKS5_USERNAME}",
+                    "password":"${SOCKS5_PASSWORD}"
+                }
+            ]
+        }
+    ]
+}
+EOF
+  fi
 }
 
 # Sing-box 生成守护进程文件
@@ -918,7 +945,7 @@ run_argo_openrc_migration() {
 
 # 获取原有各协议的参数，先清空所有的 key-value
 fetch_nodes_value() {
-  unset NODE_NAME PORT_XTLS_REALITY UUID TLS_SERVER REALITY_PRIVATE REALITY_PUBLIC PORT_HYSTERIA2 HY2_REALM_ID IS_HY2_REALM PORT_TUIC TUIC_PASSWORD TUIC_CONGESTION_CONTROL PORT_SHADOWTLS SHADOWTLS_PASSWORD SHADOWSOCKS_METHOD PORT_SHADOWSOCKS PORT_TROJAN TROJAN_PASSWORD PORT_VMESS_WS VMESS_WS_PATH WS_SERVER_IP WS_SERVER_IP_SHOW VMESS_HOST_DOMAIN CDN CDN_PORT PORT_VLESS_WS VLESS_WS_PATH VLESS_HOST_DOMAIN PORT_H2_REALITY PORT_GRPC_REALITY ARGO_DOMAIN PORT_ANYTLS PORT_NAIVE SELF_SIGNED_FINGERPRINT_SHA256 SELF_SIGNED_FINGERPRINT_BASE64
+  unset NODE_NAME PORT_XTLS_REALITY UUID TLS_SERVER REALITY_PRIVATE REALITY_PUBLIC PORT_HYSTERIA2 HY2_REALM_ID IS_HY2_REALM PORT_TUIC TUIC_PASSWORD TUIC_CONGESTION_CONTROL PORT_SHADOWTLS SHADOWTLS_PASSWORD SHADOWSOCKS_METHOD PORT_SHADOWSOCKS PORT_TROJAN TROJAN_PASSWORD PORT_VMESS_WS VMESS_WS_PATH WS_SERVER_IP WS_SERVER_IP_SHOW VMESS_HOST_DOMAIN CDN CDN_PORT PORT_VLESS_WS VLESS_WS_PATH VLESS_HOST_DOMAIN PORT_H2_REALITY PORT_GRPC_REALITY ARGO_DOMAIN PORT_ANYTLS PORT_NAIVE PORT_SOCKS5 SOCKS5_USERNAME SOCKS5_PASSWORD SELF_SIGNED_FINGERPRINT_SHA256 SELF_SIGNED_FINGERPRINT_BASE64
 
   # 获取公共数据
   ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && SERVER_IP=$(awk -F '"' '/"WS_SERVER_IP_SHOW"/{print $4; exit}' ${WORK_DIR}/conf/*-ws*inbounds.json) || SERVER_IP=$(grep -A1 '"tag"' ${WORK_DIR}/list | sed -E '/-ws(-tls)*",$/{N;d}' | awk -F '"' '/"server"/{count++; if (count == 1) {print $4; exit}}')
@@ -1091,6 +1118,16 @@ fetch_nodes_value() {
     NODE_NAME[22]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[11]}.*/\1/p" <<< "$JSON")
     PORT_NAIVE=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
     UUID[22]=$(awk -F '"' '/"username"/{print $4; exit}' <<< "$JSON")
+  fi
+
+  # 获取 SOCKS5 key-value
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[12]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[23]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[12]}.*/\1/p" <<< "$JSON")
+    PORT_SOCKS5=$(json_number_value listen_port <<< "$JSON")
+    SOCKS5_USERNAME=$(json_string_value username <<< "$JSON")
+    SOCKS5_PASSWORD=$(json_string_value password <<< "$JSON")
   fi
 
   return 0

@@ -63,7 +63,7 @@ ALL_PARAMETER=($(sed -E 's/(-c|-e|-f|-C|-E|-F) //; s/=([^"])/ \1/g; s/sudo cloud
 parameter_present --CHOOSE_PROTOCOLS "${ALL_PARAMETER[@]}" && NONINTERACTIVE_INSTALL=noninteractive_install
 for _protocol_switch in \
   --XTLS_REALITY --HYSTERIA2 --TUIC --SHADOWTLS --SHADOWSOCKS --TROJAN \
-  --VMESS_WS --VLESS_WS --H2_REALITY --GRPC_REALITY --ANYTLS --NAIVE; do
+  --VMESS_WS --VLESS_WS --H2_REALITY --GRPC_REALITY --ANYTLS --NAIVE --SOCKS5; do
   if parameter_present "$_protocol_switch" "${ALL_PARAMETER[@]}"; then
     NONINTERACTIVE_INSTALL=noninteractive_install
     break
@@ -167,6 +167,9 @@ for z in "${!ALL_PARAMETER[@]}"; do
     --NAIVE )
       ((z++)); NAIVE=${ALL_PARAMETER[z]}
       ;;
+    --SOCKS5 )
+      ((z++)); SOCKS5=${ALL_PARAMETER[z]}
+      ;;
     --START_PORT )
       ((z++)); START_PORT=${ALL_PARAMETER[z]}
       ;;
@@ -214,6 +217,9 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --PORT_NAIVE )
       ((z++)); PORT_NAIVE=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_SOCKS5 )
+      ((z++)); PORT_SOCKS5=${ALL_PARAMETER[z]}
       ;;
     --SERVER_IP )
       ((z++)); SERVER_IP=${ALL_PARAMETER[z]}
@@ -268,6 +274,15 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --NODE_NAME_NAIVE )
       NODE_NAME_NAIVE=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_SOCKS5 )
+      NODE_NAME_SOCKS5=$(parameter_value_from $((z+1)))
+      ;;
+    --SOCKS5_USERNAME )
+      ((z++)); SOCKS5_USERNAME=${ALL_PARAMETER[z]}
+      ;;
+    --SOCKS5_PASSWORD )
+      ((z++)); SOCKS5_PASSWORD=${ALL_PARAMETER[z]}
       ;;
     --SUBSCRIBE )
       ((z++)); [ "${ALL_PARAMETER[z]}" = 'true' ] && IS_SUB=is_sub

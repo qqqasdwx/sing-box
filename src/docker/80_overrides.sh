@@ -30,6 +30,7 @@ docker_protocols_from_env() {
   docker_bool "$GRPC_REALITY" && SELECTED+='k'
   docker_bool "$ANYTLS" && SELECTED+='l'
   docker_bool "$NAIVE" && SELECTED+='m'
+  docker_bool "$SOCKS5" && SELECTED+='n'
 
   CHOOSE_PROTOCOLS=${SELECTED:-a}
 }

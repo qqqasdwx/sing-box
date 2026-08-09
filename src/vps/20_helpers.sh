@@ -302,6 +302,7 @@ apply_custom_node_names() {
   [ -n "${NODE_NAME_GRPC_REALITY:-}" ] && NODE_NAME[20]=$NODE_NAME_GRPC_REALITY
   [ -n "${NODE_NAME_ANYTLS:-}" ] && NODE_NAME[21]=$NODE_NAME_ANYTLS
   [ -n "${NODE_NAME_NAIVE:-}" ] && NODE_NAME[22]=$NODE_NAME_NAIVE
+  [ -n "${NODE_NAME_SOCKS5:-}" ] && NODE_NAME[23]=$NODE_NAME_SOCKS5
 }
 
 normalize_log_level() {
@@ -432,6 +433,21 @@ bool_enabled() {
   esac
 }
 
+valid_socks5_username() {
+  [[ "$1" =~ ^[A-Za-z0-9._~-]{1,64}$ ]]
+}
+
+valid_socks5_password() {
+  [[ "$1" =~ ^[A-Za-z0-9._~-]{8,128}$ ]]
+}
+
+prepare_socks5_credentials() {
+  [ -n "${SOCKS5_USERNAME:-}" ] || SOCKS5_USERNAME=$(openssl rand -hex 8) || error " Failed to generate SOCKS5 username. "
+  [ -n "${SOCKS5_PASSWORD:-}" ] || SOCKS5_PASSWORD=$(openssl rand -hex 16) || error " Failed to generate SOCKS5 password. "
+  valid_socks5_username "$SOCKS5_USERNAME" || error " SOCKS5_USERNAME must be 1-64 URI-safe ASCII characters: A-Z a-z 0-9 . _ ~ - "
+  valid_socks5_password "$SOCKS5_PASSWORD" || error " SOCKS5_PASSWORD must be 8-128 URI-safe ASCII characters: A-Z a-z 0-9 . _ ~ - "
+}
+
 protocol_switches_to_selection() {
   local _selected=''
   bool_enabled "${XTLS_REALITY:-}" && _selected+='b'
@@ -446,6 +462,7 @@ protocol_switches_to_selection() {
   bool_enabled "${GRPC_REALITY:-}" && _selected+='k'
   bool_enabled "${ANYTLS:-}" && _selected+='l'
   bool_enabled "${NAIVE:-}" && _selected+='m'
+  bool_enabled "${SOCKS5:-}" && _selected+='n'
   printf '%s' "$_selected"
 }
 
@@ -464,15 +481,13 @@ resolve_protocol_switch_mode() {
 }
 
 normalize_install_protocols() {
-  local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _ord _protocol
+  local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _protocol
   _max_code=$(asc "$_max_ord")
   INSTALL_PROTOCOLS=()
   resolve_protocol_switch_mode
 
   if [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-${_max_code}] ]]; then
-    for ((_ord=98; _ord<=_max_ord; _ord++)); do
-      INSTALL_PROTOCOLS+=("$(asc "$_ord")")
-    done
+    INSTALL_PROTOCOLS=("${DEFAULT_PROTOCOL_CODES[@]}")
   else
     while IFS= read -r _protocol; do
       INSTALL_PROTOCOLS+=("$_protocol")
@@ -494,6 +509,7 @@ protocol_port_var() {
     k ) printf '%s' PORT_GRPC_REALITY ;;
     l ) printf '%s' PORT_ANYTLS ;;
     m ) printf '%s' PORT_NAIVE ;;
+    n ) printf '%s' PORT_SOCKS5 ;;
   esac
 }
 
@@ -677,12 +693,13 @@ set_protocol_switch() {
     k ) GRPC_REALITY=$_value ;;
     l ) ANYTLS=$_value ;;
     m ) NAIVE=$_value ;;
+    n ) SOCKS5=$_value ;;
   esac
 }
 
 set_protocol_switches_from_selection() {
   local _selection=$1 _code
-  for _code in b c d e f g h i j k l m; do
+  for _code in b c d e f g h i j k l m n; do
     set_protocol_switch "$_code" false
   done
   while IFS= read -r _code; do
@@ -878,6 +895,7 @@ config_bool() {
     GRPC_REALITY ) array_contains k "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
     ANYTLS ) array_contains l "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
     NAIVE ) array_contains m "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    SOCKS5 ) array_contains n "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
     SUBSCRIBE ) [ "$IS_SUB" = 'is_sub' ] && _enabled=true ;;
     ARGO ) [ "$IS_ARGO" = 'is_argo' ] && _enabled=true ;;
     HY2_REALM ) [ "$IS_HY2_REALM" = 'is_hy2_realm' ] && _enabled=true ;;
@@ -1006,7 +1024,7 @@ write_config_state_file() {
   local _target=$CONFIG_FILE
   local _dir _base _backup _tmp _active _value
   local _has_reality=false _has_xtls=false _has_hy2=false _has_tuic=false _has_shadowtls=false _has_shadowsocks=false _has_trojan=false
-  local _has_vmess_ws=false _has_vless_ws=false _has_ws=false _has_h2=false _has_grpc=false _has_anytls=false _has_naive=false
+  local _has_vmess_ws=false _has_vless_ws=false _has_ws=false _has_h2=false _has_grpc=false _has_anytls=false _has_naive=false _has_socks5=false
   _dir=$(dirname "$_target")
   _base=$(basename "$_target")
   [ -d "$_dir" ] || error " Config directory does not exist: $_dir "
@@ -1031,6 +1049,7 @@ write_config_state_file() {
   array_contains k "${INSTALL_PROTOCOLS[@]}" && _has_grpc=true
   array_contains l "${INSTALL_PROTOCOLS[@]}" && _has_anytls=true
   array_contains m "${INSTALL_PROTOCOLS[@]}" && _has_naive=true
+  array_contains n "${INSTALL_PROTOCOLS[@]}" && _has_socks5=true
 
   config_state_set_line "$_tmp" CHOOSE_PROTOCOLS "$(shell_quote switch)" true
 
@@ -1138,6 +1157,12 @@ write_config_state_file() {
   config_state_set_bool "$_tmp" NAIVE
   config_state_set_optional "$_tmp" PORT_NAIVE "$(config_value PORT_NAIVE)" "$_has_naive"
   config_state_set_optional "$_tmp" NODE_NAME_NAIVE "$(config_node_name 22)" "$_has_naive"
+
+  config_state_set_bool "$_tmp" SOCKS5
+  config_state_set_optional "$_tmp" PORT_SOCKS5 "$(config_value PORT_SOCKS5)" "$_has_socks5"
+  config_state_set_optional "$_tmp" NODE_NAME_SOCKS5 "$(config_node_name 23)" "$_has_socks5"
+  config_state_set_optional "$_tmp" SOCKS5_USERNAME "$(config_value SOCKS5_USERNAME)" "$_has_socks5"
+  config_state_set_optional "$_tmp" SOCKS5_PASSWORD "$(config_value SOCKS5_PASSWORD)" "$_has_socks5"
 
   if [ -e "$_target" ]; then
     cat "$_tmp" > "$_target" || { rm -f "$_tmp"; error " Failed to write config file: $_target "; }

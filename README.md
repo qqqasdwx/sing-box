@@ -77,11 +77,11 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
   --NODE_NAME_HYSTERIA2 sing-box-hy2
 ```
 
-协议选择：`a` 为全部；`b` VLESS Reality；`c` Hysteria2；`d` Tuic；`e` ShadowTLS；`f` Shadowsocks；`g` Trojan；`h` VMess WS；`i` VLESS WS TLS；`j` H2 Reality；`k` gRPC Reality；`l` AnyTLS；`m` NaiveProxy。主机安装和 Docker 都支持单协议开关：`CHOOSE_PROTOCOLS` 留空且任意开关启用时，会按 `XTLS_REALITY`、`HYSTERIA2`、`TUIC`、`SHADOWTLS`、`SHADOWSOCKS`、`TROJAN`、`VMESS_WS`、`VLESS_WS`、`H2_REALITY`、`GRPC_REALITY`、`ANYTLS`、`NAIVE` 生成协议列表；`CHOOSE_PROTOCOLS=switch` 会强制按这些开关生成，且至少要启用一个。开关值为 `true/1/y/yes/on` 时启用。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，支持 `trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`，默认 `error`。`FINGER_PRINT` 可设置客户端 TLS 指纹，默认 `chrome`，常用值为 `chrome` 或 `firefox`。sing-box 使用宿主机或容器运行环境的系统时间，本项目不再生成内建 NTP 客户端配置；请在宿主机上独立维护时间同步。
+协议选择：`a` 为默认协议集 `b-m`；`b` VLESS Reality；`c` Hysteria2；`d` Tuic；`e` ShadowTLS；`f` Shadowsocks；`g` Trojan；`h` VMess WS；`i` VLESS WS TLS；`j` H2 Reality；`k` gRPC Reality；`l` AnyTLS；`m` NaiveProxy；`n` 公网 SOCKS5。SOCKS5 默认关闭，且不包含在 `a` 中，必须显式选择 `n` 或启用 `SOCKS5`。主机安装和 Docker 都支持单协议开关：`CHOOSE_PROTOCOLS` 留空且任意开关启用时，会按 `XTLS_REALITY`、`HYSTERIA2`、`TUIC`、`SHADOWTLS`、`SHADOWSOCKS`、`TROJAN`、`VMESS_WS`、`VLESS_WS`、`H2_REALITY`、`GRPC_REALITY`、`ANYTLS`、`NAIVE`、`SOCKS5` 生成协议列表；`CHOOSE_PROTOCOLS=switch` 会强制按这些开关生成，且至少要启用一个。开关值为 `true/1/y/yes/on` 时启用。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，支持 `trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`，默认 `error`。`FINGER_PRINT` 可设置客户端 TLS 指纹，默认 `chrome`，常用值为 `chrome` 或 `firefox`。sing-box 使用宿主机或容器运行环境的系统时间，本项目不再生成内建 NTP 客户端配置；请在宿主机上独立维护时间同步。
 
 TCP Brutal 不再由本项目代安装。脚本只检测宿主机是否已有 `brutal` 内核模块，并在检测成功时生成相应客户端参数；需要该功能时应先由用户按自己的系统和内核环境独立安装、验证和维护。
 
-协议端口可以逐个覆盖：`PORT_XTLS_REALITY`、`PORT_HYSTERIA2`、`PORT_TUIC`、`PORT_SHADOWTLS`、`PORT_SHADOWSOCKS`、`PORT_TROJAN`、`PORT_VMESS_WS`、`PORT_VLESS_WS`、`PORT_H2_REALITY`、`PORT_GRPC_REALITY`、`PORT_ANYTLS`、`PORT_NAIVE`。未填写的协议继续按 `START_PORT` 和 `CHOOSE_PROTOCOLS` 顺序递增，重复端口会直接报错。除 WebSocket 协议外，这些端口会作为客户端连接端口导出；`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 是源站监听端口，Argo 下是本机内部回源端口，Origin Rules 下是 Cloudflare 回源端口，客户端连接端口由 `CDN_PORT` 决定（默认 VMess WS 为 80，VLESS WS TLS 为 443）。已安装后也可以通过 `sb -d` 的监听端口面板逐个修改。
+协议端口可以逐个覆盖：`PORT_XTLS_REALITY`、`PORT_HYSTERIA2`、`PORT_TUIC`、`PORT_SHADOWTLS`、`PORT_SHADOWSOCKS`、`PORT_TROJAN`、`PORT_VMESS_WS`、`PORT_VLESS_WS`、`PORT_H2_REALITY`、`PORT_GRPC_REALITY`、`PORT_ANYTLS`、`PORT_NAIVE`、`PORT_SOCKS5`。未填写的协议继续按 `START_PORT` 和 `CHOOSE_PROTOCOLS` 顺序递增，重复端口会直接报错。除 WebSocket 协议外，这些端口会作为客户端连接端口导出；`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 是源站监听端口，Argo 下是本机内部回源端口，Origin Rules 下是 Cloudflare 回源端口，客户端连接端口由 `CDN_PORT` 决定（默认 VMess WS 为 80，VLESS WS TLS 为 443）。已安装后也可以通过 `sb -d` 的监听端口面板逐个修改。
 
 VPS 上通过菜单修改监听端口、UUID、密码、Reality 参数、SNI、节点名或 Hysteria2 Realm 时，脚本会先对包含自定义路由在内的完整配置执行 `sing-box check`，检查成功后向 sing-box 主进程发送 HUP，并确认 PID 未变化且服务仍在运行。协议增加或删除还会联动服务文件、nginx、Argo 和防火墙，因此继续使用完整停启流程。
 
@@ -91,7 +91,7 @@ Alpine/OpenRC 使用 `supervise-daemon` 监督 cloudflared。进程异常退出�
 
 使用 `-f config.conf` 更新时，如果 `TLS_SERVER` 未变化，现有自签证书、私钥和 SNI 有效匹配，脚本会保留原证书固定值；只有 SNI 改变、证书失效或密钥不匹配时才重新生成。这样升级后无需刷新 Hysteria2、TUIC、Trojan、AnyTLS 和 Naive 客户端配置。
 
-节点名称优先级：单协议节点名 > 全局 `NODE_NAME_CONFIRM` > 默认主机名。支持的单协议变量包括 `NODE_NAME_XTLS_REALITY`、`NODE_NAME_HYSTERIA2`、`NODE_NAME_TUIC`、`NODE_NAME_SHADOWTLS`、`NODE_NAME_SHADOWSOCKS`、`NODE_NAME_TROJAN`、`NODE_NAME_VMESS_WS`、`NODE_NAME_VLESS_WS`、`NODE_NAME_H2_REALITY`、`NODE_NAME_GRPC_REALITY`、`NODE_NAME_ANYTLS`、`NODE_NAME_NAIVE`。
+节点名称优先级：单协议节点名 > 全局 `NODE_NAME_CONFIRM` > 默认主机名。支持的单协议变量包括 `NODE_NAME_XTLS_REALITY`、`NODE_NAME_HYSTERIA2`、`NODE_NAME_TUIC`、`NODE_NAME_SHADOWTLS`、`NODE_NAME_SHADOWSOCKS`、`NODE_NAME_TROJAN`、`NODE_NAME_VMESS_WS`、`NODE_NAME_VLESS_WS`、`NODE_NAME_H2_REALITY`、`NODE_NAME_GRPC_REALITY`、`NODE_NAME_ANYTLS`、`NODE_NAME_NAIVE`、`NODE_NAME_SOCKS5`。
 
 ## 客户端订阅
 
@@ -101,6 +101,25 @@ Alpine/OpenRC 使用 `supervise-daemon` 监督 cloudflared。进程异常退出�
 - `clash2`：节点直接内嵌在文件中的 Clash 配置。
 - `sing-box`：适用于 SFI、SFA、SFM 的基础 TUN + mixed 配置，包含手动选择、自动测速和直连。
 - `v2rayn`、`throne`、`shadowrocket`、`proxies`：继续由现有协议导出逻辑生成。
+
+SOCKS5 节点只写入确认支持该格式的 `proxies`、`clash`、`clash2` 和 `sing-box` 输出，不向 `v2rayn`、`throne` 或 `shadowrocket` 生成未经确认的链接格式。
+
+## 公网 SOCKS5
+
+公网 SOCKS5 入站监听 `::`，支持 TCP 代理和 SOCKS5 UDP Associate，并强制要求用户名和密码，不提供匿名模式。VPS 配置示例：
+
+```sh
+SOCKS5='true'
+PORT_SOCKS5='1080'
+SOCKS5_USERNAME='proxy-user'
+SOCKS5_PASSWORD='replace-with-a-strong-password'
+```
+
+也可以直接使用 `CHOOSE_PROTOCOLS='n'` 只部署 SOCKS5。用户名只允许 1-64 位、密码只允许 8-128 位 `A-Z a-z 0-9 . _ ~ -`；留空时脚本随机生成。VPS 使用 `-f config.conf` 安装后会把随机值回写到状态文件。Docker 每次启动都重新生成运行配置，因此必须在 Compose 中固定 `SOCKS5_USERNAME` 和 `SOCKS5_PASSWORD`，否则容器重建或重启后认证信息会变化。
+
+`PORT_SOCKS5` 是固定的 TCP 控制端口。sing-box 按 SOCKS5 标准为每个 UDP Associate 会话分配动态 UDP 中继端口，并不会监听同号 UDP 端口，因此 VPS 防火墙同步只开放 `PORT_SOCKS5/tcp`。如果宿主机防火墙或云安全组默认拒绝入站 UDP，客户端的 TCP 代理仍可使用，但 UDP 代理还需要手动放行系统临时 UDP 端口范围；可用 `sysctl net.ipv4.ip_local_port_range` 查看当前范围。放行整个临时端口范围会扩大公网暴露面，本项目不会自动执行。
+
+SOCKS5 协议本身不加密用户名、密码或代理流量。即使强制认证，也不应把它视为 VLESS Reality、Hysteria2 等加密代理的替代品；只有在客户端到服务器的网络链路可信，或外层另有加密保护时才适合暴露到公网。
 
 脚本直接输出可复制的订阅链接，不生成或展示二维码。
 

@@ -364,11 +364,16 @@ export_list() {
   $CLASH_ANYTLS
 "
 
+  [ -n "$PORT_SOCKS5" ] && local CLASH_SOCKS5="- {name: \"${NODE_NAME[23]} ${NODE_TAG[12]}\", type: socks5, server: \"${SERVER_IP}\", port: ${PORT_SOCKS5}, username: \"${SOCKS5_USERNAME}\", password: \"${SOCKS5_PASSWORD}\", udp: true}" &&
+  local CLASH_SUBSCRIBE+="
+  $CLASH_SOCKS5
+"
+
   local CLASH_PROXIES
   CLASH_PROXIES=$(printf '%s' "${CLASH_SUBSCRIBE}" | sed -E '/^[ ]*#|^--/d' | sed '/^$/d')
 
-  local CLASH_PORTS=("$PORT_XTLS_REALITY" "$PORT_HYSTERIA2" "$PORT_TUIC" "$PORT_SHADOWTLS" "$PORT_SHADOWSOCKS" "$PORT_TROJAN" "$PORT_VMESS_WS" "$PORT_VLESS_WS" "$PORT_H2_REALITY" "$PORT_GRPC_REALITY" "$PORT_ANYTLS")
-  local CLASH_NAMES=("${NODE_NAME[11]} ${NODE_TAG[0]}" "${NODE_NAME[12]} ${NODE_TAG[1]}" "${NODE_NAME[13]} ${NODE_TAG[2]}" "${NODE_NAME[14]} ${NODE_TAG[3]}" "${NODE_NAME[15]} ${NODE_TAG[4]}" "${NODE_NAME[16]} ${NODE_TAG[5]}" "${NODE_NAME[17]} ${NODE_TAG[6]}" "${NODE_NAME[18]} ${NODE_TAG[7]}" "${NODE_NAME[19]} ${NODE_TAG[8]}" "${NODE_NAME[20]} ${NODE_TAG[9]}" "${NODE_NAME[21]} ${NODE_TAG[10]}")
+  local CLASH_PORTS=("$PORT_XTLS_REALITY" "$PORT_HYSTERIA2" "$PORT_TUIC" "$PORT_SHADOWTLS" "$PORT_SHADOWSOCKS" "$PORT_TROJAN" "$PORT_VMESS_WS" "$PORT_VLESS_WS" "$PORT_H2_REALITY" "$PORT_GRPC_REALITY" "$PORT_ANYTLS" "$PORT_SOCKS5")
+  local CLASH_NAMES=("${NODE_NAME[11]} ${NODE_TAG[0]}" "${NODE_NAME[12]} ${NODE_TAG[1]}" "${NODE_NAME[13]} ${NODE_TAG[2]}" "${NODE_NAME[14]} ${NODE_TAG[3]}" "${NODE_NAME[15]} ${NODE_TAG[4]}" "${NODE_NAME[16]} ${NODE_TAG[5]}" "${NODE_NAME[17]} ${NODE_TAG[6]}" "${NODE_NAME[18]} ${NODE_TAG[7]}" "${NODE_NAME[19]} ${NODE_TAG[8]}" "${NODE_NAME[20]} ${NODE_TAG[9]}" "${NODE_NAME[21]} ${NODE_TAG[10]}" "${NODE_NAME[23]} ${NODE_TAG[12]}")
   local CLASH_ACTIVE_NAMES=() x
   for x in "${!CLASH_PORTS[@]}"; do
     [[ "${CLASH_PORTS[x]}" =~ ^[0-9]+$ ]] && CLASH_ACTIVE_NAMES+=("${CLASH_NAMES[x]}")
@@ -801,6 +806,10 @@ naive+quic://${UUID[22]}:${UUID[22]}@${SERVER_IP_1}:${PORT_NAIVE}?congestion_con
   [ -n "$PORT_NAIVE" ] &&
   local OUTBOUND_REPLACE+=" { \"type\": \"naive\", \"tag\": \"${NODE_NAME[22]} ${NODE_TAG[11]} http2\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_NAIVE}, \"username\": \"${UUID[22]}\", \"password\": \"${UUID[22]}\", \"udp_over_tcp\": true, \"quic\": false, \"tls\": { \"enabled\": true, \"certificate\": [$(tr -d '\n' <<< "$CERT200_JSON")], \"server_name\": \"${TLS_SERVER}\" } }, { \"type\": \"naive\", \"tag\": \"${NODE_NAME[22]} ${NODE_TAG[11]} quic\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_NAIVE}, \"username\": \"${UUID[22]}\", \"password\": \"${UUID[22]}\", \"udp_over_tcp\": false, \"quic\": true, \"quic_congestion_control\": \"bbr\", \"tls\": { \"enabled\": true, \"certificate\": [$(tr -d '\n' <<< "$CERT200_JSON")], \"server_name\": \"${TLS_SERVER}\" } }," &&
   local NODE_REPLACE+="\"${NODE_NAME[22]} ${NODE_TAG[11]} http2\",\"${NODE_NAME[22]} ${NODE_TAG[11]} quic\","
+
+  [ -n "$PORT_SOCKS5" ] &&
+  local OUTBOUND_REPLACE+=" { \"type\": \"socks\", \"tag\": \"${NODE_NAME[23]} ${NODE_TAG[12]}\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_SOCKS5}, \"version\": \"5\", \"username\": \"${SOCKS5_USERNAME}\", \"password\": \"${SOCKS5_PASSWORD}\" }," &&
+  local NODE_REPLACE+="\"${NODE_NAME[23]} ${NODE_TAG[12]}\","
 
   # 生成 sing-box SFM / SFA / SFI 客户端配置。
   write_sing_box_client_config \
@@ -1371,6 +1380,15 @@ change_protocols() {
   else
     unset PORT_NAIVE
   fi
+
+  # 获取 SOCKS5 端口
+  CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
+    POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
+    PORT_SOCKS5=${REINSTALL_PORTS[POSITION]}
+  else
+    unset PORT_SOCKS5
+  fi
   validate_nginx_port
 
   # 停止 sing-box 服务
@@ -1545,6 +1563,7 @@ protocol_primary_secret() {
   case "$CODE" in
     f ) printf '%s' "$SHADOWSOCKS_PASSWORD" ;;
     g ) printf '%s' "$TROJAN_PASSWORD" ;;
+    n ) printf '%s' "$SOCKS5_PASSWORD" ;;
     * ) printf '%s' "${UUID[NODE_IDX]}" ;;
   esac
 }
@@ -1557,6 +1576,7 @@ protocol_primary_secret_label() {
     g ) menu_text 'Trojan 密码' 'Trojan password' ;;
     l ) menu_text 'AnyTLS 密码' 'AnyTLS password' ;;
     m ) menu_text 'NaiveProxy 用户名/密码' 'NaiveProxy username/password' ;;
+    n ) menu_text 'SOCKS5 密码' 'SOCKS5 password' ;;
     * ) menu_text '密码' 'password' ;;
   esac
 }
@@ -1585,6 +1605,7 @@ protocol_edit_primary_secret() {
   LABEL=$(protocol_primary_secret_label "$CODE")
   read_new_value "$(menu_text "请输入新的${LABEL}" "Enter new ${LABEL}")" "$OLD_VAL" NEW_VAL || return
   [[ "$CODE" =~ ^[bdhijk]$ ]] && valid_uuid_or_error "$NEW_VAL"
+  [ "$CODE" = n ] && { valid_socks5_password "$NEW_VAL" || error " SOCKS5_PASSWORD must be 8-128 URI-safe ASCII characters. "; }
 
   case "$CODE" in
     b|d|h|i|j|k )
@@ -1595,6 +1616,9 @@ protocol_edit_primary_secret() {
       ;;
     m )
       replace_json_string_key_file "$FILE" username "$NEW_VAL"
+      replace_json_string_key_file "$FILE" password "$NEW_VAL"
+      ;;
+    n )
       replace_json_string_key_file "$FILE" password "$NEW_VAL"
       ;;
   esac
@@ -1609,6 +1633,17 @@ protocol_edit_primary_secret() {
     grep -Fq "\"path\":\"/${OLD_PATH}\"" "$FILE" && literal_replace_file "$FILE" "$OLD_PATH" "$NEW_PATH"
   fi
 
+  protocol_reload_export
+}
+
+protocol_edit_socks5_username() {
+  local FILE OLD_VAL NEW_VAL
+  FILE=$(protocol_file_by_code n)
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_VAL="$SOCKS5_USERNAME"
+  read_new_value "$(menu_text '请输入新的 SOCKS5 用户名' 'Enter new SOCKS5 username')" "$OLD_VAL" NEW_VAL || return
+  valid_socks5_username "$NEW_VAL" || error " SOCKS5_USERNAME must be 1-64 URI-safe ASCII characters. "
+  replace_json_string_key_file "$FILE" username "$NEW_VAL"
   protocol_reload_export
 }
 
@@ -1955,6 +1990,10 @@ protocol_print_summary() {
     g|l|m )
       info " SNI: ${TLS_NOW:-N/A} ($(menu_text '全局' 'global'))"
       ;;
+    n )
+      info " SOCKS5 $(menu_text '用户名' 'username'): ${SOCKS5_USERNAME}"
+      warning " $(menu_text '警告：公网 SOCKS5 的认证信息和代理流量均未加密。' 'Warning: public SOCKS5 credentials and proxy traffic are not encrypted.')"
+      ;;
   esac
 }
 
@@ -2016,6 +2055,10 @@ protocol_detail_menu() {
           hint " 5. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
           hint " 6. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
           ;;
+        n )
+          hint " 5. $(menu_text '修改 SOCKS5 用户名' 'Change SOCKS5 username')"
+          hint " 6. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          ;;
       esac
     fi
 
@@ -2037,6 +2080,7 @@ protocol_detail_menu() {
           f ) protocol_edit_method "$CODE" ;;
           h|i ) protocol_edit_ws_path "$CODE" ;;
           g|l|m ) menu_edit_tls_server ;;
+          n ) protocol_edit_socks5_username ;;
         esac
         ;;
       6 )
@@ -2048,6 +2092,7 @@ protocol_detail_menu() {
           f ) menu_edit_server_ip ;;
           h|i ) protocol_edit_ws_cdn "$CODE" ;;
           g|l|m ) menu_edit_server_ip ;;
+          n ) menu_edit_server_ip ;;
         esac
         ;;
       7 )
@@ -2086,7 +2131,8 @@ protocol_detail_menu() {
 }
 
 protocol_config_menu() {
-  local CHOOSE CODE IDX NODE_IDX STATUS_TEXT
+  local CHOOSE CODE IDX NODE_IDX STATUS_TEXT BULK_OPTION
+  BULK_OPTION=$(( ${#PROTOCOL_LIST[@]} + 1 ))
   while true; do
     check_install
     fetch_nodes_value
@@ -2097,14 +2143,14 @@ protocol_config_menu() {
       STATUS_TEXT=$(protocol_status_text "$CODE")
       hint " $(( IDX + 1 )). ${CODE}. ${PROTOCOL_LIST[IDX]} [${STATUS_TEXT}] ${NODE_NAME[NODE_IDX]:+ - ${NODE_NAME[NODE_IDX]}}"
     done
-    hint " 13. $(text 62)"
+    hint " ${BULK_OPTION}. $(text 62)"
     hint " 0. $(menu_text '返回' 'Back')"
     reading "\n $(text 24) " CHOOSE
     [ "$CHOOSE" = 0 ] && return
     if [[ "$CHOOSE" =~ ^[0-9]+$ ]] && [ "$CHOOSE" -ge 1 ] && [ "$CHOOSE" -le "${#PROTOCOL_LIST[@]}" ]; then
       CODE=$(asc $(( CHOOSE + 97 )))
       protocol_detail_menu "$CODE"
-    elif [ "$CHOOSE" = 13 ]; then
+    elif [ "$CHOOSE" = "$BULK_OPTION" ]; then
       change_protocols
       exit
     else

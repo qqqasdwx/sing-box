@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.21 (2026.08.05)'
+VERSION='v1.3.22 (2026.08.09)'
 
 # 可选 GitHub URL 前缀；默认直连，不自动选择第三方代理。
 GH_PROXY=${GH_PROXY:-}
@@ -20,8 +20,9 @@ MAX_PORT=65520
 MIN_HOPPING_PORT=10000
 MAX_HOPPING_PORT=65535
 TLS_SERVER_DEFAULT=addons.mozilla.org
-PROTOCOL_LIST=("XTLS + reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess + ws" "vless + ws + tls" "H2 + reality" "gRPC + reality" "AnyTLS" "naive")
-NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess-ws" "vless-ws-tls" "h2-reality" "grpc-reality" "anytls" "naive")
+PROTOCOL_LIST=("XTLS + reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess + ws" "vless + ws + tls" "H2 + reality" "gRPC + reality" "AnyTLS" "naive" "SOCKS5")
+NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "vmess-ws" "vless-ws-tls" "h2-reality" "grpc-reality" "anytls" "naive" "socks5")
+DEFAULT_PROTOCOL_CODES=(b c d e f g h i j k l m)
 CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
 CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org" "cf.090227.xyz")
 DEFAULT_NEWEST_VERSION='1.14.0-alpha.50'
@@ -133,8 +134,8 @@ E[47]="No server ip, script exits. Feedback:[https://github.com/qqqasdwx/sing-bo
 C[47]="没有 server ip，脚本退出，问题反馈:[https://github.com/qqqasdwx/sing-box/issues]"
 E[48]="ShadowTLS - Copy the above two Throne links and manually set up the chained proxies in order. Tutorial: https://github.com/qqqasdwx/sing-box/blob/release/README.md#throne-%E8%AE%BE%E7%BD%AE-shadowtls-%E6%96%B9%E6%B3%95"
 C[48]="ShadowTLS - 复制上面两条 Throne links 进去，并按顺序手动设置链式代理，详细教程: https://github.com/qqqasdwx/sing-box/blob/release/README.md#throne-%E8%AE%BE%E7%BD%AE-shadowtls-%E6%96%B9%E6%B3%95"
-E[49]="Select more protocols to install (e.g. hgbd). The order of the port numbers of the protocols is related to the ordering of the multiple choices:\n a. all (default)"
-C[49]="多选需要安装协议(比如 hgbd)，协议的端口号次序与多选的排序有关:\n a. all (默认)"
+E[49]="Select more protocols to install (e.g. hgbd). The order of the port numbers of the protocols is related to the ordering of the multiple choices:\n a. default protocol set b-m (SOCKS5 requires explicit n)"
+C[49]="多选需要安装协议(比如 hgbd)，协议的端口号次序与多选的排序有关:\n a. 默认协议集 b-m（SOCKS5 必须显式选择 n）"
 E[50]="Please enter the \$TYPE domain name:"
 C[50]="请输入 \$TYPE 域名:"
 E[51]="Please choose or custom a cdn, http support is required:"
@@ -257,8 +258,8 @@ E[113]="Failed to change CDN, using random privateKey"
 C[113]="privateKey 格式失败次数过多，已使用随机私钥"
 E[114]="Invalid privateKey format: expected a 43-character base64url-encoded string."
 C[114]="privateKey 私钥格式错误，应该为 43位 base64url 编码"
-E[115]="Quick install mode (all protocols + subscription) (sb -k)"
-C[115]="极速安装模式 (所有协议 + 订阅) (sb -l)"
+E[115]="Quick install mode (default protocols + subscription) (sb -k)"
+C[115]="极速安装模式 (默认协议集 + 订阅) (sb -l)"
 E[116]="Failed to derive the Reality publicKey locally from privateKey"
 C[116]="无法在本机从 Reality privateKey 推导 publicKey"
 E[117]="Continue with quick fast tunnel"
@@ -659,6 +660,7 @@ apply_custom_node_names() {
   [ -n "${NODE_NAME_GRPC_REALITY:-}" ] && NODE_NAME[20]=$NODE_NAME_GRPC_REALITY
   [ -n "${NODE_NAME_ANYTLS:-}" ] && NODE_NAME[21]=$NODE_NAME_ANYTLS
   [ -n "${NODE_NAME_NAIVE:-}" ] && NODE_NAME[22]=$NODE_NAME_NAIVE
+  [ -n "${NODE_NAME_SOCKS5:-}" ] && NODE_NAME[23]=$NODE_NAME_SOCKS5
 }
 
 normalize_log_level() {
@@ -789,6 +791,21 @@ bool_enabled() {
   esac
 }
 
+valid_socks5_username() {
+  [[ "$1" =~ ^[A-Za-z0-9._~-]{1,64}$ ]]
+}
+
+valid_socks5_password() {
+  [[ "$1" =~ ^[A-Za-z0-9._~-]{8,128}$ ]]
+}
+
+prepare_socks5_credentials() {
+  [ -n "${SOCKS5_USERNAME:-}" ] || SOCKS5_USERNAME=$(openssl rand -hex 8) || error " Failed to generate SOCKS5 username. "
+  [ -n "${SOCKS5_PASSWORD:-}" ] || SOCKS5_PASSWORD=$(openssl rand -hex 16) || error " Failed to generate SOCKS5 password. "
+  valid_socks5_username "$SOCKS5_USERNAME" || error " SOCKS5_USERNAME must be 1-64 URI-safe ASCII characters: A-Z a-z 0-9 . _ ~ - "
+  valid_socks5_password "$SOCKS5_PASSWORD" || error " SOCKS5_PASSWORD must be 8-128 URI-safe ASCII characters: A-Z a-z 0-9 . _ ~ - "
+}
+
 protocol_switches_to_selection() {
   local _selected=''
   bool_enabled "${XTLS_REALITY:-}" && _selected+='b'
@@ -803,6 +820,7 @@ protocol_switches_to_selection() {
   bool_enabled "${GRPC_REALITY:-}" && _selected+='k'
   bool_enabled "${ANYTLS:-}" && _selected+='l'
   bool_enabled "${NAIVE:-}" && _selected+='m'
+  bool_enabled "${SOCKS5:-}" && _selected+='n'
   printf '%s' "$_selected"
 }
 
@@ -821,15 +839,13 @@ resolve_protocol_switch_mode() {
 }
 
 normalize_install_protocols() {
-  local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _ord _protocol
+  local _max_ord=$(( CONSECUTIVE_PORTS + 97 )) _max_code _protocol
   _max_code=$(asc "$_max_ord")
   INSTALL_PROTOCOLS=()
   resolve_protocol_switch_mode
 
   if [[ ! "${CHOOSE_PROTOCOLS,,}" =~ [b-${_max_code}] ]]; then
-    for ((_ord=98; _ord<=_max_ord; _ord++)); do
-      INSTALL_PROTOCOLS+=("$(asc "$_ord")")
-    done
+    INSTALL_PROTOCOLS=("${DEFAULT_PROTOCOL_CODES[@]}")
   else
     while IFS= read -r _protocol; do
       INSTALL_PROTOCOLS+=("$_protocol")
@@ -851,6 +867,7 @@ protocol_port_var() {
     k ) printf '%s' PORT_GRPC_REALITY ;;
     l ) printf '%s' PORT_ANYTLS ;;
     m ) printf '%s' PORT_NAIVE ;;
+    n ) printf '%s' PORT_SOCKS5 ;;
   esac
 }
 
@@ -1034,12 +1051,13 @@ set_protocol_switch() {
     k ) GRPC_REALITY=$_value ;;
     l ) ANYTLS=$_value ;;
     m ) NAIVE=$_value ;;
+    n ) SOCKS5=$_value ;;
   esac
 }
 
 set_protocol_switches_from_selection() {
   local _selection=$1 _code
-  for _code in b c d e f g h i j k l m; do
+  for _code in b c d e f g h i j k l m n; do
     set_protocol_switch "$_code" false
   done
   while IFS= read -r _code; do
@@ -1235,6 +1253,7 @@ config_bool() {
     GRPC_REALITY ) array_contains k "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
     ANYTLS ) array_contains l "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
     NAIVE ) array_contains m "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
+    SOCKS5 ) array_contains n "${INSTALL_PROTOCOLS[@]}" && _enabled=true ;;
     SUBSCRIBE ) [ "$IS_SUB" = 'is_sub' ] && _enabled=true ;;
     ARGO ) [ "$IS_ARGO" = 'is_argo' ] && _enabled=true ;;
     HY2_REALM ) [ "$IS_HY2_REALM" = 'is_hy2_realm' ] && _enabled=true ;;
@@ -1363,7 +1382,7 @@ write_config_state_file() {
   local _target=$CONFIG_FILE
   local _dir _base _backup _tmp _active _value
   local _has_reality=false _has_xtls=false _has_hy2=false _has_tuic=false _has_shadowtls=false _has_shadowsocks=false _has_trojan=false
-  local _has_vmess_ws=false _has_vless_ws=false _has_ws=false _has_h2=false _has_grpc=false _has_anytls=false _has_naive=false
+  local _has_vmess_ws=false _has_vless_ws=false _has_ws=false _has_h2=false _has_grpc=false _has_anytls=false _has_naive=false _has_socks5=false
   _dir=$(dirname "$_target")
   _base=$(basename "$_target")
   [ -d "$_dir" ] || error " Config directory does not exist: $_dir "
@@ -1388,6 +1407,7 @@ write_config_state_file() {
   array_contains k "${INSTALL_PROTOCOLS[@]}" && _has_grpc=true
   array_contains l "${INSTALL_PROTOCOLS[@]}" && _has_anytls=true
   array_contains m "${INSTALL_PROTOCOLS[@]}" && _has_naive=true
+  array_contains n "${INSTALL_PROTOCOLS[@]}" && _has_socks5=true
 
   config_state_set_line "$_tmp" CHOOSE_PROTOCOLS "$(shell_quote switch)" true
 
@@ -1495,6 +1515,12 @@ write_config_state_file() {
   config_state_set_bool "$_tmp" NAIVE
   config_state_set_optional "$_tmp" PORT_NAIVE "$(config_value PORT_NAIVE)" "$_has_naive"
   config_state_set_optional "$_tmp" NODE_NAME_NAIVE "$(config_node_name 22)" "$_has_naive"
+
+  config_state_set_bool "$_tmp" SOCKS5
+  config_state_set_optional "$_tmp" PORT_SOCKS5 "$(config_value PORT_SOCKS5)" "$_has_socks5"
+  config_state_set_optional "$_tmp" NODE_NAME_SOCKS5 "$(config_node_name 23)" "$_has_socks5"
+  config_state_set_optional "$_tmp" SOCKS5_USERNAME "$(config_value SOCKS5_USERNAME)" "$_has_socks5"
+  config_state_set_optional "$_tmp" SOCKS5_PASSWORD "$(config_value SOCKS5_PASSWORD)" "$_has_socks5"
 
   if [ -e "$_target" ]; then
     cat "$_tmp" > "$_target" || { rm -f "$_tmp"; error " Failed to write config file: $_target "; }
@@ -3751,7 +3777,7 @@ sing-box_variables() {
   STEP_NUM=0
   # 预先用全选协议计算最大总步骤数，用于协议选择提示时显示 (1/?)
   local _saved_protocols=("${INSTALL_PROTOCOLS[@]}")
-  INSTALL_PROTOCOLS=(b c d e f g h i j k l m)
+  INSTALL_PROTOCOLS=("${DEFAULT_PROTOCOL_CODES[@]}" n)
   calc_install_steps
   INSTALL_PROTOCOLS=("${_saved_protocols[@]}")
 
@@ -3761,7 +3787,7 @@ sing-box_variables() {
     SERVER_IP_DEFAULT=$WAN6
   fi
 
-  # 选择安装的协议，由于选项 a 为全部协议，所以选项数不是从 a 开始，而是从 b 开始，处理输入：把大写全部变为小写，把不符合的选项去掉，把重复的选项合并
+  # 选择安装的协议。a 代表默认协议集，具体协议代码从 b 开始；规范化大小写、过滤无效选项并去重
   (( STEP_NUM++ )) || true
   if [ -z "$CHOOSE_PROTOCOLS" ]; then
     hint "\n (${STEP_NUM}/${TOTAL_STEPS:-?}) $(text 49) "
@@ -5368,6 +5394,33 @@ EOF
 }
 EOF
   fi
+
+  # 生成带强制认证的公网 SOCKS5 配置
+  CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
+    [ -z "$PORT_SOCKS5" ] && PORT_SOCKS5=$[START_PORT+$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")]
+    NODE_NAME[23]=${NODE_NAME[23]:-"$NODE_NAME_CONFIRM"}
+    prepare_socks5_credentials
+
+    cat > ${WORK_DIR}/conf/23_${NODE_TAG[12]}_inbounds.json << EOF
+{
+    "inbounds":[
+        {
+            "type":"socks",
+            "tag":"${NODE_NAME[23]} ${NODE_TAG[12]}",
+            "listen":"::",
+            "listen_port":$PORT_SOCKS5,
+            "users":[
+                {
+                    "username":"${SOCKS5_USERNAME}",
+                    "password":"${SOCKS5_PASSWORD}"
+                }
+            ]
+        }
+    ]
+}
+EOF
+  fi
 }
 
 # Sing-box 生成守护进程文件
@@ -5639,7 +5692,7 @@ run_argo_openrc_migration() {
 
 # 获取原有各协议的参数，先清空所有的 key-value
 fetch_nodes_value() {
-  unset NODE_NAME PORT_XTLS_REALITY UUID TLS_SERVER REALITY_PRIVATE REALITY_PUBLIC PORT_HYSTERIA2 HY2_REALM_ID IS_HY2_REALM PORT_TUIC TUIC_PASSWORD TUIC_CONGESTION_CONTROL PORT_SHADOWTLS SHADOWTLS_PASSWORD SHADOWSOCKS_METHOD PORT_SHADOWSOCKS PORT_TROJAN TROJAN_PASSWORD PORT_VMESS_WS VMESS_WS_PATH WS_SERVER_IP WS_SERVER_IP_SHOW VMESS_HOST_DOMAIN CDN CDN_PORT PORT_VLESS_WS VLESS_WS_PATH VLESS_HOST_DOMAIN PORT_H2_REALITY PORT_GRPC_REALITY ARGO_DOMAIN PORT_ANYTLS PORT_NAIVE SELF_SIGNED_FINGERPRINT_SHA256 SELF_SIGNED_FINGERPRINT_BASE64
+  unset NODE_NAME PORT_XTLS_REALITY UUID TLS_SERVER REALITY_PRIVATE REALITY_PUBLIC PORT_HYSTERIA2 HY2_REALM_ID IS_HY2_REALM PORT_TUIC TUIC_PASSWORD TUIC_CONGESTION_CONTROL PORT_SHADOWTLS SHADOWTLS_PASSWORD SHADOWSOCKS_METHOD PORT_SHADOWSOCKS PORT_TROJAN TROJAN_PASSWORD PORT_VMESS_WS VMESS_WS_PATH WS_SERVER_IP WS_SERVER_IP_SHOW VMESS_HOST_DOMAIN CDN CDN_PORT PORT_VLESS_WS VLESS_WS_PATH VLESS_HOST_DOMAIN PORT_H2_REALITY PORT_GRPC_REALITY ARGO_DOMAIN PORT_ANYTLS PORT_NAIVE PORT_SOCKS5 SOCKS5_USERNAME SOCKS5_PASSWORD SELF_SIGNED_FINGERPRINT_SHA256 SELF_SIGNED_FINGERPRINT_BASE64
 
   # 获取公共数据
   ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && SERVER_IP=$(awk -F '"' '/"WS_SERVER_IP_SHOW"/{print $4; exit}' ${WORK_DIR}/conf/*-ws*inbounds.json) || SERVER_IP=$(grep -A1 '"tag"' ${WORK_DIR}/list | sed -E '/-ws(-tls)*",$/{N;d}' | awk -F '"' '/"server"/{count++; if (count == 1) {print $4; exit}}')
@@ -5812,6 +5865,16 @@ fetch_nodes_value() {
     NODE_NAME[22]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[11]}.*/\1/p" <<< "$JSON")
     PORT_NAIVE=$(sed -n 's/.*"listen_port":\([0-9]\+\),/\1/gp' <<< "$JSON")
     UUID[22]=$(awk -F '"' '/"username"/{print $4; exit}' <<< "$JSON")
+  fi
+
+  # 获取 SOCKS5 key-value
+  NODE_CONF=$(first_matching_file "${WORK_DIR}/conf/*_${NODE_TAG[12]}_inbounds.json")
+  if [ -s "$NODE_CONF" ]; then
+    JSON=$(cat "$NODE_CONF")
+    NODE_NAME[23]=$(sed -n "s/.*\"tag\":\"\(.*\) ${NODE_TAG[12]}.*/\1/p" <<< "$JSON")
+    PORT_SOCKS5=$(json_number_value listen_port <<< "$JSON")
+    SOCKS5_USERNAME=$(json_string_value username <<< "$JSON")
+    SOCKS5_PASSWORD=$(json_string_value password <<< "$JSON")
   fi
 
   return 0
@@ -6252,11 +6315,16 @@ export_list() {
   $CLASH_ANYTLS
 "
 
+  [ -n "$PORT_SOCKS5" ] && local CLASH_SOCKS5="- {name: \"${NODE_NAME[23]} ${NODE_TAG[12]}\", type: socks5, server: \"${SERVER_IP}\", port: ${PORT_SOCKS5}, username: \"${SOCKS5_USERNAME}\", password: \"${SOCKS5_PASSWORD}\", udp: true}" &&
+  local CLASH_SUBSCRIBE+="
+  $CLASH_SOCKS5
+"
+
   local CLASH_PROXIES
   CLASH_PROXIES=$(printf '%s' "${CLASH_SUBSCRIBE}" | sed -E '/^[ ]*#|^--/d' | sed '/^$/d')
 
-  local CLASH_PORTS=("$PORT_XTLS_REALITY" "$PORT_HYSTERIA2" "$PORT_TUIC" "$PORT_SHADOWTLS" "$PORT_SHADOWSOCKS" "$PORT_TROJAN" "$PORT_VMESS_WS" "$PORT_VLESS_WS" "$PORT_H2_REALITY" "$PORT_GRPC_REALITY" "$PORT_ANYTLS")
-  local CLASH_NAMES=("${NODE_NAME[11]} ${NODE_TAG[0]}" "${NODE_NAME[12]} ${NODE_TAG[1]}" "${NODE_NAME[13]} ${NODE_TAG[2]}" "${NODE_NAME[14]} ${NODE_TAG[3]}" "${NODE_NAME[15]} ${NODE_TAG[4]}" "${NODE_NAME[16]} ${NODE_TAG[5]}" "${NODE_NAME[17]} ${NODE_TAG[6]}" "${NODE_NAME[18]} ${NODE_TAG[7]}" "${NODE_NAME[19]} ${NODE_TAG[8]}" "${NODE_NAME[20]} ${NODE_TAG[9]}" "${NODE_NAME[21]} ${NODE_TAG[10]}")
+  local CLASH_PORTS=("$PORT_XTLS_REALITY" "$PORT_HYSTERIA2" "$PORT_TUIC" "$PORT_SHADOWTLS" "$PORT_SHADOWSOCKS" "$PORT_TROJAN" "$PORT_VMESS_WS" "$PORT_VLESS_WS" "$PORT_H2_REALITY" "$PORT_GRPC_REALITY" "$PORT_ANYTLS" "$PORT_SOCKS5")
+  local CLASH_NAMES=("${NODE_NAME[11]} ${NODE_TAG[0]}" "${NODE_NAME[12]} ${NODE_TAG[1]}" "${NODE_NAME[13]} ${NODE_TAG[2]}" "${NODE_NAME[14]} ${NODE_TAG[3]}" "${NODE_NAME[15]} ${NODE_TAG[4]}" "${NODE_NAME[16]} ${NODE_TAG[5]}" "${NODE_NAME[17]} ${NODE_TAG[6]}" "${NODE_NAME[18]} ${NODE_TAG[7]}" "${NODE_NAME[19]} ${NODE_TAG[8]}" "${NODE_NAME[20]} ${NODE_TAG[9]}" "${NODE_NAME[21]} ${NODE_TAG[10]}" "${NODE_NAME[23]} ${NODE_TAG[12]}")
   local CLASH_ACTIVE_NAMES=() x
   for x in "${!CLASH_PORTS[@]}"; do
     [[ "${CLASH_PORTS[x]}" =~ ^[0-9]+$ ]] && CLASH_ACTIVE_NAMES+=("${CLASH_NAMES[x]}")
@@ -6689,6 +6757,10 @@ naive+quic://${UUID[22]}:${UUID[22]}@${SERVER_IP_1}:${PORT_NAIVE}?congestion_con
   [ -n "$PORT_NAIVE" ] &&
   local OUTBOUND_REPLACE+=" { \"type\": \"naive\", \"tag\": \"${NODE_NAME[22]} ${NODE_TAG[11]} http2\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_NAIVE}, \"username\": \"${UUID[22]}\", \"password\": \"${UUID[22]}\", \"udp_over_tcp\": true, \"quic\": false, \"tls\": { \"enabled\": true, \"certificate\": [$(tr -d '\n' <<< "$CERT200_JSON")], \"server_name\": \"${TLS_SERVER}\" } }, { \"type\": \"naive\", \"tag\": \"${NODE_NAME[22]} ${NODE_TAG[11]} quic\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_NAIVE}, \"username\": \"${UUID[22]}\", \"password\": \"${UUID[22]}\", \"udp_over_tcp\": false, \"quic\": true, \"quic_congestion_control\": \"bbr\", \"tls\": { \"enabled\": true, \"certificate\": [$(tr -d '\n' <<< "$CERT200_JSON")], \"server_name\": \"${TLS_SERVER}\" } }," &&
   local NODE_REPLACE+="\"${NODE_NAME[22]} ${NODE_TAG[11]} http2\",\"${NODE_NAME[22]} ${NODE_TAG[11]} quic\","
+
+  [ -n "$PORT_SOCKS5" ] &&
+  local OUTBOUND_REPLACE+=" { \"type\": \"socks\", \"tag\": \"${NODE_NAME[23]} ${NODE_TAG[12]}\", \"server\": \"${SERVER_IP}\", \"server_port\": ${PORT_SOCKS5}, \"version\": \"5\", \"username\": \"${SOCKS5_USERNAME}\", \"password\": \"${SOCKS5_PASSWORD}\" }," &&
+  local NODE_REPLACE+="\"${NODE_NAME[23]} ${NODE_TAG[12]}\","
 
   # 生成 sing-box SFM / SFA / SFI 客户端配置。
   write_sing_box_client_config \
@@ -7259,6 +7331,15 @@ change_protocols() {
   else
     unset PORT_NAIVE
   fi
+
+  # 获取 SOCKS5 端口
+  CHECK_PROTOCOLS=$(asc "$CHECK_PROTOCOLS" ++)
+  if array_contains "$CHECK_PROTOCOLS" "${INSTALL_PROTOCOLS[@]}"; then
+    POSITION=$(awk -v target=$CHECK_PROTOCOLS '{ for(i=1; i<=NF; i++) if($i == target) { print i-1; break } }' <<< "${INSTALL_PROTOCOLS[*]}")
+    PORT_SOCKS5=${REINSTALL_PORTS[POSITION]}
+  else
+    unset PORT_SOCKS5
+  fi
   validate_nginx_port
 
   # 停止 sing-box 服务
@@ -7433,6 +7514,7 @@ protocol_primary_secret() {
   case "$CODE" in
     f ) printf '%s' "$SHADOWSOCKS_PASSWORD" ;;
     g ) printf '%s' "$TROJAN_PASSWORD" ;;
+    n ) printf '%s' "$SOCKS5_PASSWORD" ;;
     * ) printf '%s' "${UUID[NODE_IDX]}" ;;
   esac
 }
@@ -7445,6 +7527,7 @@ protocol_primary_secret_label() {
     g ) menu_text 'Trojan 密码' 'Trojan password' ;;
     l ) menu_text 'AnyTLS 密码' 'AnyTLS password' ;;
     m ) menu_text 'NaiveProxy 用户名/密码' 'NaiveProxy username/password' ;;
+    n ) menu_text 'SOCKS5 密码' 'SOCKS5 password' ;;
     * ) menu_text '密码' 'password' ;;
   esac
 }
@@ -7473,6 +7556,7 @@ protocol_edit_primary_secret() {
   LABEL=$(protocol_primary_secret_label "$CODE")
   read_new_value "$(menu_text "请输入新的${LABEL}" "Enter new ${LABEL}")" "$OLD_VAL" NEW_VAL || return
   [[ "$CODE" =~ ^[bdhijk]$ ]] && valid_uuid_or_error "$NEW_VAL"
+  [ "$CODE" = n ] && { valid_socks5_password "$NEW_VAL" || error " SOCKS5_PASSWORD must be 8-128 URI-safe ASCII characters. "; }
 
   case "$CODE" in
     b|d|h|i|j|k )
@@ -7483,6 +7567,9 @@ protocol_edit_primary_secret() {
       ;;
     m )
       replace_json_string_key_file "$FILE" username "$NEW_VAL"
+      replace_json_string_key_file "$FILE" password "$NEW_VAL"
+      ;;
+    n )
       replace_json_string_key_file "$FILE" password "$NEW_VAL"
       ;;
   esac
@@ -7497,6 +7584,17 @@ protocol_edit_primary_secret() {
     grep -Fq "\"path\":\"/${OLD_PATH}\"" "$FILE" && literal_replace_file "$FILE" "$OLD_PATH" "$NEW_PATH"
   fi
 
+  protocol_reload_export
+}
+
+protocol_edit_socks5_username() {
+  local FILE OLD_VAL NEW_VAL
+  FILE=$(protocol_file_by_code n)
+  [ -s "$FILE" ] || error " $(text 110) "
+  OLD_VAL="$SOCKS5_USERNAME"
+  read_new_value "$(menu_text '请输入新的 SOCKS5 用户名' 'Enter new SOCKS5 username')" "$OLD_VAL" NEW_VAL || return
+  valid_socks5_username "$NEW_VAL" || error " SOCKS5_USERNAME must be 1-64 URI-safe ASCII characters. "
+  replace_json_string_key_file "$FILE" username "$NEW_VAL"
   protocol_reload_export
 }
 
@@ -7843,6 +7941,10 @@ protocol_print_summary() {
     g|l|m )
       info " SNI: ${TLS_NOW:-N/A} ($(menu_text '全局' 'global'))"
       ;;
+    n )
+      info " SOCKS5 $(menu_text '用户名' 'username'): ${SOCKS5_USERNAME}"
+      warning " $(menu_text '警告：公网 SOCKS5 的认证信息和代理流量均未加密。' 'Warning: public SOCKS5 credentials and proxy traffic are not encrypted.')"
+      ;;
   esac
 }
 
@@ -7904,6 +8006,10 @@ protocol_detail_menu() {
           hint " 5. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
           hint " 6. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
           ;;
+        n )
+          hint " 5. $(menu_text '修改 SOCKS5 用户名' 'Change SOCKS5 username')"
+          hint " 6. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          ;;
       esac
     fi
 
@@ -7925,6 +8031,7 @@ protocol_detail_menu() {
           f ) protocol_edit_method "$CODE" ;;
           h|i ) protocol_edit_ws_path "$CODE" ;;
           g|l|m ) menu_edit_tls_server ;;
+          n ) protocol_edit_socks5_username ;;
         esac
         ;;
       6 )
@@ -7936,6 +8043,7 @@ protocol_detail_menu() {
           f ) menu_edit_server_ip ;;
           h|i ) protocol_edit_ws_cdn "$CODE" ;;
           g|l|m ) menu_edit_server_ip ;;
+          n ) menu_edit_server_ip ;;
         esac
         ;;
       7 )
@@ -7974,7 +8082,8 @@ protocol_detail_menu() {
 }
 
 protocol_config_menu() {
-  local CHOOSE CODE IDX NODE_IDX STATUS_TEXT
+  local CHOOSE CODE IDX NODE_IDX STATUS_TEXT BULK_OPTION
+  BULK_OPTION=$(( ${#PROTOCOL_LIST[@]} + 1 ))
   while true; do
     check_install
     fetch_nodes_value
@@ -7985,14 +8094,14 @@ protocol_config_menu() {
       STATUS_TEXT=$(protocol_status_text "$CODE")
       hint " $(( IDX + 1 )). ${CODE}. ${PROTOCOL_LIST[IDX]} [${STATUS_TEXT}] ${NODE_NAME[NODE_IDX]:+ - ${NODE_NAME[NODE_IDX]}}"
     done
-    hint " 13. $(text 62)"
+    hint " ${BULK_OPTION}. $(text 62)"
     hint " 0. $(menu_text '返回' 'Back')"
     reading "\n $(text 24) " CHOOSE
     [ "$CHOOSE" = 0 ] && return
     if [[ "$CHOOSE" =~ ^[0-9]+$ ]] && [ "$CHOOSE" -ge 1 ] && [ "$CHOOSE" -le "${#PROTOCOL_LIST[@]}" ]; then
       CODE=$(asc $(( CHOOSE + 97 )))
       protocol_detail_menu "$CODE"
-    elif [ "$CHOOSE" = 13 ]; then
+    elif [ "$CHOOSE" = "$BULK_OPTION" ]; then
       change_protocols
       exit
     else
@@ -8416,7 +8525,7 @@ ALL_PARAMETER=($(sed -E 's/(-c|-e|-f|-C|-E|-F) //; s/=([^"])/ \1/g; s/sudo cloud
 parameter_present --CHOOSE_PROTOCOLS "${ALL_PARAMETER[@]}" && NONINTERACTIVE_INSTALL=noninteractive_install
 for _protocol_switch in \
   --XTLS_REALITY --HYSTERIA2 --TUIC --SHADOWTLS --SHADOWSOCKS --TROJAN \
-  --VMESS_WS --VLESS_WS --H2_REALITY --GRPC_REALITY --ANYTLS --NAIVE; do
+  --VMESS_WS --VLESS_WS --H2_REALITY --GRPC_REALITY --ANYTLS --NAIVE --SOCKS5; do
   if parameter_present "$_protocol_switch" "${ALL_PARAMETER[@]}"; then
     NONINTERACTIVE_INSTALL=noninteractive_install
     break
@@ -8520,6 +8629,9 @@ for z in "${!ALL_PARAMETER[@]}"; do
     --NAIVE )
       ((z++)); NAIVE=${ALL_PARAMETER[z]}
       ;;
+    --SOCKS5 )
+      ((z++)); SOCKS5=${ALL_PARAMETER[z]}
+      ;;
     --START_PORT )
       ((z++)); START_PORT=${ALL_PARAMETER[z]}
       ;;
@@ -8567,6 +8679,9 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --PORT_NAIVE )
       ((z++)); PORT_NAIVE=${ALL_PARAMETER[z]}
+      ;;
+    --PORT_SOCKS5 )
+      ((z++)); PORT_SOCKS5=${ALL_PARAMETER[z]}
       ;;
     --SERVER_IP )
       ((z++)); SERVER_IP=${ALL_PARAMETER[z]}
@@ -8621,6 +8736,15 @@ for z in "${!ALL_PARAMETER[@]}"; do
       ;;
     --NODE_NAME_NAIVE )
       NODE_NAME_NAIVE=$(parameter_value_from $((z+1)))
+      ;;
+    --NODE_NAME_SOCKS5 )
+      NODE_NAME_SOCKS5=$(parameter_value_from $((z+1)))
+      ;;
+    --SOCKS5_USERNAME )
+      ((z++)); SOCKS5_USERNAME=${ALL_PARAMETER[z]}
+      ;;
+    --SOCKS5_PASSWORD )
+      ((z++)); SOCKS5_PASSWORD=${ALL_PARAMETER[z]}
       ;;
     --SUBSCRIBE )
       ((z++)); [ "${ALL_PARAMETER[z]}" = 'true' ] && IS_SUB=is_sub

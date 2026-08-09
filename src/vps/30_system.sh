@@ -703,7 +703,7 @@ sing-box_variables() {
   STEP_NUM=0
   # 预先用全选协议计算最大总步骤数，用于协议选择提示时显示 (1/?)
   local _saved_protocols=("${INSTALL_PROTOCOLS[@]}")
-  INSTALL_PROTOCOLS=(b c d e f g h i j k l m)
+  INSTALL_PROTOCOLS=("${DEFAULT_PROTOCOL_CODES[@]}" n)
   calc_install_steps
   INSTALL_PROTOCOLS=("${_saved_protocols[@]}")
 
@@ -713,7 +713,7 @@ sing-box_variables() {
     SERVER_IP_DEFAULT=$WAN6
   fi
 
-  # 选择安装的协议，由于选项 a 为全部协议，所以选项数不是从 a 开始，而是从 b 开始，处理输入：把大写全部变为小写，把不符合的选项去掉，把重复的选项合并
+  # 选择安装的协议。a 代表默认协议集，具体协议代码从 b 开始；规范化大小写、过滤无效选项并去重
   (( STEP_NUM++ )) || true
   if [ -z "$CHOOSE_PROTOCOLS" ]; then
     hint "\n (${STEP_NUM}/${TOTAL_STEPS:-?}) $(text 49) "

@@ -2,6 +2,15 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-08-09
+
+- 发布脚本版本更新为 `v1.3.22`。
+- 新增显式启用的公网 SOCKS5 入站，监听 IPv4/IPv6，支持 TCP/UDP，并强制用户名和密码认证，不提供匿名模式。
+- SOCKS5 使用独立的端口、节点名和认证变量；VPS 配置更新会保留现有凭据，Docker 可通过环境变量固定凭据。
+- `a` 保持原有 `b-m` 默认协议集，不会因升级自动开放公网 SOCKS5；只有 `n` 或 `SOCKS5=true` 会启用。
+- SOCKS5 节点只导出到 Clash/Mihomo 和 sing-box 客户端配置；防火墙同步只管理固定 TCP 控制端口，文档说明 UDP Associate 使用动态中继端口。
+- 文档明确 SOCKS5 的认证信息和代理流量不加密，公网使用必须自行评估链路风险。
+
 ## 2026-08-05
 
 - 发布脚本版本更新为 `v1.3.21`。

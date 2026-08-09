@@ -17,9 +17,9 @@ services:
       - sing-box-cert:/sing-box/cert
     environment:
       # 全局选择
-      # 协议代码：a=全部；b=VLESS Reality；c=Hysteria2；d=Tuic V5；e=ShadowTLS；f=Shadowsocks；
-      # g=Trojan；h=VMess WebSocket；i=VLESS WebSocket TLS；j=H2 Reality；k=gRPC Reality；l=AnyTLS；m=NaiveProxy。
-      # 脚本默认值：不填写 CHOOSE_PROTOCOLS 且不启用单协议开关时为 a，即全部协议。
+      # 协议代码：a=默认协议集 b-m；b=VLESS Reality；c=Hysteria2；d=Tuic V5；e=ShadowTLS；f=Shadowsocks；
+      # g=Trojan；h=VMess WebSocket；i=VLESS WebSocket TLS；j=H2 Reality；k=gRPC Reality；l=AnyTLS；m=NaiveProxy；n=公网 SOCKS5。
+      # 脚本默认值：不填写 CHOOSE_PROTOCOLS 且不启用单协议开关时为 a。SOCKS5 必须通过 n 或 SOCKS5=true 显式启用。
       # 示例 bcf = VLESS Reality + Hysteria2 + Shadowsocks。设置 CHOOSE_PROTOCOLS 为普通协议代码后会忽略下面的单协议开关。
       # 设置 CHOOSE_PROTOCOLS 为 switch 时，按下面的单协议开关生成协议列表。
       # PORT_* 和 NODE_NAME_* 只在对应协议被 CHOOSE_PROTOCOLS 选中或单协议开关为 true 时生效。
@@ -129,6 +129,14 @@ services:
       # NAIVE: "false" # 可选：true/false；仅在 CHOOSE_PROTOCOLS 不填写时生效。
       # PORT_NAIVE: "" # 可选：m 协议监听端口。脚本默认值：START_PORT + m 在 CHOOSE_PROTOCOLS 中的位置。
       # NODE_NAME_NAIVE: "" # 可选：单协议节点名。用户名和密码默认使用 UUID_CONFIRM。
+
+      # n. 公网 SOCKS5
+      # SOCKS5: "false" # 可选：true/false；默认关闭，且不包含在 a 中。
+      # PORT_SOCKS5: "" # 可选：n 协议 TCP 控制端口。UDP Associate 使用动态中继端口；脚本默认值：START_PORT + n 在 CHOOSE_PROTOCOLS 中的位置。
+      # NODE_NAME_SOCKS5: "" # 可选：单协议节点名。
+      # SOCKS5_USERNAME: "" # 建议固定：必填认证用户名；未填写时每次容器启动随机生成。允许 1-64 位 A-Z a-z 0-9 . _ ~ -。
+      # SOCKS5_PASSWORD: "" # 建议固定：必填认证密码；未填写时每次容器启动随机生成。允许 8-128 位 A-Z a-z 0-9 . _ ~ -。
+      # 注意：SOCKS5 的认证信息和代理流量均不加密；公网 UDP 还需要在宿主机/云防火墙手动放行系统临时 UDP 端口范围。
 
 volumes:
   sing-box-cert:
