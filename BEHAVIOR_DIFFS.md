@@ -1,14 +1,17 @@
 # 与上游的行为差异
 
-本次 review 基线，日期：2026-08-05。
+本次 review 基线，日期：2026-08-09。
 
-- 上游：`fscarmen/sing-box@4c9f6fbf06b5083fe3c8acc26568228c6f0f866e`
+- 上游：`fscarmen/sing-box@e1f08cff8a39ec0ac595d549e886b0ac88514b68`
 - 下游：`qqqasdwx/sing-box@main`
 
 截至当前 review 基线，已选择性移植上游中适用于本仓库的变化。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
 
 ## Review 结果
 
+- 本次 review 移植上游 `e1f08cff` 的精确端口检测思路，但统一解析 `ss` 的本地监听字段并比较完整端口，覆盖 VPS 和 Docker 的所有端口选择入口。
+- 本次 review 移植上游 `e1f08cff` 的服务器域名支持，并将 `SERVER_IP` 明确定义为兼容旧变量名的“服务器地址”；IPv4、IPv6 和 DDNS 域名使用严格校验，不采用上游会接受越界 IPv4 的宽松正则。
+- 本次 review 不重复移植上游的独立协议端口和 nginx 生命周期实现，本仓库已有覆盖配置文件、Docker、CLI 与菜单的完整实现；不恢复上游 OpenAI/WARP 自动检测，因为本仓库已明确移除内置 WARP。
 - VPS 安装脚本刻意尽量保持与上游一致。目前观察到的差异主要是仓库归属链接、`force_version` 来源，以及生成的 `sb` 快捷命令地址。
 - Docker 行为刻意与上游不同：本仓库的 Docker 入口复用 VPS 的协议生成逻辑，而不是继续维护一份独立手写实现。
 - 本仓库完全移除内置 WARP endpoint、宿主机 WARP 检测/状态显示，以及 OpenAI、Hysteria2 和 `sb -d` 的 WARP 专用逻辑；Hysteria2 Realm/STUN 与通用自定义出站能力保留。
@@ -23,6 +26,7 @@
 - 本次 review 移植上游 `4c9f6fb` 的 nginx 状态收敛思路，但使用下游的显式配置检查和错误报告；协议增删继续完整停启 sing-box，不采用上游热重载。nginx 配置、运行进程和 systemd/OpenRC 服务文件会按最终状态同步。
 - 上游把协议增删也直接改为 HUP，但该流程同时修改服务文件、nginx、Argo 和防火墙。本仓库暂时保留协议增删的完整停启，只让端口和单项节点参数修改使用安全热重载。
 - 本仓库不生成 sing-box 内建 NTP 客户端配置，直接依赖宿主机时间同步；升级时删除旧 `06_ntp.json` 并注释状态文件中的旧 `NTP_*` 配置项。
+- 本仓库新增可选的公网 SOCKS5 入站，但不把它加入 `a` 默认协议集；必须显式启用、必须使用用户名和密码，并只导出到已确认支持 SOCKS5 的客户端格式。
 - 下游配置文件更新会在 SNI 未变化且证书、私钥有效匹配时复用已有自签证书；Docker 示例通过命名卷持久化 `/sing-box/cert`，避免升级或重建容器后已有客户端的证书固定值失效。
 - 下游自定义路由发布除了执行 `sing-box check`，还会校验规则引用的出站或 endpoint tag 是否存在；这是对当前 sing-box 内建检查语义盲区的补充。
 - 早前 review 已移植上游 `6bb22b3`、`53ce0dc`、`5dfd0cd` 和 `3dfbec4`，包括客户端 TLS 指纹、部分导出配置热更新、服务端 IP 修改修复、协议变更 UUID 保留、Hysteria2 Realm UX、v2rayN Realm 订阅支持、端口跳跃目标解析和 Hysteria2 sing-box JSON 输出修复。
@@ -48,6 +52,7 @@
 | GitHub 加速 | 直连失败时自动探测并选择内置第三方 GitHub 反代。 | 默认只直连；仅当用户显式设置 `GH_PROXY` 时添加 URL 前缀。 | 代理属于用户的信任决策，不应由脚本静默决定。 |
 | 节点命名 | 只支持一个全局节点名，所有协议共用同一前缀。 | 支持 `NODE_NAME_CONFIRM` 全局节点名，也支持 `NODE_NAME_XTLS_REALITY`、`NODE_NAME_HYSTERIA2` 等单协议节点名。 | 用户可以给每个协议设置可识别的名称；未设置单协议名称时仍保持上游式全局回退。 |
 | 协议端口 | 主要通过 `START_PORT` 按所选协议顺序连续分配端口。 | 支持 `PORT_XTLS_REALITY`、`PORT_HYSTERIA2` 等单协议端口；未设置时仍按 `START_PORT` 顺序使用默认端口。 | 保留上游默认行为，同时允许 Docker 或配置文件固定某个协议的公开端口。 |
+| 公网 SOCKS5 | 不作为一键安装协议提供。 | 新增代码 `n`，默认关闭且不包含在 `a` 中；监听 IPv4/IPv6、支持 TCP 和 UDP Associate、强制用户名密码认证。固定防火墙规则只开放 TCP 控制端口。 | SOCKS5 不加密认证和流量；UDP Associate 使用动态中继端口，不能通过开放同号 UDP 端口解决，必须避免脚本自动扩大公网暴露面。 |
 | 客户端 TLS 指纹 | 通过已安装后的 `sb -d` 菜单修改导出订阅里的客户端 TLS fingerprint。 | 保留菜单修改，并额外支持 `FINGER_PRINT` 配置文件变量和 Docker 环境变量；默认值同上游为 `chrome`。 | Docker 没有交互菜单，配置化可以让 VPS 和 Docker 的订阅输出保持一致。 |
 | 自定义路由与出站 | 路由和出站由安装脚本直接生成在 sing-box 的配置目录，自定义 WARP 规则另存一份配置。 | `custom/03_route.json` 和 `custom/04_outbounds.json` 是唯一源文件；完整检查成功后合并发布到 `conf/03_routing.json`。VPS 使用 `sb check/reload`，Docker 在启动时发布。 | 避免基本路由与附加规则存在多个来源，同时保证错误配置不会覆盖最后一次可运行版本。 |
 | 服务配置热重载 | 配置修改后直接发送 HUP；信号发送成功即报告完成，协议增删也不再停启。 | VPS 先发布并检查完整配置，再只向主 PID 发送 HUP，并验证 PID 与服务状态；协议增删继续完整停启。Docker 仍通过容器重启应用配置。 | 避免无效配置触发 reload，并保留 nginx、Argo、服务文件和防火墙的跨组件生命周期。 |
@@ -58,7 +63,7 @@
 | Docker 构建上下文 | 直接从仓库分支构建。 | 从生成后的 release tree 构建。 | 确保 Docker 镜像使用的 `docker_init.sh` 和发布分支里的文件完全一致。 |
 | Docker 进程管理器 | 构建时下载 s6-overlay 的 latest 资产。 | 固定 s6-overlay `3.2.3.2`，并用发布资产附带的 SHA-256 校验后再解压。 | 避免 latest 漂移并校验构建阶段下载内容。 |
 | Docker 协议生成 | Docker 有一份独立手写的配置生成逻辑。 | Docker 复用 VPS 模块来生成协议 JSON、订阅、Argo、Reality 密钥、Hysteria2 Realm 和节点导出。 | 避免 Docker 和 VPS 两套行为继续漂移。 |
-| Docker 协议选择 | 使用 `XTLS_REALITY=true` 等独立布尔变量；如果没有启用任何布尔变量，就不会选择协议。 | 支持 VPS 一样的 `CHOOSE_PROTOCOLS` 字母选择。旧布尔变量仍可用；如果两者都没传，默认启用全部协议。 | 与 VPS 快速安装行为对齐，同时保留旧 Docker 环境变量用法。 |
+| Docker 协议选择 | 使用 `XTLS_REALITY=true` 等独立布尔变量；如果没有启用任何布尔变量，就不会选择协议。 | 支持 VPS 一样的 `CHOOSE_PROTOCOLS` 字母选择。旧布尔变量仍可用；如果两者都没传，默认启用 `b-m`，SOCKS5 仍需显式启用。 | 与 VPS 快速安装行为对齐，同时保留旧 Docker 环境变量用法。 |
 | Docker 端口语义 | `START_PORT` 是 nginx/Argo 回源端口；协议端口从它后面开始递增。 | `START_PORT` 是第一个协议端口；`PORT_NGINX` 是 nginx/Argo 回源端口，默认值是 `START_PORT + 已选协议数量`。 | 移除隐藏的一位端口偏移，让 Docker 与 VPS 的端口语义一致。 |
 | Docker 订阅和 nginx | nginx 与订阅输出始终参与生成流程。 | 只有订阅或 Argo 需要时才生成 nginx；`SUBSCRIBE=false` 且 `ARGO=false` 时可以不启用 nginx。 | 支持非 HTTP 场景，避免无用服务。 |
 | Docker Argo API | Docker 使用自己的 Cloudflare API 解析逻辑，并把隧道回源指向 `START_PORT`。 | Docker 复用 VPS 的 `input_argo_auth` / `create_argo_tunnel` 逻辑，并把隧道回源指向 `PORT_NGINX`；固定 Argo 输入无效时会提前失败。 | 修复 Docker Cloudflare API Token 路径，并保持 Argo 行为与 VPS 一致。 |
