@@ -1,14 +1,17 @@
 # 与上游的行为差异
 
-本次 review 基线，日期：2026-08-05。
+本次 review 基线，日期：2026-08-09。
 
-- 上游：`fscarmen/sing-box@4c9f6fbf06b5083fe3c8acc26568228c6f0f866e`
+- 上游：`fscarmen/sing-box@e1f08cff8a39ec0ac595d549e886b0ac88514b68`
 - 下游：`qqqasdwx/sing-box@main`
 
 截至当前 review 基线，已选择性移植上游中适用于本仓库的变化。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
 
 ## Review 结果
 
+- 本次 review 移植上游 `e1f08cff` 的精确端口检测思路，但统一解析 `ss` 的本地监听字段并比较完整端口，覆盖 VPS 和 Docker 的所有端口选择入口。
+- 本次 review 移植上游 `e1f08cff` 的服务器域名支持，并将 `SERVER_IP` 明确定义为兼容旧变量名的“服务器地址”；IPv4、IPv6 和 DDNS 域名使用严格校验，不采用上游会接受越界 IPv4 的宽松正则。
+- 本次 review 不重复移植上游的独立协议端口和 nginx 生命周期实现，本仓库已有覆盖配置文件、Docker、CLI 与菜单的完整实现；不恢复上游 OpenAI/WARP 自动检测，因为本仓库已明确移除内置 WARP。
 - VPS 安装脚本刻意尽量保持与上游一致。目前观察到的差异主要是仓库归属链接、`force_version` 来源，以及生成的 `sb` 快捷命令地址。
 - Docker 行为刻意与上游不同：本仓库的 Docker 入口复用 VPS 的协议生成逻辑，而不是继续维护一份独立手写实现。
 - 本仓库完全移除内置 WARP endpoint、宿主机 WARP 检测/状态显示，以及 OpenAI、Hysteria2 和 `sb -d` 的 WARP 专用逻辑；Hysteria2 Realm/STUN 与通用自定义出站能力保留。

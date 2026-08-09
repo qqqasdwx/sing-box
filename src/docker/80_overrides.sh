@@ -37,7 +37,7 @@ docker_protocols_from_env() {
 
 docker_pick_free_port() {
   local PORT=${1:-20000}
-  while ss -nltup 2>/dev/null | grep -q ":$PORT "; do
+  while is_port_in_use "$PORT"; do
     PORT=$((PORT + 1))
   done
   echo "$PORT"

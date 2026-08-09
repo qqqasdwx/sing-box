@@ -262,10 +262,111 @@ reload_service_or_warn() {
     { service_action_warn "$_label" "$_service" reload; return 1; }
 }
 
+valid_ipv4_address() {
+  local _address=$1 _octet
+  local -a _octets
+
+  [[ "$_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  IFS=. read -r -a _octets <<< "$_address"
+  [ "${#_octets[@]}" -eq 4 ] || return 1
+  for _octet in "${_octets[@]}"; do
+    [[ "$_octet" =~ ^[0-9]{1,3}$ ]] || return 1
+    [ "$((10#${_octet}))" -le 255 ] || return 1
+  done
+}
+
+valid_ipv6_address() {
+  local _address=$1 _left _right _group
+  local -a _left_groups=() _right_groups=() _groups=()
+
+  [[ "$_address" == *:* ]] || return 1
+  [[ "$_address" != *:::* ]] || return 1
+
+  if [[ "$_address" == *.* ]]; then
+    local _ipv4_tail=${_address##*:}
+    valid_ipv4_address "$_ipv4_tail" || return 1
+    _address="${_address%:*}:0:0"
+  fi
+
+  [[ "$_address" =~ ^[0-9A-Fa-f:]+$ ]] || return 1
+  if [[ "$_address" == *::* ]]; then
+    _left=${_address%%::*}
+    _right=${_address#*::}
+    [[ "$_right" != *::* ]] || return 1
+
+    [ -z "$_left" ] || IFS=: read -r -a _left_groups <<< "$_left"
+    [ -z "$_right" ] || IFS=: read -r -a _right_groups <<< "$_right"
+    _groups=("${_left_groups[@]}" "${_right_groups[@]}")
+    [ "${#_groups[@]}" -lt 8 ] || return 1
+  else
+    IFS=: read -r -a _groups <<< "$_address"
+    [ "${#_groups[@]}" -eq 8 ] || return 1
+  fi
+
+  for _group in "${_groups[@]}"; do
+    [[ "$_group" =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1
+  done
+}
+
+valid_domain_name() {
+  local _domain=$1 _label
+  local -a _labels
+
+  [ "${#_domain}" -le 253 ] || return 1
+  [[ "$_domain" == *.* ]] || return 1
+  [[ "$_domain" != .* && "$_domain" != *. ]] || return 1
+  [[ "$_domain" != *..* ]] || return 1
+  [[ "$_domain" =~ ^[0-9.]+$ ]] && return 1
+
+  IFS=. read -r -a _labels <<< "$_domain"
+  for _label in "${_labels[@]}"; do
+    [ -n "$_label" ] && [ "${#_label}" -le 63 ] || return 1
+    [[ "$_label" =~ ^[A-Za-z0-9-]+$ ]] || return 1
+    [[ "$_label" =~ ^[A-Za-z0-9] ]] && [[ "$_label" =~ [A-Za-z0-9]$ ]] || return 1
+  done
+}
+
+valid_server_address() {
+  valid_ipv4_address "$1" || valid_ipv6_address "$1" || valid_domain_name "$1"
+}
+
+input_server_address() {
+  local _attempts=6
+
+  while true; do
+    if [ -z "${SERVER_IP:-}" ] && [[ "${NONINTERACTIVE_INSTALL:-}" != 'noninteractive_install' && "${IS_FAST_INSTALL:-}" != 'is_fast_install' ]]; then
+      reading "\n ${TOTAL_STEPS:+(${STEP_NUM:-0}/${TOTAL_STEPS}) }$(text 10) " SERVER_IP
+    fi
+    SERVER_IP=${SERVER_IP:-${SERVER_IP_DEFAULT:-}}
+    [ -n "$SERVER_IP" ] || error " $(text 47) "
+    valid_server_address "$SERVER_IP" && break
+
+    if [[ "${NONINTERACTIVE_INSTALL:-}" = 'noninteractive_install' || "${IS_FAST_INSTALL:-}" = 'is_fast_install' ]]; then
+      error " $(text 133) "
+    fi
+    (( _attempts-- )) || true
+    [ "$_attempts" -gt 0 ] || error "\n $(text 3) \n"
+    warning "\n $(text 133) \n"
+    unset SERVER_IP
+  done
+
+  WS_SERVER_IP_SHOW=$SERVER_IP
+}
+
+is_port_in_use() {
+  local _port=$1 _local_address
+  [[ "$_port" =~ ^[0-9]+$ ]] || return 1
+
+  while read -r _local_address; do
+    [ "${_local_address##*:}" = "$_port" ] && return 0
+  done < <(ss -H -nltup 2>/dev/null | awk '{print $5}')
+  return 1
+}
+
 # 根据 INSTALL_PROTOCOLS 计算安装流程总步骤数
 # sing-box 协议分类：Reality 类 (b/j/k)、Hysteria2(c)、WS 类 (h/i)
 calc_install_steps() {
-  local _total=5  # 固定步骤：协议选择、起始端口、VPS IP、UUID、节点名
+  local _total=5  # 固定步骤：协议选择、起始端口、服务器地址、UUID、节点名
   local HAS_REALITY=false HAS_WS=false
   for _P in "${INSTALL_PROTOCOLS[@]}"; do
     [[ "$_P" =~ ^[bjk]$ ]] && HAS_REALITY=true
@@ -1343,7 +1444,7 @@ change_config() {
   local UUID_NOW="$(awk -F'"' '/"uuid"[[:space:]]*:[[:space:]]*"/ || /"id"[[:space:]]*:[[:space:]]*"/ {print $4; exit}' ${WORK_DIR}/conf/*_inbounds.json 2>/dev/null)"
   [ -n "$UUID_NOW" ] && MENU_IDX+=(131) && MENU_KEY+=(uuid) && MENU_VAL+=("$UUID_NOW")
 
-  # 服务器 IP
+  # 服务器地址
   ls ${WORK_DIR}/conf/*-ws*inbounds.json >/dev/null 2>&1 && local SERVER_IP_NOW=$(awk -F '"' '/"WS_SERVER_IP_SHOW"/{print $4; exit}' ${WORK_DIR}/conf/*-ws*inbounds.json) || local SERVER_IP_NOW=$(grep -A1 '"tag"' ${WORK_DIR}/list | sed -E '/-ws(-tls)*",$/{N;d}' | awk -F '"' '/"server"/{count++; if (count == 1) {print $4; exit}}')
   [ -n "$SERVER_IP_NOW" ] && MENU_IDX+=(132) && MENU_KEY+=(serverip) && MENU_VAL+=("$SERVER_IP_NOW")
 
@@ -1520,20 +1621,22 @@ change_config() {
   elif [ "$KEY" = "sni" ]; then
     ssl_certificate "$NEW_VAL"
   elif [ "$KEY" = "serverip" ]; then
-    [[ ! "$NEW_VAL" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && [[ ! "$NEW_VAL" =~ ^[0-9a-fA-F:]+$ ]] && error " $(text 133) "
+    valid_server_address "$NEW_VAL" || error " $(text 133) "
   fi
 
   # 批量替换，更换服务 IP 和导出指纹不需重启服务
   [[ ! "$KEY" =~ ^(fingerprint|serverip|cdn)$ ]] && hint " $(text 112) "
 
   if [[ "$KEY" =~ ^(serverip|cdn)$ ]]; then
-    # IP 在配置里出现的形式有多种，逐一替换
+    local OLD_PATTERN
+    OLD_PATTERN=$(sed 's/[.]/\\./g' <<< "$OLD")
+    # 地址在配置里出现的形式有多种，逐一替换
     find ${WORK_DIR} -type f | xargs -P 50 sed -i \
-      -e "s|\"server\": \"${OLD}\"|\"server\": \"${NEW_VAL}\"|g" \
-      -e "s|WS_SERVER_IP_SHOW\": \"${OLD}\"|WS_SERVER_IP_SHOW\": \"${NEW_VAL}\"|g" \
+      -e "s|\"server\": \"${OLD_PATTERN}\"|\"server\": \"${NEW_VAL}\"|g" \
+      -e "s|WS_SERVER_IP_SHOW\": \"${OLD_PATTERN}\"|WS_SERVER_IP_SHOW\": \"${NEW_VAL}\"|g" \
       2>/dev/null
     # 同时更新 subscribe/list 等文本文件中可能出现的裸 IP
-    find ${WORK_DIR}/subscribe -type f | xargs -P 50 sed -i "s|${OLD}|${NEW_VAL}|g" 2>/dev/null
+    find ${WORK_DIR}/subscribe -type f | xargs -P 50 sed -i "s|${OLD_PATTERN}|${NEW_VAL}|g" 2>/dev/null
   else
     find ${WORK_DIR} -type f | xargs -P 50 sed -i "s|${OLD}|${NEW_VAL}|g" 2>/dev/null
     if [[ ! "$KEY" =~ ^(fingerprint)$ ]]; then
@@ -1755,7 +1858,7 @@ input_nginx_port() {
       if protocol_port_in_use "$PORT_NGINX"; then
         [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]] && error " PORT_NGINX conflicts with a selected protocol port. "
         warning "\n $(text 44) \n"
-      elif ss -nltup | grep -q ":$PORT_NGINX"; then
+      elif is_port_in_use "$PORT_NGINX"; then
         if [ "$CONFIG_UPDATE_INSTALL" = 'config_update_install' ] && [ -s "${WORK_DIR}/nginx.conf" ] && [ "$PORT_NGINX" = "$(awk '/listen/{print $2; exit}' "${WORK_DIR}/nginx.conf")" ]; then
           break
         fi

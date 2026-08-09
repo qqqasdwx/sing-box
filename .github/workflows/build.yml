@@ -50,7 +50,7 @@ jobs:
           tools/bundle.sh --check
 
       - name: Check shell syntax
-        run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh tests/test-v2rayn-hy2.sh tests/test-safe-reload.sh tests/test-nginx-lifecycle.sh tests/test-argo-supervision.sh tests/test-local-assets.sh tests/test-certificate-reuse.sh tests/test-routing-validation.sh tests/test-upgrade-transaction.sh tests/test-socks5.sh
+        run: bash -n sing-box.sh docker_init.sh tools/bundle.sh tools/prepare-release.sh tests/test-v2rayn-hy2.sh tests/test-safe-reload.sh tests/test-nginx-lifecycle.sh tests/test-argo-supervision.sh tests/test-local-assets.sh tests/test-certificate-reuse.sh tests/test-routing-validation.sh tests/test-upgrade-transaction.sh tests/test-socks5.sh tests/test-server-address-and-ports.sh
 
       - name: Test v2rayN Hysteria2 output
         run: bash tests/test-v2rayn-hy2.sh
@@ -77,6 +77,9 @@ jobs:
 
       - name: Test public SOCKS5 protocol
         run: bash tests/test-socks5.sh
+
+      - name: Test server addresses and exact port detection
+        run: bash tests/test-server-address-and-ports.sh
 
       - name: Check routing examples
         run: find examples/routing -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty

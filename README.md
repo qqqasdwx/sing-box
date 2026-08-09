@@ -197,7 +197,7 @@ docker run -d --name sing-box --network host --restart unless-stopped \
   ghcr.io/qqqasdwx/sing-box:latest
 ```
 
-`START_PORT` 是默认协议端口基准。每个协议都可以用对应 `PORT_*` 单独覆盖；未覆盖的协议按选择顺序从 `START_PORT` 递增。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，默认 `error`。`FINGER_PRINT` 可设置客户端 TLS 指纹，默认 `chrome`。`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 通常保持为空，让脚本自动分配即可；用户侧连接端口看 `CDN_PORT`。`SERVER_IP` 可选；Docker 启动时留空会自动检测公网 IPv4/IPv6。启用订阅或 Argo 时，`PORT_NGINX` 是 nginx 回源端口；未指定时会从 `START_PORT + 已选协议数量` 开始选择，并避开已选协议端口。容器直接使用宿主机提供的系统时间，本项目不会在容器内另行运行 NTP 客户端。
+`START_PORT` 是默认协议端口基准。每个协议都可以用对应 `PORT_*` 单独覆盖；未覆盖的协议按选择顺序从 `START_PORT` 递增。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，默认 `error`。`FINGER_PRINT` 可设置客户端 TLS 指纹，默认 `chrome`。`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 通常保持为空，让脚本自动分配即可；用户侧连接端口看 `CDN_PORT`。`SERVER_IP` 实际表示导出给客户端的服务器地址，可填写公网 IPv4、IPv6 或 DDNS 域名；Docker 启动时留空会自动检测公网 IPv4/IPv6。启用订阅或 Argo 时，`PORT_NGINX` 是 nginx 回源端口；未指定时会从 `START_PORT + 已选协议数量` 开始选择，并避开已选协议端口。容器直接使用宿主机提供的系统时间，本项目不会在容器内另行运行 NTP 客户端。
 
 Docker 同样支持 `GH_PROXY` 环境变量；默认值为空。它只影响容器启动时从 GitHub 下载 sing-box、jq 和按需下载的 cloudflared。
 
@@ -235,6 +235,7 @@ bash tests/test-local-assets.sh
 bash tests/test-certificate-reuse.sh
 bash tests/test-routing-validation.sh
 bash tests/test-upgrade-transaction.sh
+bash tests/test-server-address-and-ports.sh
 find examples/routing -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty
 ```
 

@@ -691,7 +691,7 @@ input_start_port() {
     START_PORT=${START_PORT:-"$START_PORT_DEFAULT"}
     if [[ "$START_PORT" =~ ^[1-9][0-9]{2,4}$ && "$START_PORT" -ge "$MIN_PORT" && "$START_PORT" -le "$MAX_PORT" ]]; then
       for port in $(eval echo {$START_PORT..$[START_PORT+NUM-1]}); do
-        ss -nltup | grep -q ":$port" && IN_USED+=("$port")
+        is_port_in_use "$port" && IN_USED+=("$port")
       done
       [ "${#IN_USED[*]}" -eq 0 ] && break || warning "\n $(text 44) \n"
     fi
@@ -755,21 +755,15 @@ sing-box_variables() {
     [ -n "$ARGO_RUNS" ] && local ARGO_READY=argo_ready
   fi
 
-  # 输入服务器 IP,默认为检测到的服务器 IP，如果全部为空，则提示并退出脚本
+  # 输入服务器地址，默认为检测到的公网 IP
   if [ "$IS_FAST_INSTALL" = 'is_fast_install' ]; then
     grep -q '^$' <<< "$SERVER_IP" && grep -q '.' <<< "$WAN4" && SERVER_IP=$WAN4
     grep -q '^$' <<< "$SERVER_IP" && grep -q '.' <<< "$WAN6" && SERVER_IP=$WAN6
   fi
-  if [ -z "$SERVER_IP" ]; then
-    if [[ "$NONINTERACTIVE_INSTALL" = 'noninteractive_install' || "$IS_FAST_INSTALL" = 'is_fast_install' ]]; then
-      SERVER_IP="$SERVER_IP_DEFAULT"
-    else
-      (( STEP_NUM++ )) || true
-      reading "\n (${STEP_NUM}/${TOTAL_STEPS}) $(text 10) " SERVER_IP
-    fi
+  if [ -z "$SERVER_IP" ] && [[ "$NONINTERACTIVE_INSTALL" != 'noninteractive_install' && "$IS_FAST_INSTALL" != 'is_fast_install' ]]; then
+    (( STEP_NUM++ )) || true
   fi
-  SERVER_IP=${SERVER_IP:-"$SERVER_IP_DEFAULT"} && WS_SERVER_IP_SHOW=$SERVER_IP
-  [ -z "$SERVER_IP" ] && error " $(text 47) "
+  input_server_address
 
   # 根据 IPv4 和 IPv6 的网络状态，使不同的 DNS 策略
   command -v ping >/dev/null 2>&1 && for i in {1..3}; do

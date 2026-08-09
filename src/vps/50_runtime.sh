@@ -1005,7 +1005,7 @@ change_start_port() {
         error " $(text 152) "
       fi
     done
-    if ! array_contains "${NEW_PORTS[_i]}" "${OLD_PORTS[@]}" && ss -nltup | grep -q ":${NEW_PORTS[_i]}"; then
+    if ! array_contains "${NEW_PORTS[_i]}" "${OLD_PORTS[@]}" && is_port_in_use "${NEW_PORTS[_i]}"; then
       _new_port="${NEW_PORTS[_i]}"
       error " $(text 153) "
     fi
@@ -1063,7 +1063,7 @@ change_protocols() {
   check_install
   [ "${STATUS[0]}" = "$(text 26)" ] && error "\n Sing-box $(text 26) "
 
-  # 检查服务器 IP
+  # 检查服务器公网地址
   check_system_ip
 
   # 查找已安装的协议，并遍历其在所有协议列表中的名称，获取协议名后存放在 EXISTED_PROTOCOLS; 没有的协议存放在 NOT_EXISTED_PROTOCOLS
@@ -1317,7 +1317,7 @@ change_protocols() {
     unset PORT_VLESS_WS
   fi
 
-  # 如之前没有 ws，现新增的 ws，则确认服务器 IP 和输入 cdn
+  # 如之前没有 ws，现新增的 ws，则确认服务器地址和输入 cdn
   if [[ "${#CDN[@]}" = '0' && ( "$ARGO_READY" = 'argo_ready' || "$ORIGIN_READY" = 'origin_ready' ) ]]; then
     if [ -n "$WAN4" ]; then
       SERVER_IP_DEFAULT=$WAN4
@@ -1325,10 +1325,8 @@ change_protocols() {
       SERVER_IP_DEFAULT=$WAN6
     fi
 
-    # 输入服务器 IP,默认为检测到的服务器 IP，如果全部为空，则提示并退出脚本
-    [ -z "$SERVER_IP" ] && reading "\n $(text 10) " SERVER_IP
-    SERVER_IP=${SERVER_IP:-"$SERVER_IP_DEFAULT"} && WS_SERVER_IP_SHOW=$SERVER_IP
-    [ -z "$SERVER_IP" ] && error " $(text 47) "
+    # 输入服务器地址，默认为检测到的公网 IP
+    input_server_address
 
     input_cdn
   fi
@@ -1679,12 +1677,12 @@ menu_edit_tls_server() {
   protocol_reload_export
 }
 
-menu_edit_server_ip() {
+menu_edit_server_address() {
   local OLD_VAL NEW_VAL
   fetch_nodes_value
   OLD_VAL="$SERVER_IP"
-  read_new_value "$(menu_text '请输入新的服务器公网 IP' 'Enter new public server IP')" "$OLD_VAL" NEW_VAL || return
-  [[ "$NEW_VAL" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || [[ "$NEW_VAL" =~ ^[0-9a-fA-F:]+$ ]] || error " $(text 133) "
+  read_new_value "$(menu_text '请输入新的服务器地址' 'Enter new server address')" "$OLD_VAL" NEW_VAL || return
+  valid_server_address "$NEW_VAL" || error " $(text 133) "
   literal_replace_many "$OLD_VAL" "$NEW_VAL" ${WORK_DIR}/conf/*_inbounds.json ${WORK_DIR}/list ${WORK_DIR}/subscribe/*
   export_list
   menu_pause
@@ -1892,7 +1890,7 @@ edit_nginx_port() {
   valid_listen_port "$NEW_PORT" || error " $(text 36) "
   load_installed_protocol_ports
   array_contains "$NEW_PORT" "${INSTALLED_PORT_VALUES[@]}" && error " PORT_NGINX conflicts with a protocol port. "
-  if [ "$NEW_PORT" != "$OLD_PORT" ] && ss -nltup | grep -q ":${NEW_PORT}"; then
+  if [ "$NEW_PORT" != "$OLD_PORT" ] && is_port_in_use "$NEW_PORT"; then
     error " $(text 153) "
   fi
   PORT_NGINX="$NEW_PORT"
@@ -1921,7 +1919,7 @@ show_config_summary() {
   fetch_nodes_value
   hint "\n $(menu_text '当前配置摘要' 'Current Configuration Summary')\n"
   info " Sing-box: ${STATUS[0]}   Argo: ${STATUS[1]}   Nginx: ${STATUS[2]}"
-  info " Server IP: ${SERVER_IP:-N/A}"
+  info " Server address: ${SERVER_IP:-N/A}"
   info " Client Fingerprint: ${FINGER_PRINT:-${FINGER_PRINT_DEFAULT:-chrome}}"
   [ -n "$PORT_NGINX" ] && info " Nginx: ${PORT_NGINX}"
   [ -n "$ARGO_DOMAIN" ] && info " Argo: ${ARGO_DOMAIN}"
@@ -2017,7 +2015,7 @@ protocol_detail_menu() {
         b|j|k )
           hint " 5. $(menu_text '修改 Reality privateKey' 'Change Reality privateKey')"
           hint " 6. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
-          hint " 7. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          hint " 7. $(menu_text '修改导出服务器地址（全局）' 'Change exported server address (global)')"
           ;;
         c )
           hint " 5. $(menu_text '修改 Hysteria2 带宽' 'Change Hysteria2 bandwidth')"
@@ -2025,23 +2023,23 @@ protocol_detail_menu() {
           hint " 7. $(menu_text '修改 Realm ID' 'Change Realm ID')"
           hint " 8. $(menu_text '修改端口跳跃' 'Change Port Hopping')"
           hint " 9. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
-          hint " 10. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          hint " 10. $(menu_text '修改导出服务器地址（全局）' 'Change exported server address (global)')"
           ;;
         d )
           hint " 5. $(menu_text '修改 Tuic 密码' 'Change Tuic password')"
           hint " 6. $(menu_text '修改 Tuic 拥塞控制' 'Change Tuic congestion control')"
           hint " 7. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
-          hint " 8. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          hint " 8. $(menu_text '修改导出服务器地址（全局）' 'Change exported server address (global)')"
           ;;
         e )
           hint " 5. $(menu_text '修改底层 Shadowsocks 密码' 'Change inner Shadowsocks password')"
           hint " 6. $(menu_text '修改加密方法' 'Change method')"
           hint " 7. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
-          hint " 8. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          hint " 8. $(menu_text '修改导出服务器地址（全局）' 'Change exported server address (global)')"
           ;;
         f )
           hint " 5. $(menu_text '修改加密方法' 'Change method')"
-          hint " 6. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          hint " 6. $(menu_text '修改导出服务器地址（全局）' 'Change exported server address (global)')"
           ;;
         h|i )
           hint " 5. $(menu_text '修改 WebSocket 路径' 'Change WebSocket path')"
@@ -2053,11 +2051,11 @@ protocol_detail_menu() {
           ;;
         g|l|m )
           hint " 5. $(menu_text '修改 SNI / 证书域名（全局）' 'Change SNI / certificate domain (global)')"
-          hint " 6. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          hint " 6. $(menu_text '修改导出服务器地址（全局）' 'Change exported server address (global)')"
           ;;
         n )
           hint " 5. $(menu_text '修改 SOCKS5 用户名' 'Change SOCKS5 username')"
-          hint " 6. $(menu_text '修改导出服务器 IP（全局）' 'Change exported server IP (global)')"
+          hint " 6. $(menu_text '修改导出服务器地址（全局）' 'Change exported server address (global)')"
           ;;
       esac
     fi
@@ -2089,15 +2087,15 @@ protocol_detail_menu() {
           c ) protocol_toggle_hy2_realm ;;
           d ) protocol_edit_tuic_congestion ;;
           e ) protocol_edit_method "$CODE" ;;
-          f ) menu_edit_server_ip ;;
+          f ) menu_edit_server_address ;;
           h|i ) protocol_edit_ws_cdn "$CODE" ;;
-          g|l|m ) menu_edit_server_ip ;;
-          n ) menu_edit_server_ip ;;
+          g|l|m ) menu_edit_server_address ;;
+          n ) menu_edit_server_address ;;
         esac
         ;;
       7 )
         case "$CODE" in
-          b|j|k ) menu_edit_server_ip ;;
+          b|j|k ) menu_edit_server_address ;;
           c ) protocol_edit_hy2_realm_id ;;
           d|e ) menu_edit_tls_server ;;
           h|i ) protocol_edit_ws_cdn_port "$CODE" ;;
@@ -2106,7 +2104,7 @@ protocol_detail_menu() {
       8 )
         case "$CODE" in
           c ) protocol_edit_hy2_hopping ;;
-          d|e ) menu_edit_server_ip ;;
+          d|e ) menu_edit_server_address ;;
           h|i ) protocol_edit_ws_domain "$CODE" ;;
         esac
         ;;
@@ -2118,7 +2116,7 @@ protocol_detail_menu() {
         ;;
       10 )
         case "$CODE" in
-          c ) menu_edit_server_ip ;;
+          c ) menu_edit_server_address ;;
           h|i ) change_start_port "$CODE"; menu_pause ;;
         esac
         ;;
@@ -2265,7 +2263,7 @@ global_config_menu() {
   local CHOOSE
   while true; do
     hint "\n $(menu_text '全局配置' 'Global Configuration')\n"
-    hint " 1. $(menu_text '修改导出服务器 IP' 'Change exported server IP')"
+    hint " 1. $(menu_text '修改导出服务器地址' 'Change exported server address')"
     hint " 2. $(menu_text '修改 SNI / 证书域名' 'Change SNI / certificate domain')"
     hint " 3. $(menu_text '修改客户端 TLS 指纹' 'Change client TLS fingerprint')"
     hint " 4. $(menu_text '重排 / 修改所有协议监听端口' 'Reorder / change protocol listen ports')"
@@ -2274,7 +2272,7 @@ global_config_menu() {
     reading "\n $(text 24) " CHOOSE
     case "$CHOOSE" in
       0 ) return ;;
-      1 ) menu_edit_server_ip ;;
+      1 ) menu_edit_server_address ;;
       2 ) menu_edit_tls_server ;;
       3 ) menu_edit_finger_print ;;
       4 ) change_start_port; menu_pause ;;

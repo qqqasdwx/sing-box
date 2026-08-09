@@ -2,7 +2,7 @@
 
 # Docker keeps only container-specific defaults here. Protocol generation,
 # subscriptions, Argo parsing, and node export are shared with the VPS script.
-VERSION='v1.3.22 (2026.08.09)'
+VERSION='v1.3.23 (2026.08.09)'
 
 GH_PROXY=${GH_PROXY:-}
 
