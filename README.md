@@ -158,6 +158,13 @@ AETHERCLOUD_PARENT=ens5 bash <(curl -fsSL https://raw.githubusercontent.com/qqqa
 `docker compose up -d --force-recreate`。如果默认的 Docker IPv4 子网与现有
 本地网络或路由网络冲突，可以自定义这些专用子网。
 
+`AETHERCLOUD_API_BASE` 默认使用商家当前的
+`https://aethercloud.io/api/dynamicv6/vm`。新安装会把该值写入 `.env`；旧安装的
+`.env` 即使没有这个字段，Compose 也会自动使用当前默认值。通常不应修改，仅在
+商家再次迁移接口或调试自定义兼容端点时覆盖。旧版曾使用
+`billing.aethercloud.io`，该地址目前会返回 HTTP 301 页面，不能继续作为 API
+地址使用。
+
 镜像每 120 秒检查一次全部租约，并将租约与固定槽位对应。匹配优先使用
 `wg_interface` 和租约前缀，不依赖 API 数组顺序。槽位保存在
 `/opt/aethercloud-v6/state/leases.json`，容器升级或重启不会重新编号。
@@ -184,3 +191,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/qqqasdwx/sing-box/aetherclou
 
 卸载器会保留 `/opt/aethercloud-v6/.env` 和 `state/`，避免意外丢失凭据及稳定的
 出口端口映射。
+
+## 商家脚本基线
+
+[`baseline/aethercloud-client.sh`](baseline/aethercloud-client.sh) 保存商家公开
+`client.sh` 的原始快照，仅用于接口变更时比较，不会被镜像构建、安装器或容器执行。
+来源、抓取日期和校验值记录在 [`baseline/README.md`](baseline/README.md)。

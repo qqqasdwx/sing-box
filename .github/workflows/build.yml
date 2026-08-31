@@ -25,8 +25,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          bash -n aethercloud-agent.sh healthcheck.sh install.sh uninstall.sh
+          bash -n aethercloud-agent.sh healthcheck.sh install.sh uninstall.sh tests/api_response.sh baseline/aethercloud-client.sh
           shellcheck aethercloud-agent.sh healthcheck.sh install.sh uninstall.sh
+          bash tests/api_response.sh
           bash tests/slot_mapping.sh
           python3 -m py_compile tests/socks5_udp_dns.py tests/socks5_udp_ntp.py
           find examples/sing-box -type f -name '*.json' -print0 | xargs -0 -r -n1 jq empty

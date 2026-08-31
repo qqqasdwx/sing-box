@@ -1,6 +1,7 @@
 .git
 .github
 README.md
+baseline
 aethercloud-v6
 aethercloud-v6.env.example
 aethercloud-v6.service

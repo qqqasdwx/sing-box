@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly API_BASE='https://billing.aethercloud.io/api/dynamicv6/vm'
+readonly API_BASE="${AETHERCLOUD_API_BASE:-https://aethercloud.io/api/dynamicv6/vm}"
 readonly BASE_ROUTE_TABLE='16000'
 readonly BASE_RULE_PREF='16000'
 readonly BASE_SOCKS_PORT='1080'
@@ -121,9 +121,9 @@ wait_for_wan() {
 }
 
 api_request() {
-  local action=$1 payload
+  local action=$1 payload response http_code body
   payload=$(jq -nc --arg id "$VM_UUID" '{vm_uuid:$id}')
-  curl -4 -fsS \
+  if ! response=$(curl -4 -sS \
     --connect-timeout 6 \
     --max-time 20 \
     --retry 2 \
@@ -131,7 +131,24 @@ api_request() {
     --retry-connrefused \
     -H 'Content-Type: application/json' \
     -d "$payload" \
-    "$API_BASE/$action"
+    -w $'\n%{http_code}' \
+    "$API_BASE/$action"); then
+    log "API request failed: $API_BASE/$action" >&2
+    return 1
+  fi
+
+  http_code=${response##*$'\n'}
+  body=${response%$'\n'*}
+  if ! [[ "$http_code" =~ ^2[0-9]{2}$ ]]; then
+    log "API request returned HTTP $http_code: $API_BASE/$action" >&2
+    return 1
+  fi
+  if ! jq -e 'type == "object"' <<< "$body" >/dev/null 2>&1; then
+    log "API returned a non-JSON response: $API_BASE/$action" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$body"
 }
 
 normalize_leases() {
