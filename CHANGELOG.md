@@ -2,6 +2,16 @@
 
 本文件记录 `qqqasdwx/sing-box` 相对上游的下游变更。上游项目自身的历史请参考 [fscarmen/sing-box](https://github.com/fscarmen/sing-box)。
 
+## 2026-08-31
+
+- 发布脚本版本更新为 `v1.3.24`，sing-box API 查询失败时的兜底版本更新为稳定版 `1.14.0`。
+- VPS 首装、VPS 升级、Docker 首装和 Docker 更新统一先下载完整压缩包，再校验成员、解压结果、可执行性及版本号；失败最多重试三次，并始终保留用户显式配置的 `GH_PROXY`。
+- Hysteria2 Realm 与端口跳跃改为互斥：交互菜单切换前确认并关闭原功能，配置文件、命令行或 Docker 同时启用时明确失败。
+- 极速安装不再默认启用 `50000:51000` 端口跳跃，避免未显式选择时修改宿主机 NAT 和防火墙。
+- Alpine 删除端口跳跃规则后立即持久化 iptables/ip6tables；OpenRC 停止 sing-box 时支持失效 pidfile 兜底，并只在确认进程退出后清理服务状态。
+- 不迁移上游 WARP/no-TUN 逻辑、自动第三方 GitHub 代理和 cloudflared 强制 HTTP/2；Cloudflare 默认 `auto` 已在 QUIC 不可用时自动回退 HTTP/2。
+- 上游 `2607028` 的 v2rayN Hysteria2 端口跳跃字段本仓库已经实现，不重复移植。
+
 ## 2026-08-09
 
 - 发布脚本版本更新为 `v1.3.23`。

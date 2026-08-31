@@ -79,13 +79,17 @@ bash <(wget -qO- https://raw.githubusercontent.com/qqqasdwx/sing-box/release/sin
 
 协议选择：`a` 为默认协议集 `b-m`；`b` VLESS Reality；`c` Hysteria2；`d` Tuic；`e` ShadowTLS；`f` Shadowsocks；`g` Trojan；`h` VMess WS；`i` VLESS WS TLS；`j` H2 Reality；`k` gRPC Reality；`l` AnyTLS；`m` NaiveProxy；`n` 公网 SOCKS5。SOCKS5 默认关闭，且不包含在 `a` 中，必须显式选择 `n` 或启用 `SOCKS5`。主机安装和 Docker 都支持单协议开关：`CHOOSE_PROTOCOLS` 留空且任意开关启用时，会按 `XTLS_REALITY`、`HYSTERIA2`、`TUIC`、`SHADOWTLS`、`SHADOWSOCKS`、`TROJAN`、`VMESS_WS`、`VLESS_WS`、`H2_REALITY`、`GRPC_REALITY`、`ANYTLS`、`NAIVE`、`SOCKS5` 生成协议列表；`CHOOSE_PROTOCOLS=switch` 会强制按这些开关生成，且至少要启用一个。开关值为 `true/1/y/yes/on` 时启用。`LOG_LEVEL` 可设置 sing-box 服务端日志级别，支持 `trace`、`debug`、`info`、`warn`、`error`、`fatal`、`panic`，默认 `error`。`FINGER_PRINT` 可设置客户端 TLS 指纹，默认 `chrome`，常用值为 `chrome` 或 `firefox`。sing-box 使用宿主机或容器运行环境的系统时间，本项目不再生成内建 NTP 客户端配置；请在宿主机上独立维护时间同步。
 
+Hysteria2 Realm 和端口跳跃是两种不同的连接方式，不能同时启用。交互菜单从其中一种切换到另一种时会先确认，再关闭原功能；`config.conf`、命令行参数或 Docker 环境变量同时启用两者时会明确报错。极速安装默认不启用端口跳跃，只有显式设置 `HY2_PORT_HOPPING_RANGE=start:end` 才会添加相应规则。
+
 TCP Brutal 不再由本项目代安装。脚本只检测宿主机是否已有 `brutal` 内核模块，并在检测成功时生成相应客户端参数；需要该功能时应先由用户按自己的系统和内核环境独立安装、验证和维护。
 
 协议端口可以逐个覆盖：`PORT_XTLS_REALITY`、`PORT_HYSTERIA2`、`PORT_TUIC`、`PORT_SHADOWTLS`、`PORT_SHADOWSOCKS`、`PORT_TROJAN`、`PORT_VMESS_WS`、`PORT_VLESS_WS`、`PORT_H2_REALITY`、`PORT_GRPC_REALITY`、`PORT_ANYTLS`、`PORT_NAIVE`、`PORT_SOCKS5`。未填写的协议继续按 `START_PORT` 和 `CHOOSE_PROTOCOLS` 顺序递增，重复端口会直接报错。除 WebSocket 协议外，这些端口会作为客户端连接端口导出；`PORT_VMESS_WS` 和 `PORT_VLESS_WS` 是源站监听端口，Argo 下是本机内部回源端口，Origin Rules 下是 Cloudflare 回源端口，客户端连接端口由 `CDN_PORT` 决定（默认 VMess WS 为 80，VLESS WS TLS 为 443）。已安装后也可以通过 `sb -d` 的监听端口面板逐个修改。
 
 VPS 上通过菜单修改监听端口、UUID、密码、Reality 参数、SNI、节点名或 Hysteria2 Realm 时，脚本会先对包含自定义路由在内的完整配置执行 `sing-box check`，检查成功后向 sing-box 主进程发送 HUP，并确认 PID 未变化且服务仍在运行。协议增加或删除还会联动服务文件、nginx、Argo 和防火墙，因此继续使用完整停启流程。
 
-Alpine/OpenRC 使用 `supervise-daemon` 监督 cloudflared。进程异常退出后等待 5 秒自动拉起；如果 60 秒内连续失败 10 次则停止重试，避免认证或配置长期无效时持续刷日志。旧版固定 Tunnel 会在再次运行脚本时自动迁移，失败会恢复原服务；正在运行的 Quick Tunnel 不会被自动重启，因为重启会更换 `trycloudflare.com` 域名。需要迁移 Quick Tunnel 时，先停止 Argo，再重新运行脚本，之后再次启动 Argo 并更新客户端域名。
+Alpine/OpenRC 使用 `supervise-daemon` 监督 cloudflared。进程异常退出后等待 5 秒自动拉起；如果 60 秒内连续失败 10 次则停止重试，避免认证或配置长期无效时持续刷日志。sing-box 停止流程会在 pidfile 失效时按项目二进制兜底查找，并且只在确认进程已退出后清理 pidfile 和 OpenRC started 状态。旧版固定 Tunnel 会在再次运行脚本时自动迁移，失败会恢复原服务；正在运行的 Quick Tunnel 不会被自动重启，因为重启会更换 `trycloudflare.com` 域名。需要迁移 Quick Tunnel 时，先停止 Argo，再重新运行脚本，之后再次启动 Argo 并更新客户端域名。
+
+VPS 首装、`sb -v` 更新、Docker 首装和 Docker 更新都先把 sing-box 压缩包下载到临时文件，检查压缩包成员、解压结果、可执行性和版本号，失败最多重试三次，不再把网络响应直接传给 `tar`。重试始终使用当前 `GH_PROXY` 设置，不会静默切换到其他代理或绕过用户指定的代理。
 
 执行 `sb -v` 更新 sing-box 时，会先用新二进制检查当前配置。如果新版只是不兼容项目托管的基础配置，脚本会在临时目录重建 `00_log.json`、`04_experimental.json`、`05_dns.json` 和 `07_http_clients.json`，保留日志等级、DNS 策略、协议入站以及 `custom/` 路由和出站，并再次使用新二进制检查。候选配置通过后仍需用户明确确认才会应用。内核与完整 `conf/` 作为同一个事务切换；新服务启动失败时两者一起回滚。协议配置或 `custom/` 本身不兼容时不会自动改写，而是保留当前服务并显示检查错误。Docker 更新同样执行新二进制预检，但运行配置仍通过重启容器生效。
 

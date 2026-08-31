@@ -1,13 +1,19 @@
 # 与上游的行为差异
 
-本次 review 基线，日期：2026-08-09。
+本次 review 基线，日期：2026-08-31。
 
-- 上游：`fscarmen/sing-box@e1f08cff8a39ec0ac595d549e886b0ac88514b68`
+- 上游：`fscarmen/sing-box@2607028109924092bd27d7ddb2785436504ab78c`
 - 下游：`qqqasdwx/sing-box@main`
 
 截至当前 review 基线，已选择性移植上游中适用于本仓库的变化。本文记录本仓库相对上游的刻意行为差异，以及迁移过程中发现并修复的问题。
 
 ## Review 结果
+
+- 本次 review 移植上游 `a89bf53` 与 `e5d90df` 的 Hysteria2 选择约束：Realm 和端口跳跃不能同时启用，菜单切换前确认，配置文件、命令行和 Docker 的冲突输入直接失败；极速安装默认不再添加端口跳跃 NAT。
+- 本次 review 移植上游 `52d4d20` 的下载完整性思路，但扩展到 VPS/Docker 的首装和更新四条路径，并且不会在重试时绕过用户显式设置的 `GH_PROXY`。
+- 本次 review 按下游服务生命周期重写上游 `52d4d20` 的 Alpine OpenRC 停止修复：失效 pidfile 使用项目二进制兜底，进程仍存活时保留失败状态，只在确认退出后清理 pidfile 和 OpenRC started 标记，不使用无条件吞错。
+- 本次 review 不移植上游 `c2ea708`、`52d4d20` 的 WARP/no-TUN 分支，不恢复已删除的内置 WARP；不移植 `8c2ce09` 的 cloudflared 强制 HTTP/2，因为官方 `auto` 已支持 QUIC 失败后回退；不移植 `90a1dc0` 的自动第三方 GitHub 代理选择。
+- 上游 `10ee5cf`、`e5d90df` 的 UUID/BusyBox 导出问题在下游现有字段读取和非交互导出路径中不存在；`2607028` 的 v2rayN Hysteria2 端口跳跃字段也已经实现并有测试，不重复移植。
 
 - 本次 review 移植上游 `e1f08cff` 的精确端口检测思路，但统一解析 `ss` 的本地监听字段并比较完整端口，覆盖 VPS 和 Docker 的所有端口选择入口。
 - 本次 review 移植上游 `e1f08cff` 的服务器域名支持，并将 `SERVER_IP` 明确定义为兼容旧变量名的“服务器地址”；IPv4、IPv6 和 DDNS 域名使用严格校验，不采用上游会接受越界 IPv4 的宽松正则。
@@ -15,7 +21,7 @@
 - VPS 安装脚本刻意尽量保持与上游一致。目前观察到的差异主要是仓库归属链接、`force_version` 来源，以及生成的 `sb` 快捷命令地址。
 - Docker 行为刻意与上游不同：本仓库的 Docker 入口复用 VPS 的协议生成逻辑，而不是继续维护一份独立手写实现。
 - 本仓库完全移除内置 WARP endpoint、宿主机 WARP 检测/状态显示，以及 OpenAI、Hysteria2 和 `sb -d` 的 WARP 专用逻辑；Hysteria2 Realm/STUN 与通用自定义出站能力保留。
-- 本次 review 选择性移植上游 `4f29ea5` 的 v2rayN Hysteria2 Realm 格式更新，改用 `ProtoExtraObj.Hy2RealmUrl`；上游实现遗漏了 `Ports` 和 `HopInterval`，本仓库保留这两个端口跳跃字段并增加组合测试。
+- 本次 review 选择性移植上游 `4f29ea5` 的 v2rayN Hysteria2 Realm 格式更新，改用 `ProtoExtraObj.Hy2RealmUrl`；本仓库保留 `Ports` 和 `HopInterval`，并分别覆盖 Realm 与端口跳跃输出。两种模式从本次基线起不再组合启用。
 - 本次 review 不移植上游的 `BIND_INTERFACE` 菜单；需要绑定网卡时可直接在 `custom/04_outbounds.json` 中设置 sing-box 的 `bind_interface`。上游同时把示例变量误改为脚本不读取的 `PORT_HOPPING_RANGE`，本仓库继续使用 `HY2_PORT_HOPPING_RANGE`。
 - 本次 review 选择性移植上游 `fa45859` 的 SIGHUP 热重载和新二进制配置预检。VPS 复用现有候选配置检查，在发送 HUP 后确认主 PID 未变化且服务仍存活；Docker 只移植更新前预检，配置生效方式仍为重启容器。
 - 本次 review 借鉴上游重写提交 `56997fd` 的升级兼容思路，但没有照搬覆盖 `conf/0*` 的实现。VPS 只在临时目录重建项目托管的四份基础配置，从 `custom/` 重新生成运行路由，经新内核检查和用户确认后才事务切换；失败时同时恢复旧内核和完整旧配置。
