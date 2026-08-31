@@ -6,8 +6,8 @@ This repository is maintained as an independent downstream of:
 - Upstream branch: `main`
 - Tracking branch: `upstream-main`
 - Current tracked commit: `e1f08cff8a39ec0ac595d549e886b0ac88514b68`
-- Latest reviewed commit: `e1f08cff8a39ec0ac595d549e886b0ac88514b68`
-- Last reviewed: 2026-08-09
+- Latest reviewed commit: `2607028109924092bd27d7ddb2785436504ab78c`
+- Last reviewed: 2026-08-31
 
 Policy:
 

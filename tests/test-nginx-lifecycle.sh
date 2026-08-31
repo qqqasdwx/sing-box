@@ -115,6 +115,13 @@ SYSTEM=Alpine
 SINGBOX_DAEMON_FILE="$TEST_DIR/sing-box-openrc"
 sing-box_systemd
 grep -Fqx "    $TEST_DIR/bin/nginx -c $WORK_DIR/nginx.conf || true" "$SINGBOX_DAEMON_FILE"
+grep -Fq 'stop_post || STOP_RC=$?' "$SINGBOX_DAEMON_FILE"
+grep -Fq 'start-stop-daemon --stop --exec' "$SINGBOX_DAEMON_FILE"
+grep -Fq '${RC_SVCDIR:-/run/openrc}/started/${RC_SVCNAME}' "$SINGBOX_DAEMON_FILE"
+if grep -Fq 'pgrep' "$SINGBOX_DAEMON_FILE"; then
+  printf 'OpenRC service still depends on pgrep\n' >&2
+  exit 1
+fi
 
 PORT_NGINX=''
 sing-box_systemd
@@ -122,5 +129,35 @@ if grep -Fq "$WORK_DIR/nginx.conf" "$SINGBOX_DAEMON_FILE"; then
   printf 'OpenRC service retained stale nginx startup configuration\n' >&2
   exit 1
 fi
+grep -Fq 'stop() {' "$SINGBOX_DAEMON_FILE"
+if grep -Fq 'stop_post' "$SINGBOX_DAEMON_FILE"; then
+  printf 'OpenRC service without nginx retained stop_post\n' >&2
+  exit 1
+fi
+
+# A stale pidfile is removed only after the managed sing-box process is confirmed absent.
+RC_SVCNAME=sing-box
+# shellcheck disable=SC1090
+source "$SINGBOX_DAEMON_FILE"
+RC_SVCDIR="$TEST_DIR/openrc"
+pidfile="$TEST_DIR/sing-box.pid"
+mkdir -p "$RC_SVCDIR/started"
+touch "$pidfile" "$RC_SVCDIR/started/$RC_SVCNAME"
+start-stop-daemon() { return 1; }
+ebegin() { return 0; }
+eend() { return 0; }
+ps() { return 0; }
+stop
+[ ! -e "$pidfile" ]
+[ ! -e "$RC_SVCDIR/started/$RC_SVCNAME" ]
+
+touch "$pidfile" "$RC_SVCDIR/started/$RC_SVCNAME"
+ps() { printf '4242 %s/sing-box run -C %s/conf\n' "$WORK_DIR" "$WORK_DIR"; }
+if stop; then
+  printf 'OpenRC stop accepted a still-running sing-box process\n' >&2
+  exit 1
+fi
+[ -e "$pidfile" ]
+[ -e "$RC_SVCDIR/started/$RC_SVCNAME" ]
 
 printf 'nginx lifecycle tests passed\n'

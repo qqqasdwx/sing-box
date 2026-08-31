@@ -81,6 +81,7 @@ docker_prepare_env() {
   docker_bool "$HY2_REALM" && IS_HY2_REALM=is_hy2_realm
   docker_bool "$REALM" && IS_HY2_REALM=is_hy2_realm
   IS_HOPPING=${IS_HOPPING:-no_hopping}
+  array_contains c "${INSTALL_PROTOCOLS[@]}" && validate_hy2_mode_selection
 
   if [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]]; then
     PORT_NGINX=${PORT_NGINX:-$(default_service_port)}
@@ -105,21 +106,15 @@ docker_download_assets() {
   check_cdn
   check_arch
 
-  local ONLINE SB_DIR SB_BIN
+  local ONLINE SB_BIN
   ONLINE=$(get_sing_box_version)
-  SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
-  SB_BIN="$SB_DIR/sing-box"
+  SB_BIN="$TEMP_DIR/sing-box"
 
   info " Downloading sing-box v${ONLINE} "
-  wget --no-check-certificate --continue \
-    "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" \
-    -qO- | tar xz -C "$TEMP_DIR"
+  download_sing_box_release_binary "$ONLINE" "$SING_BOX_ARCH" "$SB_BIN"
   [ -x "$SB_BIN" ] || failure_error " sing-box download failed. " "Version: ${ONLINE:-unknown}
 Architecture: ${SING_BOX_ARCH:-unknown}
 Expected file: ${SB_BIN}"
-  mv "$SB_BIN" "$TEMP_DIR/sing-box"
-  chmod +x "$TEMP_DIR/sing-box"
-  rm -rf "$SB_DIR"
 
   local ASSET_LABEL='jq'
   [ "$IS_ARGO" = 'is_argo' ] && ASSET_LABEL+=' and cloudflared'
@@ -286,7 +281,7 @@ docker_update_sing_box() {
   check_cdn
   check_arch
 
-  local ONLINE LOCAL SB_DIR SB_BIN
+  local ONLINE LOCAL SB_BIN
   ONLINE=$(get_sing_box_version)
   LOCAL=$("${WORK_DIR}/sing-box" version 2>/dev/null | awk '/version/{print $NF}')
   local WAS_RUNNING=no
@@ -307,11 +302,8 @@ docker_update_sing_box() {
     return 0
   fi
 
-  SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
-  SB_BIN="$SB_DIR/sing-box"
-  wget --no-check-certificate --continue \
-    "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" \
-    -qO- | tar xz -C "$TEMP_DIR"
+  SB_BIN="$TEMP_DIR/sing-box-upgrade"
+  download_sing_box_release_binary "$ONLINE" "$SING_BOX_ARCH" "$SB_BIN"
   [ -x "$SB_BIN" ] || failure_error " sing-box download failed. " "Version: ${ONLINE:-unknown}
 Architecture: ${SING_BOX_ARCH:-unknown}
 Expected file: ${SB_BIN}"
@@ -326,7 +318,6 @@ ${CHECK_OUTPUT:-No output}"
   cp -f "${WORK_DIR}/sing-box" "$TEMP_DIR/sing-box.bak"
   mv "$SB_BIN" "${WORK_DIR}/sing-box"
   chmod +x "${WORK_DIR}/sing-box"
-  rm -rf "$SB_DIR"
 
   if [ "$WAS_RUNNING" != yes ]; then
     rm -f "$TEMP_DIR/sing-box.bak"

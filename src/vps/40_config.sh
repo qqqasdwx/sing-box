@@ -723,30 +723,52 @@ start_pre() {
     rm -f \$pidfile
 }"
 
-    # 添加 stop_post 函数，用于在服务停止后清理 nginx 进程
-    [ -n "$PORT_NGINX" ] && OPENRC_SERVICE+="
+    # 配置了 Nginx 时，在停止 sing-box 后清理项目自己的 Nginx 主进程。
+    local OPENRC_STOP_POST=''
+    if [ -n "$PORT_NGINX" ]; then
+      OPENRC_STOP_POST='    stop_post || STOP_RC=$?'
+      OPENRC_SERVICE+="
 
 stop_post() {
-    # 停止 nginx：优先用内置命令
     if command -v /usr/sbin/nginx >/dev/null 2>&1; then
         /usr/sbin/nginx -s quit -c ${WORK_DIR}/nginx.conf 2>/dev/null
-        sleep 1 # 等待优雅关闭
-        # 如果仍运行，用 SIGKILL
-        local NGINX_MASTER=\$(pgrep -f \"nginx: master process /usr/sbin/nginx -c ${WORK_DIR}/nginx.conf\")
+        sleep 1
+        local NGINX_MASTER=\$(ps -eo pid=,args= | awk -v config=\"${WORK_DIR}/nginx.conf\" '
+            index(\$0, \"nginx: master process\") && index(\$0, \"-c \" config) { print \$1; exit }
+        ')
         if [ -n \"\$NGINX_MASTER\" ]; then
-            kill -KILL \$NGINX_MASTER 2>/dev/null
+            kill -KILL \$NGINX_MASTER 2>/dev/null || return 1
         fi
     fi
-}
+    return 0
+}"
+    fi
+
+    # 始终生成 stop()：pidfile 失效时按可执行文件兜底，并在确认进程退出后清理 OpenRC 状态。
+    OPENRC_SERVICE+="
 
 stop() {
     ebegin \"Stopping \${RC_SVCNAME}\"
-    # 先停止主进程（OpenRC 会调用）
-    start-stop-daemon --stop --pidfile \$pidfile --retry 5
-    eend \$? \"Failed to stop \${RC_SVCNAME}\"
+    local STOP_RC=0 RUNNING_PID
+    start-stop-daemon --stop --pidfile \$pidfile --retry 5 2>/dev/null || \\
+        start-stop-daemon --stop --exec ${WORK_DIR}/sing-box --retry 5 2>/dev/null || STOP_RC=1
 
-    # 然后运行 post 清理
-    stop_post
+    RUNNING_PID=\$(ps -eo pid=,args= | awk -v binary=\"${WORK_DIR}/sing-box\" -v conf=\"${WORK_DIR}/conf\" '
+        index(\$0, binary \" run -C \" conf) { print \$1; exit }
+    ')
+    if [ -n \"\$RUNNING_PID\" ]; then
+        [ \"\$STOP_RC\" -ne 0 ] || STOP_RC=1
+        eend \"\$STOP_RC\" \"Failed to stop \${RC_SVCNAME}\"
+        return \"\$STOP_RC\"
+    fi
+
+    STOP_RC=0
+${OPENRC_STOP_POST}
+    if [ \"\$STOP_RC\" -eq 0 ]; then
+        rm -f \$pidfile \${RC_SVCDIR:-/run/openrc}/started/\${RC_SVCNAME}
+    fi
+    eend \"\$STOP_RC\" \"Failed to stop \${RC_SVCNAME}\"
+    return \"\$STOP_RC\"
 }"
 
     echo "$OPENRC_SERVICE" > ${SINGBOX_DAEMON_FILE}

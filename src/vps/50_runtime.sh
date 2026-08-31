@@ -1198,7 +1198,12 @@ change_protocols() {
     if [[ " ${ADD_PROTOCOLS[*]} " =~ " ${PROTOCOL_LIST[1]} " ]] && [ -z "$IS_HY2_REALM" ]; then
       input_hy2_realm
     fi
-    [ -z "${PORT_HOPPING_START}${PORT_HOPPING_END}" ] && input_hopping_port
+    if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+      validate_hy2_mode_selection
+    else
+      [ -z "${PORT_HOPPING_START}${PORT_HOPPING_END}" ] && input_hopping_port
+    fi
+    validate_hy2_mode_selection
   else
     unset PORT_HYSTERIA2 IS_HY2_REALM HY2_REALM_ID
   fi
@@ -1752,12 +1757,19 @@ protocol_edit_hy2_bandwidth() {
 }
 
 protocol_toggle_hy2_realm() {
-  local HY2_LINE
-  HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies 2>/dev/null)
-  if grep -q 'realm-opts' <<< "$HY2_LINE"; then
+  fetch_nodes_value
+  if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
     set_hy2_realm_config disable
   else
-    fetch_nodes_value
+    check_port_hopping_nat
+    if [ -n "$PORT_HOPPING_START" ] && [ -n "$PORT_HOPPING_END" ]; then
+      local HY2_CONFIRM
+      reading "\n $(text 180) " HY2_CONFIRM
+      [[ "${HY2_CONFIRM,,}" =~ ^(y|yes)$ ]] || return
+      del_port_hopping_nat
+      unset PORT_HOPPING_START PORT_HOPPING_END HY2_PORT_HOPPING_RANGE
+      IS_HOPPING=no_hopping
+    fi
     IS_HY2_REALM=is_hy2_realm
     HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
     set_hy2_realm_config enable
@@ -1778,6 +1790,7 @@ protocol_edit_hy2_realm_id() {
 
 protocol_edit_hy2_hopping() {
   local OLD_START OLD_END NEW_RANGE NEW_START NEW_END HOPPING_TARGET HOPPING_ERROR_TIME=6
+  local HY2_REALM_DISABLED=false
   check_port_hopping_nat
   OLD_START="$PORT_HOPPING_START"
   OLD_END="$PORT_HOPPING_END"
@@ -1797,6 +1810,13 @@ protocol_edit_hy2_hopping() {
       NEW_START=${NEW_RANGE%:*}
       NEW_END=${NEW_RANGE#*:}
       if [[ "$NEW_START" -lt "$NEW_END" && "$NEW_START" -ge "$MIN_HOPPING_PORT" && "$NEW_END" -le "$MAX_HOPPING_PORT" ]]; then
+        if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+          local HY2_CONFIRM
+          reading "\n $(text 181) " HY2_CONFIRM
+          [[ "${HY2_CONFIRM,,}" =~ ^(y|yes)$ ]] || return
+          set_hy2_realm_config disable
+          HY2_REALM_DISABLED=true
+        fi
         [ -n "$OLD_START" ] && [ -n "$OLD_END" ] && del_port_hopping_nat
         PORT_HOPPING_START=$NEW_START
         PORT_HOPPING_END=$NEW_END
@@ -1809,8 +1829,12 @@ protocol_edit_hy2_hopping() {
     warning "\n $(text 36) "
   done
 
-  export_list
-  menu_pause
+  if [ "$HY2_REALM_DISABLED" = true ]; then
+    protocol_reload_export
+  else
+    export_list
+    menu_pause
+  fi
 }
 
 protocol_edit_ws_path() {
@@ -2349,9 +2373,11 @@ version() {
 
   if [ "${UPDATE,,}" = 'y' ]; then
     check_system_info
-    wget --no-check-certificate --continue "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" -qO- | tar xz -C $TEMP_DIR sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box
-
-    local SB_BIN="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box"
+    local SB_BIN="$TEMP_DIR/sing-box-upgrade"
+    download_sing_box_release_binary "$ONLINE" "$SING_BOX_ARCH" "$SB_BIN" ||
+      failure_error "\n $(text 42) " "Version: ${ONLINE:-unknown}
+Architecture: ${SING_BOX_ARCH:-unknown}
+Download: ${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v${ONLINE}/"
     if [ -s "$SB_BIN" ]; then
       chmod +x "$SB_BIN"
       local CHECK_OUTPUT CANDIDATE_OUTPUT CANDIDATE_DIR='' REBUILD_CONFIG
@@ -2388,7 +2414,7 @@ ${CANDIDATE_OUTPUT:-No output}"
     else
       failure_error "\n $(text 42) " "Version: ${ONLINE:-unknown}
 Architecture: ${SING_BOX_ARCH:-unknown}
-Expected file: ${TEMP_DIR}/sing-box-${ONLINE}-linux-${SING_BOX_ARCH}/sing-box"
+Expected file: ${SB_BIN}"
     fi
   fi
 }
@@ -2437,7 +2463,6 @@ menu_setting() {
       CDN=${CDN:-"${CDN_DOMAIN[0]}"}
       IS_SUB='is_sub'
       IS_ARGO='is_argo'
-      HY2_PORT_HOPPING_RANGE=${HY2_PORT_HOPPING_RANGE:-'50000:51000'}
       install_sing-box
       export_list install
       create_shortcut

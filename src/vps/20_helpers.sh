@@ -527,6 +527,18 @@ array_contains_any() {
   return 1
 }
 
+hy2_realm_hopping_conflict() {
+  [ "${IS_HY2_REALM:-}" = 'is_hy2_realm' ] || return 1
+  [ "${IS_HOPPING:-}" = 'is_hopping' ] ||
+    [[ "${HY2_PORT_HOPPING_RANGE:-}" =~ ^[0-9]+:[0-9]+$ ]] ||
+    { [ -n "${PORT_HOPPING_START:-}" ] && [ -n "${PORT_HOPPING_END:-}" ]; }
+}
+
+validate_hy2_mode_selection() {
+  hy2_realm_hopping_conflict && error " $(text 179) "
+  return 0
+}
+
 bool_enabled() {
   case "${1,,}" in
     1|true|yes|y|on ) return 0 ;;
@@ -1468,7 +1480,7 @@ change_config() {
 
     MENU_IDX+=(140) && MENU_KEY+=(hy2bw) && MENU_VAL+=("${HY2_UP_NOW}/${HY2_DOWN_NOW}")
 
-    if grep -q 'realm-opts' <<< "$HY2_LINE"; then
+    if grep -q '"realm"[[:space:]]*:' ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json 2>/dev/null; then
       local HY2_REALM_ACTION="$(text 171)"
       MENU_IDX+=(171)
     else
@@ -1533,11 +1545,19 @@ change_config() {
     return
   elif [ "$KEY" = "hy2realm" ]; then
     # 添加 / 删除 Hysteria2 Realm；菜单已明确显示开启/关闭动作，这里不再二次确认 Realm 本身
-    local HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies)
-    if grep -q 'realm-opts' <<< "$HY2_LINE"; then
+    if grep -q '"realm"[[:space:]]*:' ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json 2>/dev/null; then
       set_hy2_realm_config disable
     else
       fetch_nodes_value
+      check_port_hopping_nat
+      if [ -n "$PORT_HOPPING_START" ] && [ -n "$PORT_HOPPING_END" ]; then
+        local HY2_CONFIRM
+        reading "\n $(text 180) " HY2_CONFIRM
+        [[ "${HY2_CONFIRM,,}" =~ ^(y|yes)$ ]] || return
+        del_port_hopping_nat
+        unset PORT_HOPPING_START PORT_HOPPING_END HY2_PORT_HOPPING_RANGE
+        IS_HOPPING=no_hopping
+      fi
       IS_HY2_REALM=is_hy2_realm
       HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
       set_hy2_realm_config enable
@@ -1553,7 +1573,7 @@ change_config() {
     hint "\n $(text 97) \n"
 
     local HOPPING_ERROR_TIME=6
-    local NEW_RANGE=""
+    local NEW_RANGE="" HY2_REALM_DISABLED=false
     until [ -n "$IS_HOPPING_SET" ]; do
       if [ -z "$NEW_RANGE" ]; then
         (( HOPPING_ERROR_TIME-- )) || true
@@ -1575,6 +1595,13 @@ change_config() {
       elif [[ "$NEW_RANGE" =~ ^[0-9]{4,5}:[0-9]{4,5}$ ]]; then
         local NEW_START=${NEW_RANGE%:*} NEW_END=${NEW_RANGE#*:}
         if [[ "$NEW_START" -lt "$NEW_END" && "$NEW_START" -ge "$MIN_HOPPING_PORT" && "$NEW_END" -le "$MAX_HOPPING_PORT" ]]; then
+          if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+            local HY2_CONFIRM
+            reading "\n $(text 181) " HY2_CONFIRM
+            [[ "${HY2_CONFIRM,,}" =~ ^(y|yes)$ ]] || return
+            set_hy2_realm_config disable
+            HY2_REALM_DISABLED=true
+          fi
           # 删除旧规则，添加新规则
           [ -n "$OLD_START" ] && [ -n "$OLD_END" ] && del_port_hopping_nat
           PORT_HOPPING_START=$NEW_START
@@ -1593,6 +1620,9 @@ change_config() {
       fi
     done
 
+    if [ "$HY2_REALM_DISABLED" = true ]; then
+      reload_service_or_fail Sing-box sing-box
+    fi
     export_list
     return
   elif [ "$KEY" = "fingerprint" ]; then

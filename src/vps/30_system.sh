@@ -37,25 +37,49 @@ download_file() {
   { [ "$DIRECT_URL" != "$URL" ] && wget --no-check-certificate --continue -qO "$OUTPUT" "$DIRECT_URL" 2>/dev/null; }
 }
 
+download_sing_box_release_binary() {
+  local RELEASE_VERSION=$1 RELEASE_ARCH=$2 OUTPUT=$3
+  local ARCHIVE="sing-box-${RELEASE_VERSION}-linux-${RELEASE_ARCH}.tar.gz"
+  local EXTRACT_DIR="${TEMP_DIR}/sing-box-${RELEASE_VERSION}-linux-${RELEASE_ARCH}"
+  local EXTRACTED_BINARY="${EXTRACT_DIR}/sing-box"
+  local ARCHIVE_FILE="${TEMP_DIR}/${ARCHIVE}.download"
+  local URL="${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v${RELEASE_VERSION}/${ARCHIVE}"
+  local ATTEMPT ACTUAL_VERSION
+
+  [[ "$RELEASE_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] || return 1
+  [[ "$RELEASE_ARCH" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] || return 1
+
+  rm -f "$OUTPUT" "$ARCHIVE_FILE"
+  rm -rf "$EXTRACT_DIR"
+  for ATTEMPT in 1 2 3; do
+    rm -f "$ARCHIVE_FILE"
+    rm -rf "$EXTRACT_DIR"
+    if wget --no-check-certificate --tries=2 --timeout=10 -qO "$ARCHIVE_FILE" "$URL" 2>/dev/null &&
+       [ -s "$ARCHIVE_FILE" ] &&
+       tar -tzf "$ARCHIVE_FILE" "${EXTRACT_DIR##*/}/sing-box" >/dev/null 2>&1 &&
+       tar -xzf "$ARCHIVE_FILE" -C "$TEMP_DIR" "${EXTRACT_DIR##*/}/sing-box" >/dev/null 2>&1 &&
+       [ -s "$EXTRACTED_BINARY" ]; then
+      chmod +x "$EXTRACTED_BINARY"
+      ACTUAL_VERSION=$("$EXTRACTED_BINARY" version 2>/dev/null | awk '/version/{print $NF; exit}')
+      if [ "$ACTUAL_VERSION" = "$RELEASE_VERSION" ] && mv -f "$EXTRACTED_BINARY" "$OUTPUT"; then
+        rm -f "$ARCHIVE_FILE"
+        rm -rf "$EXTRACT_DIR"
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+
+  rm -f "$ARCHIVE_FILE" "$OUTPUT"
+  rm -rf "$EXTRACT_DIR"
+  return 1
+}
+
 download_sing_box_binary() {
   local ONLINE
   ONLINE=$(get_sing_box_version)
-  local ARCHIVE="sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz"
-  local SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
-  local SB_BIN="$SB_DIR/sing-box"
-  local URL="${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/$ARCHIVE"
-  local DIRECT_URL="https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/$ARCHIVE"
-
-  rm -rf "$SB_DIR" "$TEMP_DIR/sing-box"
-  wget --no-check-certificate --continue -qO- "$URL" 2>/dev/null | tar xz -C "$TEMP_DIR" 2>/dev/null ||
-  wget --no-check-certificate --continue -qO- "$DIRECT_URL" 2>/dev/null | tar xz -C "$TEMP_DIR" 2>/dev/null
-  [ -s "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
-
-  if ! "$TEMP_DIR/sing-box" version >/dev/null 2>&1; then
-    rm -rf "$SB_DIR" "$TEMP_DIR/sing-box"
-    wget --no-check-certificate --continue -qO- "$DIRECT_URL" 2>/dev/null | tar xz -C "$TEMP_DIR" 2>/dev/null
-    [ -s "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
-  fi
+  [ -n "$ONLINE" ] || return 1
+  download_sing_box_release_binary "$ONLINE" "$SING_BOX_ARCH" "$TEMP_DIR/sing-box"
 }
 
 # 查安装及运行状态，下标0: sing-box，下标1: argo，下标2: nginx；状态码: 26 未安装， 27 已安装未运行， 28 运行中
@@ -590,6 +614,8 @@ del_port_hopping_nat() {
     local COMMENT="NAT ${PORT_HOPPING_START}:${PORT_HOPPING_END} to ${PORT_HOPPING_TARGET} (Sing-box Family Bucket)"
     iptables  --table nat -D PREROUTING -p udp --dport ${PORT_HOPPING_START}:${PORT_HOPPING_END} -m comment --comment "$COMMENT" -j DNAT --to-destination :${PORT_HOPPING_TARGET} 2>/dev/null
     ip6tables --table nat -D PREROUTING -p udp --dport ${PORT_HOPPING_START}:${PORT_HOPPING_END} -m comment --comment "$COMMENT" -j DNAT --to-destination :${PORT_HOPPING_TARGET} 2>/dev/null
+    rc-service iptables save >/dev/null 2>&1 || warning "\n $(text 182) \n"
+    rc-service ip6tables save >/dev/null 2>&1 || warning "\n $(text 183) \n"
 
   elif command -v firewall-cmd >/dev/null 2>&1 || [ "$SYSTEM" = 'CentOS' ]; then
     firewall-cmd --zone=public --permanent --remove-forward-port=port=${PORT_HOPPING_START}-${PORT_HOPPING_END}:proto=udp:toport=${PORT_HOPPING_TARGET} >/dev/null 2>&1
@@ -807,8 +833,15 @@ sing-box_variables() {
     input_hy2_realm
     local _SAVED_TOTAL_STEPS="$TOTAL_STEPS"
     TOTAL_STEPS=''
-    input_hopping_port
+    if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+      validate_hy2_mode_selection
+      unset PORT_HOPPING_START PORT_HOPPING_END HY2_PORT_HOPPING_RANGE
+      IS_HOPPING=no_hopping
+    else
+      input_hopping_port
+    fi
     TOTAL_STEPS="$_SAVED_TOTAL_STEPS"
+    validate_hy2_mode_selection
   fi
 
   # 如选择有 h. vmess + ws 或 i. vless + ws 时，先检测是否有支持的 http 端口可用，如有则要求输入域名和 cdn

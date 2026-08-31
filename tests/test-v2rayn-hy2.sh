@@ -61,6 +61,5 @@ check_case() {
 check_case '' ''
 check_case "$REALM_URL" ''
 check_case '' '50000-51000'
-check_case "$REALM_URL" '50000-51000'
 
 printf 'v2rayN Hysteria2 JSON tests passed\n'

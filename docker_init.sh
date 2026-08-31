@@ -2,7 +2,7 @@
 
 # Docker keeps only container-specific defaults here. Protocol generation,
 # subscriptions, Argo parsing, and node export are shared with the VPS script.
-VERSION='v1.3.23 (2026.08.09)'
+VERSION='v1.3.24 (2026.08.31)'
 
 GH_PROXY=${GH_PROXY:-}
 
@@ -24,7 +24,7 @@ NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "
 DEFAULT_PROTOCOL_CODES=(b c d e f g h i j k l m)
 CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
 CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org" "cf.090227.xyz")
-DEFAULT_NEWEST_VERSION='1.14.0-alpha.50'
+DEFAULT_NEWEST_VERSION='1.14.0'
 FINGER_PRINT_DEFAULT='chrome'
 STEP_NUM=0
 TOTAL_STEPS=''
@@ -355,6 +355,16 @@ E[177]="The new version failed and automatic rollback did not restore a working 
 C[177]="新版本失败，自动回滚也未能恢复可运行服务，请手动检查。"
 E[178]="Upgrade canceled; the current binary and configuration were not changed."
 C[178]="升级已取消，当前内核和配置均未修改。"
+E[179]="Hysteria2 Realm and port hopping cannot be enabled together. Disable one of them first."
+C[179]="Hysteria2 Realm 和端口跳跃不能同时启用，请先关闭其中一项。"
+E[180]="Port hopping is enabled. Disable it and enable Realm? [y/N]:"
+C[180]="端口跳跃已启用，是否关闭端口跳跃并开启 Realm？[y/N]:"
+E[181]="Realm is enabled. Disable it and enable port hopping? [y/N]:"
+C[181]="Realm 已启用，是否关闭 Realm 并开启端口跳跃？[y/N]:"
+E[182]="Failed to persist Alpine iptables changes."
+C[182]="Alpine iptables 规则持久化失败。"
+E[183]="Failed to persist Alpine ip6tables changes."
+C[183]="Alpine ip6tables 规则持久化失败。"
 # 自定义字体彩色，read 函数
 warning() { echo -e "\033[31m\033[01m$*\033[0m"; }  # 红色
 error() { echo -e "\033[31m\033[01m$*\033[0m" && exit 1; } # 红色
@@ -882,6 +892,18 @@ array_contains_any() {
     array_contains "$_needle" "${_haystack[@]}" && return 0
   done
   return 1
+}
+
+hy2_realm_hopping_conflict() {
+  [ "${IS_HY2_REALM:-}" = 'is_hy2_realm' ] || return 1
+  [ "${IS_HOPPING:-}" = 'is_hopping' ] ||
+    [[ "${HY2_PORT_HOPPING_RANGE:-}" =~ ^[0-9]+:[0-9]+$ ]] ||
+    { [ -n "${PORT_HOPPING_START:-}" ] && [ -n "${PORT_HOPPING_END:-}" ]; }
+}
+
+validate_hy2_mode_selection() {
+  hy2_realm_hopping_conflict && error " $(text 179) "
+  return 0
 }
 
 bool_enabled() {
@@ -1825,7 +1847,7 @@ change_config() {
 
     MENU_IDX+=(140) && MENU_KEY+=(hy2bw) && MENU_VAL+=("${HY2_UP_NOW}/${HY2_DOWN_NOW}")
 
-    if grep -q 'realm-opts' <<< "$HY2_LINE"; then
+    if grep -q '"realm"[[:space:]]*:' ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json 2>/dev/null; then
       local HY2_REALM_ACTION="$(text 171)"
       MENU_IDX+=(171)
     else
@@ -1890,11 +1912,19 @@ change_config() {
     return
   elif [ "$KEY" = "hy2realm" ]; then
     # 添加 / 删除 Hysteria2 Realm；菜单已明确显示开启/关闭动作，这里不再二次确认 Realm 本身
-    local HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies)
-    if grep -q 'realm-opts' <<< "$HY2_LINE"; then
+    if grep -q '"realm"[[:space:]]*:' ${WORK_DIR}/conf/*_${NODE_TAG[1]}_inbounds.json 2>/dev/null; then
       set_hy2_realm_config disable
     else
       fetch_nodes_value
+      check_port_hopping_nat
+      if [ -n "$PORT_HOPPING_START" ] && [ -n "$PORT_HOPPING_END" ]; then
+        local HY2_CONFIRM
+        reading "\n $(text 180) " HY2_CONFIRM
+        [[ "${HY2_CONFIRM,,}" =~ ^(y|yes)$ ]] || return
+        del_port_hopping_nat
+        unset PORT_HOPPING_START PORT_HOPPING_END HY2_PORT_HOPPING_RANGE
+        IS_HOPPING=no_hopping
+      fi
       IS_HY2_REALM=is_hy2_realm
       HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
       set_hy2_realm_config enable
@@ -1910,7 +1940,7 @@ change_config() {
     hint "\n $(text 97) \n"
 
     local HOPPING_ERROR_TIME=6
-    local NEW_RANGE=""
+    local NEW_RANGE="" HY2_REALM_DISABLED=false
     until [ -n "$IS_HOPPING_SET" ]; do
       if [ -z "$NEW_RANGE" ]; then
         (( HOPPING_ERROR_TIME-- )) || true
@@ -1932,6 +1962,13 @@ change_config() {
       elif [[ "$NEW_RANGE" =~ ^[0-9]{4,5}:[0-9]{4,5}$ ]]; then
         local NEW_START=${NEW_RANGE%:*} NEW_END=${NEW_RANGE#*:}
         if [[ "$NEW_START" -lt "$NEW_END" && "$NEW_START" -ge "$MIN_HOPPING_PORT" && "$NEW_END" -le "$MAX_HOPPING_PORT" ]]; then
+          if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+            local HY2_CONFIRM
+            reading "\n $(text 181) " HY2_CONFIRM
+            [[ "${HY2_CONFIRM,,}" =~ ^(y|yes)$ ]] || return
+            set_hy2_realm_config disable
+            HY2_REALM_DISABLED=true
+          fi
           # 删除旧规则，添加新规则
           [ -n "$OLD_START" ] && [ -n "$OLD_END" ] && del_port_hopping_nat
           PORT_HOPPING_START=$NEW_START
@@ -1950,6 +1987,9 @@ change_config() {
       fi
     done
 
+    if [ "$HY2_REALM_DISABLED" = true ]; then
+      reload_service_or_fail Sing-box sing-box
+    fi
     export_list
     return
   elif [ "$KEY" = "fingerprint" ]; then
@@ -3213,25 +3253,49 @@ download_file() {
   { [ "$DIRECT_URL" != "$URL" ] && wget --no-check-certificate --continue -qO "$OUTPUT" "$DIRECT_URL" 2>/dev/null; }
 }
 
+download_sing_box_release_binary() {
+  local RELEASE_VERSION=$1 RELEASE_ARCH=$2 OUTPUT=$3
+  local ARCHIVE="sing-box-${RELEASE_VERSION}-linux-${RELEASE_ARCH}.tar.gz"
+  local EXTRACT_DIR="${TEMP_DIR}/sing-box-${RELEASE_VERSION}-linux-${RELEASE_ARCH}"
+  local EXTRACTED_BINARY="${EXTRACT_DIR}/sing-box"
+  local ARCHIVE_FILE="${TEMP_DIR}/${ARCHIVE}.download"
+  local URL="${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v${RELEASE_VERSION}/${ARCHIVE}"
+  local ATTEMPT ACTUAL_VERSION
+
+  [[ "$RELEASE_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] || return 1
+  [[ "$RELEASE_ARCH" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] || return 1
+
+  rm -f "$OUTPUT" "$ARCHIVE_FILE"
+  rm -rf "$EXTRACT_DIR"
+  for ATTEMPT in 1 2 3; do
+    rm -f "$ARCHIVE_FILE"
+    rm -rf "$EXTRACT_DIR"
+    if wget --no-check-certificate --tries=2 --timeout=10 -qO "$ARCHIVE_FILE" "$URL" 2>/dev/null &&
+       [ -s "$ARCHIVE_FILE" ] &&
+       tar -tzf "$ARCHIVE_FILE" "${EXTRACT_DIR##*/}/sing-box" >/dev/null 2>&1 &&
+       tar -xzf "$ARCHIVE_FILE" -C "$TEMP_DIR" "${EXTRACT_DIR##*/}/sing-box" >/dev/null 2>&1 &&
+       [ -s "$EXTRACTED_BINARY" ]; then
+      chmod +x "$EXTRACTED_BINARY"
+      ACTUAL_VERSION=$("$EXTRACTED_BINARY" version 2>/dev/null | awk '/version/{print $NF; exit}')
+      if [ "$ACTUAL_VERSION" = "$RELEASE_VERSION" ] && mv -f "$EXTRACTED_BINARY" "$OUTPUT"; then
+        rm -f "$ARCHIVE_FILE"
+        rm -rf "$EXTRACT_DIR"
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+
+  rm -f "$ARCHIVE_FILE" "$OUTPUT"
+  rm -rf "$EXTRACT_DIR"
+  return 1
+}
+
 download_sing_box_binary() {
   local ONLINE
   ONLINE=$(get_sing_box_version)
-  local ARCHIVE="sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz"
-  local SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
-  local SB_BIN="$SB_DIR/sing-box"
-  local URL="${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/$ARCHIVE"
-  local DIRECT_URL="https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/$ARCHIVE"
-
-  rm -rf "$SB_DIR" "$TEMP_DIR/sing-box"
-  wget --no-check-certificate --continue -qO- "$URL" 2>/dev/null | tar xz -C "$TEMP_DIR" 2>/dev/null ||
-  wget --no-check-certificate --continue -qO- "$DIRECT_URL" 2>/dev/null | tar xz -C "$TEMP_DIR" 2>/dev/null
-  [ -s "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
-
-  if ! "$TEMP_DIR/sing-box" version >/dev/null 2>&1; then
-    rm -rf "$SB_DIR" "$TEMP_DIR/sing-box"
-    wget --no-check-certificate --continue -qO- "$DIRECT_URL" 2>/dev/null | tar xz -C "$TEMP_DIR" 2>/dev/null
-    [ -s "$SB_BIN" ] && mv "$SB_BIN" "$TEMP_DIR/sing-box" && chmod +x "$TEMP_DIR/sing-box"
-  fi
+  [ -n "$ONLINE" ] || return 1
+  download_sing_box_release_binary "$ONLINE" "$SING_BOX_ARCH" "$TEMP_DIR/sing-box"
 }
 
 # 查安装及运行状态，下标0: sing-box，下标1: argo，下标2: nginx；状态码: 26 未安装， 27 已安装未运行， 28 运行中
@@ -3766,6 +3830,8 @@ del_port_hopping_nat() {
     local COMMENT="NAT ${PORT_HOPPING_START}:${PORT_HOPPING_END} to ${PORT_HOPPING_TARGET} (Sing-box Family Bucket)"
     iptables  --table nat -D PREROUTING -p udp --dport ${PORT_HOPPING_START}:${PORT_HOPPING_END} -m comment --comment "$COMMENT" -j DNAT --to-destination :${PORT_HOPPING_TARGET} 2>/dev/null
     ip6tables --table nat -D PREROUTING -p udp --dport ${PORT_HOPPING_START}:${PORT_HOPPING_END} -m comment --comment "$COMMENT" -j DNAT --to-destination :${PORT_HOPPING_TARGET} 2>/dev/null
+    rc-service iptables save >/dev/null 2>&1 || warning "\n $(text 182) \n"
+    rc-service ip6tables save >/dev/null 2>&1 || warning "\n $(text 183) \n"
 
   elif command -v firewall-cmd >/dev/null 2>&1 || [ "$SYSTEM" = 'CentOS' ]; then
     firewall-cmd --zone=public --permanent --remove-forward-port=port=${PORT_HOPPING_START}-${PORT_HOPPING_END}:proto=udp:toport=${PORT_HOPPING_TARGET} >/dev/null 2>&1
@@ -3983,8 +4049,15 @@ sing-box_variables() {
     input_hy2_realm
     local _SAVED_TOTAL_STEPS="$TOTAL_STEPS"
     TOTAL_STEPS=''
-    input_hopping_port
+    if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+      validate_hy2_mode_selection
+      unset PORT_HOPPING_START PORT_HOPPING_END HY2_PORT_HOPPING_RANGE
+      IS_HOPPING=no_hopping
+    else
+      input_hopping_port
+    fi
     TOTAL_STEPS="$_SAVED_TOTAL_STEPS"
+    validate_hy2_mode_selection
   fi
 
   # 如选择有 h. vmess + ws 或 i. vless + ws 时，先检测是否有支持的 http 端口可用，如有则要求输入域名和 cdn
@@ -5566,30 +5639,52 @@ start_pre() {
     rm -f \$pidfile
 }"
 
-    # 添加 stop_post 函数，用于在服务停止后清理 nginx 进程
-    [ -n "$PORT_NGINX" ] && OPENRC_SERVICE+="
+    # 配置了 Nginx 时，在停止 sing-box 后清理项目自己的 Nginx 主进程。
+    local OPENRC_STOP_POST=''
+    if [ -n "$PORT_NGINX" ]; then
+      OPENRC_STOP_POST='    stop_post || STOP_RC=$?'
+      OPENRC_SERVICE+="
 
 stop_post() {
-    # 停止 nginx：优先用内置命令
     if command -v /usr/sbin/nginx >/dev/null 2>&1; then
         /usr/sbin/nginx -s quit -c ${WORK_DIR}/nginx.conf 2>/dev/null
-        sleep 1 # 等待优雅关闭
-        # 如果仍运行，用 SIGKILL
-        local NGINX_MASTER=\$(pgrep -f \"nginx: master process /usr/sbin/nginx -c ${WORK_DIR}/nginx.conf\")
+        sleep 1
+        local NGINX_MASTER=\$(ps -eo pid=,args= | awk -v config=\"${WORK_DIR}/nginx.conf\" '
+            index(\$0, \"nginx: master process\") && index(\$0, \"-c \" config) { print \$1; exit }
+        ')
         if [ -n \"\$NGINX_MASTER\" ]; then
-            kill -KILL \$NGINX_MASTER 2>/dev/null
+            kill -KILL \$NGINX_MASTER 2>/dev/null || return 1
         fi
     fi
-}
+    return 0
+}"
+    fi
+
+    # 始终生成 stop()：pidfile 失效时按可执行文件兜底，并在确认进程退出后清理 OpenRC 状态。
+    OPENRC_SERVICE+="
 
 stop() {
     ebegin \"Stopping \${RC_SVCNAME}\"
-    # 先停止主进程（OpenRC 会调用）
-    start-stop-daemon --stop --pidfile \$pidfile --retry 5
-    eend \$? \"Failed to stop \${RC_SVCNAME}\"
+    local STOP_RC=0 RUNNING_PID
+    start-stop-daemon --stop --pidfile \$pidfile --retry 5 2>/dev/null || \\
+        start-stop-daemon --stop --exec ${WORK_DIR}/sing-box --retry 5 2>/dev/null || STOP_RC=1
 
-    # 然后运行 post 清理
-    stop_post
+    RUNNING_PID=\$(ps -eo pid=,args= | awk -v binary=\"${WORK_DIR}/sing-box\" -v conf=\"${WORK_DIR}/conf\" '
+        index(\$0, binary \" run -C \" conf) { print \$1; exit }
+    ')
+    if [ -n \"\$RUNNING_PID\" ]; then
+        [ \"\$STOP_RC\" -ne 0 ] || STOP_RC=1
+        eend \"\$STOP_RC\" \"Failed to stop \${RC_SVCNAME}\"
+        return \"\$STOP_RC\"
+    fi
+
+    STOP_RC=0
+${OPENRC_STOP_POST}
+    if [ \"\$STOP_RC\" -eq 0 ]; then
+        rm -f \$pidfile \${RC_SVCDIR:-/run/openrc}/started/\${RC_SVCNAME}
+    fi
+    eend \"\$STOP_RC\" \"Failed to stop \${RC_SVCNAME}\"
+    return \"\$STOP_RC\"
 }"
 
     echo "$OPENRC_SERVICE" > ${SINGBOX_DAEMON_FILE}
@@ -7245,7 +7340,12 @@ change_protocols() {
     if [[ " ${ADD_PROTOCOLS[*]} " =~ " ${PROTOCOL_LIST[1]} " ]] && [ -z "$IS_HY2_REALM" ]; then
       input_hy2_realm
     fi
-    [ -z "${PORT_HOPPING_START}${PORT_HOPPING_END}" ] && input_hopping_port
+    if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+      validate_hy2_mode_selection
+    else
+      [ -z "${PORT_HOPPING_START}${PORT_HOPPING_END}" ] && input_hopping_port
+    fi
+    validate_hy2_mode_selection
   else
     unset PORT_HYSTERIA2 IS_HY2_REALM HY2_REALM_ID
   fi
@@ -7799,12 +7899,19 @@ protocol_edit_hy2_bandwidth() {
 }
 
 protocol_toggle_hy2_realm() {
-  local HY2_LINE
-  HY2_LINE=$(grep 'type: hysteria2' ${WORK_DIR}/subscribe/proxies 2>/dev/null)
-  if grep -q 'realm-opts' <<< "$HY2_LINE"; then
+  fetch_nodes_value
+  if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
     set_hy2_realm_config disable
   else
-    fetch_nodes_value
+    check_port_hopping_nat
+    if [ -n "$PORT_HOPPING_START" ] && [ -n "$PORT_HOPPING_END" ]; then
+      local HY2_CONFIRM
+      reading "\n $(text 180) " HY2_CONFIRM
+      [[ "${HY2_CONFIRM,,}" =~ ^(y|yes)$ ]] || return
+      del_port_hopping_nat
+      unset PORT_HOPPING_START PORT_HOPPING_END HY2_PORT_HOPPING_RANGE
+      IS_HOPPING=no_hopping
+    fi
     IS_HY2_REALM=is_hy2_realm
     HY2_REALM_ID="${HY2_REALM_ID:-${UUID[12]:-${UUID_CONFIRM}}}"
     set_hy2_realm_config enable
@@ -7825,6 +7932,7 @@ protocol_edit_hy2_realm_id() {
 
 protocol_edit_hy2_hopping() {
   local OLD_START OLD_END NEW_RANGE NEW_START NEW_END HOPPING_TARGET HOPPING_ERROR_TIME=6
+  local HY2_REALM_DISABLED=false
   check_port_hopping_nat
   OLD_START="$PORT_HOPPING_START"
   OLD_END="$PORT_HOPPING_END"
@@ -7844,6 +7952,13 @@ protocol_edit_hy2_hopping() {
       NEW_START=${NEW_RANGE%:*}
       NEW_END=${NEW_RANGE#*:}
       if [[ "$NEW_START" -lt "$NEW_END" && "$NEW_START" -ge "$MIN_HOPPING_PORT" && "$NEW_END" -le "$MAX_HOPPING_PORT" ]]; then
+        if [ "$IS_HY2_REALM" = 'is_hy2_realm' ]; then
+          local HY2_CONFIRM
+          reading "\n $(text 181) " HY2_CONFIRM
+          [[ "${HY2_CONFIRM,,}" =~ ^(y|yes)$ ]] || return
+          set_hy2_realm_config disable
+          HY2_REALM_DISABLED=true
+        fi
         [ -n "$OLD_START" ] && [ -n "$OLD_END" ] && del_port_hopping_nat
         PORT_HOPPING_START=$NEW_START
         PORT_HOPPING_END=$NEW_END
@@ -7856,8 +7971,12 @@ protocol_edit_hy2_hopping() {
     warning "\n $(text 36) "
   done
 
-  export_list
-  menu_pause
+  if [ "$HY2_REALM_DISABLED" = true ]; then
+    protocol_reload_export
+  else
+    export_list
+    menu_pause
+  fi
 }
 
 protocol_edit_ws_path() {
@@ -8396,9 +8515,11 @@ version() {
 
   if [ "${UPDATE,,}" = 'y' ]; then
     check_system_info
-    wget --no-check-certificate --continue "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" -qO- | tar xz -C $TEMP_DIR sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box
-
-    local SB_BIN="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH/sing-box"
+    local SB_BIN="$TEMP_DIR/sing-box-upgrade"
+    download_sing_box_release_binary "$ONLINE" "$SING_BOX_ARCH" "$SB_BIN" ||
+      failure_error "\n $(text 42) " "Version: ${ONLINE:-unknown}
+Architecture: ${SING_BOX_ARCH:-unknown}
+Download: ${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v${ONLINE}/"
     if [ -s "$SB_BIN" ]; then
       chmod +x "$SB_BIN"
       local CHECK_OUTPUT CANDIDATE_OUTPUT CANDIDATE_DIR='' REBUILD_CONFIG
@@ -8435,7 +8556,7 @@ ${CANDIDATE_OUTPUT:-No output}"
     else
       failure_error "\n $(text 42) " "Version: ${ONLINE:-unknown}
 Architecture: ${SING_BOX_ARCH:-unknown}
-Expected file: ${TEMP_DIR}/sing-box-${ONLINE}-linux-${SING_BOX_ARCH}/sing-box"
+Expected file: ${SB_BIN}"
     fi
   fi
 }
@@ -8484,7 +8605,6 @@ menu_setting() {
       CDN=${CDN:-"${CDN_DOMAIN[0]}"}
       IS_SUB='is_sub'
       IS_ARGO='is_argo'
-      HY2_PORT_HOPPING_RANGE=${HY2_PORT_HOPPING_RANGE:-'50000:51000'}
       install_sing-box
       export_list install
       create_shortcut
@@ -8637,6 +8757,7 @@ docker_prepare_env() {
   docker_bool "$HY2_REALM" && IS_HY2_REALM=is_hy2_realm
   docker_bool "$REALM" && IS_HY2_REALM=is_hy2_realm
   IS_HOPPING=${IS_HOPPING:-no_hopping}
+  array_contains c "${INSTALL_PROTOCOLS[@]}" && validate_hy2_mode_selection
 
   if [[ "$IS_SUB" = 'is_sub' || "$IS_ARGO" = 'is_argo' ]]; then
     PORT_NGINX=${PORT_NGINX:-$(default_service_port)}
@@ -8661,21 +8782,15 @@ docker_download_assets() {
   check_cdn
   check_arch
 
-  local ONLINE SB_DIR SB_BIN
+  local ONLINE SB_BIN
   ONLINE=$(get_sing_box_version)
-  SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
-  SB_BIN="$SB_DIR/sing-box"
+  SB_BIN="$TEMP_DIR/sing-box"
 
   info " Downloading sing-box v${ONLINE} "
-  wget --no-check-certificate --continue \
-    "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" \
-    -qO- | tar xz -C "$TEMP_DIR"
+  download_sing_box_release_binary "$ONLINE" "$SING_BOX_ARCH" "$SB_BIN"
   [ -x "$SB_BIN" ] || failure_error " sing-box download failed. " "Version: ${ONLINE:-unknown}
 Architecture: ${SING_BOX_ARCH:-unknown}
 Expected file: ${SB_BIN}"
-  mv "$SB_BIN" "$TEMP_DIR/sing-box"
-  chmod +x "$TEMP_DIR/sing-box"
-  rm -rf "$SB_DIR"
 
   local ASSET_LABEL='jq'
   [ "$IS_ARGO" = 'is_argo' ] && ASSET_LABEL+=' and cloudflared'
@@ -8842,7 +8957,7 @@ docker_update_sing_box() {
   check_cdn
   check_arch
 
-  local ONLINE LOCAL SB_DIR SB_BIN
+  local ONLINE LOCAL SB_BIN
   ONLINE=$(get_sing_box_version)
   LOCAL=$("${WORK_DIR}/sing-box" version 2>/dev/null | awk '/version/{print $NF}')
   local WAS_RUNNING=no
@@ -8863,11 +8978,8 @@ docker_update_sing_box() {
     return 0
   fi
 
-  SB_DIR="$TEMP_DIR/sing-box-$ONLINE-linux-$SING_BOX_ARCH"
-  SB_BIN="$SB_DIR/sing-box"
-  wget --no-check-certificate --continue \
-    "${GH_PROXY}https://github.com/SagerNet/sing-box/releases/download/v$ONLINE/sing-box-$ONLINE-linux-$SING_BOX_ARCH.tar.gz" \
-    -qO- | tar xz -C "$TEMP_DIR"
+  SB_BIN="$TEMP_DIR/sing-box-upgrade"
+  download_sing_box_release_binary "$ONLINE" "$SING_BOX_ARCH" "$SB_BIN"
   [ -x "$SB_BIN" ] || failure_error " sing-box download failed. " "Version: ${ONLINE:-unknown}
 Architecture: ${SING_BOX_ARCH:-unknown}
 Expected file: ${SB_BIN}"
@@ -8882,7 +8994,6 @@ ${CHECK_OUTPUT:-No output}"
   cp -f "${WORK_DIR}/sing-box" "$TEMP_DIR/sing-box.bak"
   mv "$SB_BIN" "${WORK_DIR}/sing-box"
   chmod +x "${WORK_DIR}/sing-box"
-  rm -rf "$SB_DIR"
 
   if [ "$WAS_RUNNING" != yes ]; then
     rm -f "$TEMP_DIR/sing-box.bak"

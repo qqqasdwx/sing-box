@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 当前脚本版本号
-VERSION='v1.3.23 (2026.08.09)'
+VERSION='v1.3.24 (2026.08.31)'
 
 # 可选 GitHub URL 前缀；默认直连，不自动选择第三方代理。
 GH_PROXY=${GH_PROXY:-}
@@ -25,7 +25,7 @@ NODE_TAG=("xtls-reality" "hysteria2" "tuic" "ShadowTLS" "shadowsocks" "trojan" "
 DEFAULT_PROTOCOL_CODES=(b c d e f g h i j k l m)
 CONSECUTIVE_PORTS=${#PROTOCOL_LIST[@]}
 CDN_DOMAIN=("skk.moe" "ip.sb" "time.is" "cfip.xxxxxxxx.tk" "bestcf.top" "cdn.2020111.xyz" "xn--b6gac.eu.org" "cf.090227.xyz")
-DEFAULT_NEWEST_VERSION='1.14.0-alpha.50'
+DEFAULT_NEWEST_VERSION='1.14.0'
 FINGER_PRINT_DEFAULT='chrome'
 STEP_NUM=0      # 当前步骤编号（安装流程中动态递增）
 TOTAL_STEPS=''  # 总步骤数（协议确定后动态计算）
